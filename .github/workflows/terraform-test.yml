@@ -26,12 +26,9 @@ env:
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
   AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
   TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
-  # Cognito test user — still required as secrets (sensitive credentials).
-  TF_VAR_cognito_test_user_email: ${{ secrets.TF_VAR_COGNITO_TEST_USER_EMAIL }}
-  TF_VAR_cognito_test_user_password: ${{ secrets.TF_VAR_COGNITO_TEST_USER_PASSWORD }}
-  # Domain and backend are auto-discovered in the "Bootstrap" step below;
-  # TF_VAR_domain, TF_VAR_tf_state_bucket, TF_BACKEND_* are set there via
-  # $GITHUB_ENV and are NOT required as repository secrets.
+  # Domain, backend, and Cognito test credentials are all auto-generated in
+  # the Bootstrap / Route53 discovery steps below and written to $GITHUB_ENV.
+  # None of these require repository secrets.
 
 jobs:
   terraform:
@@ -135,6 +132,19 @@ jobs:
           echo "TF_VAR_domain=${DOMAIN}"               >> "$GITHUB_ENV"
           echo "TF_VAR_route53_zone_id=${ZONE_ID}"     >> "$GITHUB_ENV"
 
+      - name: Generate Cognito test credentials
+        run: |
+          # Sandbox accounts are ephemeral — generate fresh credentials each run.
+          # The Cognito pool is created by Terraform; these values are passed
+          # straight through as TF_VAR_* so Terraform creates the test user.
+          EMAIL="ci-test@${TF_VAR_domain}"
+          # Password must satisfy pool policy: 12+ chars, upper, lower, digit.
+          SUFFIX=$(openssl rand -hex 4 | tr 'a-f' 'A-F')
+          PASSWORD="CiTest${SUFFIX}99"
+          echo "TF_VAR_cognito_test_user_email=${EMAIL}"       >> "$GITHUB_ENV"
+          echo "TF_VAR_cognito_test_user_password=${PASSWORD}" >> "$GITHUB_ENV"
+          echo "Cognito test user: ${EMAIL}"
+
       # ──────────────────────────────────────────────────────────────────────
       # Detect which Terraform modules exist in this checkout.
       # The workflow must not hard-fail before the Terraform code is merged.
@@ -166,6 +176,7 @@ jobs:
         if: steps.init_base.outcome == 'success'
         working-directory: terraform/base
         run: |
+          set -o pipefail
           terraform plan -no-color -out=base.tfplan \
             2>&1 | tee "${RUNNER_TEMP}/base-plan.txt"
 
@@ -174,6 +185,7 @@ jobs:
         if: inputs.mode == 'apply-and-destroy' && steps.plan_base.outcome == 'success'
         working-directory: terraform/base
         run: |
+          set -o pipefail
           terraform apply -auto-approve -no-color base.tfplan \
             2>&1 | tee "${RUNNER_TEMP}/base-apply.txt"
 
@@ -200,6 +212,7 @@ jobs:
         continue-on-error: true
         working-directory: terraform/management
         run: |
+          set -o pipefail
           terraform plan -no-color -out=mgmt.tfplan \
             2>&1 | tee "${RUNNER_TEMP}/mgmt-plan.txt"
 
@@ -211,6 +224,7 @@ jobs:
           steps.init_management.outcome == 'success'
         working-directory: terraform/management
         run: |
+          set -o pipefail
           terraform plan -no-color -out=mgmt.tfplan \
             2>&1 | tee "${RUNNER_TEMP}/mgmt-plan-post-base.txt"
           terraform apply -auto-approve -no-color mgmt.tfplan \
@@ -226,6 +240,7 @@ jobs:
         continue-on-error: true
         working-directory: terraform/management
         run: |
+          set -o pipefail
           terraform destroy -auto-approve -no-color \
             2>&1 | tee "${RUNNER_TEMP}/mgmt-destroy.txt"
 
@@ -235,6 +250,7 @@ jobs:
         continue-on-error: true
         working-directory: terraform/base
         run: |
+          set -o pipefail
           terraform destroy -auto-approve -no-color \
             2>&1 | tee "${RUNNER_TEMP}/base-destroy.txt"
 

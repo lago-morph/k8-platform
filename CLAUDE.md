@@ -28,11 +28,11 @@ Items marked **auto** are discovered at runtime and do not need to be secrets.
 | `AWS_ACCESS_KEY_ID` | AWS credentials from the sandbox session | **Yes** |
 | `AWS_SECRET_ACCESS_KEY` | AWS credentials from the sandbox session | **Yes** |
 | `AWS_REGION` | AWS region, e.g. `us-east-1` | **Yes** |
-| `TF_VAR_COGNITO_TEST_USER_EMAIL` | Cognito test user email | **Yes** |
-| `TF_VAR_COGNITO_TEST_USER_PASSWORD` | Cognito test user password | **Yes** |
 | `TF_STATE_BUCKET` | S3 state bucket | **auto** — derived from account ID |
 | `TF_STATE_DYNAMODB_TABLE` | DynamoDB lock table | **auto** — fixed name |
 | `TF_VAR_DOMAIN` | Root domain | **auto** — queried from Route53 |
+| `TF_VAR_COGNITO_TEST_USER_EMAIL` | Cognito test user email | **auto** — `ci-test@{domain}` |
+| `TF_VAR_COGNITO_TEST_USER_PASSWORD` | Cognito test user password | **auto** — random per run |
 | `TF_VAR_ACME_EMAIL` | Let's Encrypt email | **removed** — ACM used instead |
 
 The CI workflow creates the S3 bucket and DynamoDB table on first run.

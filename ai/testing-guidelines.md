@@ -24,30 +24,37 @@ scratch; the CI bootstrap step creates a fresh S3 bucket and DynamoDB table.
 ## EC2 Instance Restrictions
 
 ### Allowed instance families
-Pluralsight sandboxes permit general-purpose burstable instances in the t2 and
-t3 families:
+_(Confirmed from Pluralsight documentation)_
 
 | Family | Allowed sizes |
 |--------|--------------|
 | t2     | micro, small, medium |
 | t3     | micro, small, medium |
 | t3a    | micro, small, medium |
+| t4g    | micro, small, medium |
 
-**t3.large and above are blocked.** Requesting them causes an immediate
-`InsufficientInstanceCapacity` or permission-denied error.
+**Only micro, small, and medium sizes are permitted.** Any instance type outside
+these families and sizes (e.g. t3.large, m5.large, c5.xlarge) will be rejected.
+
+### Maximum volume size
+**100 GB** per EBS volume. The default EKS node root volume (20 GB) is well
+within this limit.
 
 ### Total instance count
-Typical sandbox accounts allow **5–10 running EC2 instances** across all
-services simultaneously. EKS managed node groups count toward this limit.
+**Maximum 9 concurrent instances** across all services in the account.
+This count includes stopped instances but excludes terminated ones.
+
+EKS managed node group instances count toward this limit. Plan for the full
+apply-and-destroy cycle:
+- 2 management cluster nodes + NAT GW ENIs + any other instances ≤ 9
 
 ### Configuration for this project
 The management cluster is configured to use `t3.medium` with `desired=2`,
-`min=1`, `max=3`. This fits within sandbox limits.
+`min=1`, `max=3`. This fits within sandbox limits (2 nodes out of 9 total).
 
-- If the 2-node desired count exhausts the instance quota alongside NAT
-  gateway ENIs and other EC2 resources, reduce `node_desired_size` to `1`
-  in `terraform/management/terraform.tfvars`.
-- Do **not** use `t3.large` or larger — plan will succeed but apply will fail.
+- If the 2-node desired count causes quota issues, reduce `node_desired_size`
+  to `1` — one t3.medium node is enough for plan/apply CI testing.
+- Do **not** use t3.large or any larger size — the sandbox will reject it.
 
 ---
 

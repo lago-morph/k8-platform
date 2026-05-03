@@ -73,15 +73,15 @@ same branch (`concurrency.cancel-in-progress: true`).
 | `AWS_ACCESS_KEY_ID` | AWS API access | No — must be set |
 | `AWS_SECRET_ACCESS_KEY` | AWS API access | No — must be set |
 | `AWS_REGION` | AWS region for all resources | No — must be set |
-| `TF_VAR_COGNITO_TEST_USER_EMAIL` | Cognito test user email | No — must be set |
-| `TF_VAR_COGNITO_TEST_USER_PASSWORD` | Cognito test user password | No — must be set |
 | `TF_STATE_BUCKET` | ~~S3 bucket name~~ | **Yes** — derived from account ID |
 | `TF_STATE_DYNAMODB_TABLE` | ~~DynamoDB table~~ | **Yes** — hardcoded as `k8-platform-tfstate-lock` |
 | `TF_VAR_DOMAIN` | ~~Root domain~~ | **Yes** — queried from Route53 |
+| `TF_VAR_COGNITO_TEST_USER_EMAIL` | ~~Cognito test user email~~ | **Yes** — `ci-test@{domain}` |
+| `TF_VAR_COGNITO_TEST_USER_PASSWORD` | ~~Cognito test user password~~ | **Yes** — random per run |
 | `TF_VAR_ACME_EMAIL` | ~~Let's Encrypt email~~ | **Removed** — ACM used instead |
 
-Secrets marked "Yes" in the Auto-discovered column no longer need to be
-configured in GitHub repository settings.
+Only the three AWS credential secrets need to be configured in GitHub
+repository settings. Everything else is auto-generated at runtime.
 
 ---
 

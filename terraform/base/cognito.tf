@@ -54,8 +54,11 @@ resource "aws_cognito_user_pool_domain" "main" {
   user_pool_id = aws_cognito_user_pool.main.id
 }
 
-# Test user — useful for verifying authentication flows without a real email.
+# Test user — only created when cognito_test_user_email is set.
+# Skipping this resource is safe for CI plan/apply cycles; it is only needed
+# when interactively testing SSO flows in Iteration 5.
 resource "aws_cognito_user" "test" {
+  count        = var.cognito_test_user_email != "" ? 1 : 0
   user_pool_id = aws_cognito_user_pool.main.id
   username     = var.cognito_test_user_email
 
@@ -65,8 +68,5 @@ resource "aws_cognito_user" "test" {
   }
 
   temporary_password = var.cognito_test_user_password
-
-  # Suppress Cognito's "change password on first login" requirement so the
-  # test user can authenticate immediately in demos without a UI flow.
-  message_action = "SUPPRESS"
+  message_action     = "SUPPRESS"
 }

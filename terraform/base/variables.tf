@@ -40,12 +40,14 @@ variable "route53_zone_id" {
 }
 
 variable "cognito_test_user_email" {
-  description = "Email address for the Cognito test user created during base setup"
+  description = "Email for the Cognito test user. Leave empty to skip test-user creation (pool still created)."
   type        = string
+  default     = ""
 }
 
 variable "cognito_test_user_password" {
-  description = "Temporary password for the Cognito test user (must meet Cognito complexity rules)"
+  description = "Temporary password for the Cognito test user (must meet pool complexity rules). Leave empty if cognito_test_user_email is empty."
   type        = string
   sensitive   = true
+  default     = ""
 }
