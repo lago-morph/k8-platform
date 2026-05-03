@@ -1,0 +1,3 @@
+# Session logs committed here are intentional (manually reviewed for secrets).
+# New logs are ignored by default — add explicitly with: git add -f logs/<file>.jsonl
+*.jsonl
