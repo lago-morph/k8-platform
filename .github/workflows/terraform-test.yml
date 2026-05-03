@@ -165,11 +165,13 @@ jobs:
         if: steps.modules.outputs.has_base == 'true'
         working-directory: terraform/base
         run: |
+          set -o pipefail
           terraform init \
             -backend-config="bucket=${TF_BACKEND_BUCKET}" \
             -backend-config="key=k8-platform/base/terraform.tfstate" \
             -backend-config="region=${TF_BACKEND_REGION}" \
-            -backend-config="dynamodb_table=${TF_BACKEND_DYNAMODB_TABLE}"
+            -backend-config="dynamodb_table=${TF_BACKEND_DYNAMODB_TABLE}" \
+            2>&1 | tee "${RUNNER_TEMP}/base-init.txt"
 
       - name: "[base] plan"
         id: plan_base
@@ -200,11 +202,13 @@ jobs:
         continue-on-error: true
         working-directory: terraform/management
         run: |
+          set -o pipefail
           terraform init \
             -backend-config="bucket=${TF_BACKEND_BUCKET}" \
             -backend-config="key=k8-platform/management/terraform.tfstate" \
             -backend-config="region=${TF_BACKEND_REGION}" \
-            -backend-config="dynamodb_table=${TF_BACKEND_DYNAMODB_TABLE}"
+            -backend-config="dynamodb_table=${TF_BACKEND_DYNAMODB_TABLE}" \
+            2>&1 | tee "${RUNNER_TEMP}/mgmt-init.txt"
 
       - name: "[management] plan"
         id: plan_management
@@ -263,6 +267,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_MODE: ${{ inputs.mode || 'plan-only' }}
+          INIT_BASE_OUTCOME: ${{ steps.init_base.outcome }}
           PLAN_BASE_OUTCOME: ${{ steps.plan_base.outcome }}
+          APPLY_BASE_OUTCOME: ${{ steps.apply_base.outcome }}
+          DESTROY_BASE_OUTCOME: ${{ steps.destroy_base.outcome }}
+          INIT_MGMT_OUTCOME: ${{ steps.init_management.outcome }}
           PLAN_MGMT_OUTCOME: ${{ steps.plan_management.outcome }}
+          APPLY_MGMT_OUTCOME: ${{ steps.apply_management.outcome }}
+          DESTROY_MGMT_OUTCOME: ${{ steps.destroy_management.outcome }}
         run: python3 .github/scripts/post-comment.py
