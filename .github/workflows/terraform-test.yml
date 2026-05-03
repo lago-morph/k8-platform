@@ -1,0 +1,179 @@
+name: Terraform Test
+
+on:
+  push:
+    branches-ignore:
+      - main
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Run mode"
+        required: true
+        default: plan-only
+        type: choice
+        options:
+          - plan-only
+          - apply-and-destroy
+
+# One run per branch at a time; cancel in-flight runs on new push.
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TF_IN_AUTOMATION: "true"
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+  # Terraform variable injection — all sensitive values come from secrets, never from committed files.
+  TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
+  TF_VAR_domain: ${{ secrets.TF_VAR_DOMAIN }}
+  TF_VAR_cognito_test_user_email: ${{ secrets.TF_VAR_COGNITO_TEST_USER_EMAIL }}
+  TF_VAR_cognito_test_user_password: ${{ secrets.TF_VAR_COGNITO_TEST_USER_PASSWORD }}
+  TF_VAR_acme_email: ${{ secrets.TF_VAR_ACME_EMAIL }}
+  TF_VAR_tf_state_bucket: ${{ secrets.TF_STATE_BUCKET }}
+  # Backend config — passed explicitly to terraform init via -backend-config flags.
+  TF_BACKEND_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+  TF_BACKEND_REGION: ${{ secrets.AWS_REGION }}
+  TF_BACKEND_DYNAMODB_TABLE: ${{ secrets.TF_STATE_DYNAMODB_TABLE }}
+
+jobs:
+  terraform:
+    name: Terraform (${{ inputs.mode || 'plan-only' }})
+    runs-on: ubuntu-latest
+
+    # Write permission is needed to post commit/PR comments.
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ubuntu-latest ships with the AWS CLI, but verify so the failure is
+      # explicit if the runner image ever drops it.
+      - name: Verify AWS CLI
+        run: aws --version
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.6"
+
+      # Detect which modules are present in this checkout.
+      # The Terraform scaffolding may land in a separate PR; the workflow
+      # must not hard-fail when the directories don't exist yet.
+      - name: Detect modules
+        id: modules
+        run: |
+          echo "has_base=$(test -d terraform/base && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "has_management=$(test -d terraform/management && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      # ──────────────────────────────────────────────────────────────────────
+      # BASE MODULE
+      # ──────────────────────────────────────────────────────────────────────
+
+      - name: "[base] init"
+        id: init_base
+        if: steps.modules.outputs.has_base == 'true'
+        working-directory: terraform/base
+        run: |
+          terraform init \
+            -backend-config="bucket=${TF_BACKEND_BUCKET}" \
+            -backend-config="key=k8-platform/base/terraform.tfstate" \
+            -backend-config="region=${TF_BACKEND_REGION}" \
+            -backend-config="dynamodb_table=${TF_BACKEND_DYNAMODB_TABLE}"
+
+      - name: "[base] plan"
+        id: plan_base
+        if: steps.init_base.outcome == 'success'
+        working-directory: terraform/base
+        run: |
+          terraform plan -no-color -detailed-exitcode -out=base.tfplan \
+            2>&1 | tee "${RUNNER_TEMP}/base-plan.txt"
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: "[base] apply"
+        id: apply_base
+        if: inputs.mode == 'apply-and-destroy' && steps.plan_base.outcome == 'success'
+        working-directory: terraform/base
+        run: |
+          terraform apply -auto-approve -no-color base.tfplan \
+            2>&1 | tee "${RUNNER_TEMP}/base-apply.txt"
+
+      # ──────────────────────────────────────────────────────────────────────
+      # MANAGEMENT MODULE
+      # The management module reads terraform/base remote state; plan may fail
+      # on branches where base hasn't been applied yet — that is expected.
+      # ──────────────────────────────────────────────────────────────────────
+
+      - name: "[management] init"
+        id: init_management
+        if: steps.modules.outputs.has_management == 'true'
+        continue-on-error: true
+        working-directory: terraform/management
+        run: |
+          terraform init \
+            -backend-config="bucket=${TF_BACKEND_BUCKET}" \
+            -backend-config="key=k8-platform/management/terraform.tfstate" \
+            -backend-config="region=${TF_BACKEND_REGION}" \
+            -backend-config="dynamodb_table=${TF_BACKEND_DYNAMODB_TABLE}"
+
+      - name: "[management] plan"
+        id: plan_management
+        if: steps.init_management.outcome == 'success'
+        continue-on-error: true
+        working-directory: terraform/management
+        run: |
+          terraform plan -no-color -out=mgmt.tfplan \
+            2>&1 | tee "${RUNNER_TEMP}/mgmt-plan.txt"
+
+      - name: "[management] apply"
+        id: apply_management
+        if: >-
+          inputs.mode == 'apply-and-destroy' &&
+          steps.apply_base.outcome == 'success' &&
+          steps.init_management.outcome == 'success'
+        working-directory: terraform/management
+        run: |
+          # Re-plan after base apply so the remote state is available.
+          terraform plan -no-color -out=mgmt.tfplan \
+            2>&1 | tee "${RUNNER_TEMP}/mgmt-plan-post-base.txt"
+          terraform apply -auto-approve -no-color mgmt.tfplan \
+            2>&1 | tee "${RUNNER_TEMP}/mgmt-apply.txt"
+
+      # ──────────────────────────────────────────────────────────────────────
+      # DESTROY — reverse order, always run so partial applies are cleaned up.
+      # ──────────────────────────────────────────────────────────────────────
+
+      - name: "[management] destroy"
+        id: destroy_management
+        if: always() && inputs.mode == 'apply-and-destroy' && steps.apply_management.outcome != 'skipped'
+        continue-on-error: true
+        working-directory: terraform/management
+        run: |
+          terraform destroy -auto-approve -no-color \
+            2>&1 | tee "${RUNNER_TEMP}/mgmt-destroy.txt"
+
+      - name: "[base] destroy"
+        id: destroy_base
+        if: always() && inputs.mode == 'apply-and-destroy' && steps.apply_base.outcome != 'skipped'
+        continue-on-error: true
+        working-directory: terraform/base
+        run: |
+          terraform destroy -auto-approve -no-color \
+            2>&1 | tee "${RUNNER_TEMP}/base-destroy.txt"
+
+      # ──────────────────────────────────────────────────────────────────────
+      # SUMMARY COMMENT — posted to the PR (if one exists) or the commit.
+      # ──────────────────────────────────────────────────────────────────────
+
+      - name: Post summary comment
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_MODE: ${{ inputs.mode || 'plan-only' }}
+          PLAN_BASE_OUTCOME: ${{ steps.plan_base.outcome }}
+          PLAN_MGMT_OUTCOME: ${{ steps.plan_management.outcome }}
+        run: python3 .github/scripts/post-comment.py
