@@ -114,8 +114,14 @@ resource "helm_release" "argocd" {
   create_namespace = true
 
   # ArgoCD serves HTTP; TLS is terminated upstream at the NLB.
-  set { name = "server.service.type"; value = "ClusterIP" }
-  set { name = "server.extraArgs[0]"; value = "--insecure" }
+  set {
+    name  = "server.service.type"
+    value = "ClusterIP"
+  }
+  set {
+    name  = "server.extraArgs[0]"
+    value = "--insecure"
+  }
   set {
     name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
     value = module.irsa_argocd.iam_role_arn

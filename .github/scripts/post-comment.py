@@ -29,6 +29,28 @@ OWNER = REPO.split("/")[0]
 
 MAX_LINES = 100  # truncate long outputs to keep the comment readable
 
+OUTCOMES = {
+    "init_base":    os.environ.get("INIT_BASE_OUTCOME"),
+    "plan_base":    os.environ.get("PLAN_BASE_OUTCOME"),
+    "apply_base":   os.environ.get("APPLY_BASE_OUTCOME"),
+    "destroy_base": os.environ.get("DESTROY_BASE_OUTCOME"),
+    "init_mgmt":    os.environ.get("INIT_MGMT_OUTCOME"),
+    "plan_mgmt":    os.environ.get("PLAN_MGMT_OUTCOME"),
+    "apply_mgmt":   os.environ.get("APPLY_MGMT_OUTCOME"),
+    "destroy_mgmt": os.environ.get("DESTROY_MGMT_OUTCOME"),
+}
+
+STEP_LABELS = {
+    "init_base":    "Base — Init",
+    "plan_base":    "Base — Plan",
+    "apply_base":   "Base — Apply",
+    "destroy_base": "Base — Destroy",
+    "init_mgmt":    "Management — Init",
+    "plan_mgmt":    "Management — Plan",
+    "apply_mgmt":   "Management — Apply",
+    "destroy_mgmt": "Management — Destroy",
+}
+
 
 def read_output(filename: str) -> str | None:
     p = TMP / filename
@@ -47,9 +69,24 @@ def outcome_emoji(outcome: str | None) -> str:
     )
 
 
+def overall_status_line() -> str:
+    failures = [k for k, v in OUTCOMES.items() if v == "failure"]
+    if failures:
+        labels = ", ".join(STEP_LABELS[k] for k in failures)
+        return f"**Overall: ❌ Failed** — {labels}\n"
+    ran = [k for k, v in OUTCOMES.items() if v == "success"]
+    if ran:
+        return "**Overall: ✅ All completed steps passed**\n"
+    return "**Overall: ℹ️ Plan only — no apply/destroy steps ran**\n"
+
+
 def section(title: str, filename: str, outcome: str | None = None) -> str:
     content = read_output(filename)
     emoji = outcome_emoji(outcome)
+    if content is None and outcome in (None, "skipped"):
+        return f"\n### {emoji} {title}\n_not run_\n"
+    if content is None and outcome == "failure":
+        return f"\n### {emoji} {title}\n_step failed — no output captured_\n"
     if content is None:
         return f"\n### {emoji} {title}\n_not run_\n"
     return (
@@ -61,22 +98,22 @@ def section(title: str, filename: str, outcome: str | None = None) -> str:
 
 
 def build_body() -> str:
-    plan_base = os.environ.get("PLAN_BASE_OUTCOME")
-    plan_mgmt = os.environ.get("PLAN_MGMT_OUTCOME")
-
     parts = [
         "## Terraform Test Results\n",
         f"**Trigger:** `{EVENT}` &nbsp;|&nbsp; "
         f"**Branch:** `{REF}` &nbsp;|&nbsp; "
         f"**Mode:** `{MODE}` &nbsp;|&nbsp; "
-        f"[View run]({RUN_URL})\n",
-        section("Base — Plan", "base-plan.txt", plan_base),
-        section("Base — Apply", "base-apply.txt"),
-        section("Management — Plan", "mgmt-plan.txt", plan_mgmt),
-        section("Management — Plan (post-base apply)", "mgmt-plan-post-base.txt"),
-        section("Management — Apply", "mgmt-apply.txt"),
-        section("Management — Destroy", "mgmt-destroy.txt"),
-        section("Base — Destroy", "base-destroy.txt"),
+        f"[View run]({RUN_URL})\n\n",
+        overall_status_line(),
+        section("Base — Init",    "base-init.txt",          OUTCOMES["init_base"]),
+        section("Base — Plan",    "base-plan.txt",          OUTCOMES["plan_base"]),
+        section("Base — Apply",   "base-apply.txt",         OUTCOMES["apply_base"]),
+        section("Management — Init",  "mgmt-init.txt",      OUTCOMES["init_mgmt"]),
+        section("Management — Plan",  "mgmt-plan.txt",      OUTCOMES["plan_mgmt"]),
+        section("Management — Plan (post-base apply)", "mgmt-plan-post-base.txt", None),
+        section("Management — Apply", "mgmt-apply.txt",     OUTCOMES["apply_mgmt"]),
+        section("Management — Destroy", "mgmt-destroy.txt", OUTCOMES["destroy_mgmt"]),
+        section("Base — Destroy", "base-destroy.txt",       OUTCOMES["destroy_base"]),
     ]
     return "".join(parts)
 
