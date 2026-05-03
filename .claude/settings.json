@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '\"\\(.transcript_path)\\t\\(.session_id)\"' | { IFS=$'\\t' read -r src sid; if [ -n \"$src\" ] && [ -n \"$sid\" ] && [ -f \"$src\" ]; then cp \"$src\" \"$CLAUDE_PROJECT_DIR/logs/$sid.jsonl\"; fi; } 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
+  }
+}
