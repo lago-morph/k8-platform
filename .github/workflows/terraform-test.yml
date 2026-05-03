@@ -2,8 +2,10 @@ name: Terraform Test
 
 on:
   push:
-    branches-ignore:
-      - main
+    # Auto-run only on test/* branches — opt in by naming your branch test/<name>.
+    # For any other branch, trigger manually via workflow_dispatch below.
+    branches:
+      - "test/**"
   workflow_dispatch:
     inputs:
       mode:

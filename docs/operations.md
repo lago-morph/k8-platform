@@ -64,8 +64,12 @@ These are the **only** secrets needed. Everything else is auto-discovered.
 ### Step 3 — Trigger the workflow
 
 **Plan only (safe, no AWS resources created):**
-- Push any commit to a non-`main` branch — the workflow runs automatically
-- Or: Actions → Terraform Test → Run workflow → branch → mode: `plan-only`
+- Push to a branch named `test/<anything>` — CI runs automatically on every push
+- Or: Actions → Terraform Test → Run workflow → any branch → mode: `plan-only`
+
+Normal development branches (`feat/`, `fix/`, `chore/`) do **not** trigger CI
+automatically. Use `test/` when you want continuous validation, or trigger
+manually for one-off checks.
 
 **Full apply-and-destroy (creates and then destroys all resources):**
 - Actions → Terraform Test → Run workflow → branch: `main` → mode: `apply-and-destroy`
@@ -171,6 +175,7 @@ Branch naming:
 - `feat/` — new functionality
 - `fix/` — bug fixes
 - `chore/` — docs, maintenance, refactoring
+- `test/` — triggers CI automatically on every push (use when iterating on Terraform)
 
 ---
 
