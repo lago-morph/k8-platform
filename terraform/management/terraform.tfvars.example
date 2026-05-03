@@ -1,0 +1,24 @@
+# Copy to terraform.tfvars and fill in real values. Never commit terraform.tfvars.
+
+aws_region      = "us-east-1"
+environment     = "dev"
+domain          = "example.com"      # must match terraform/base
+tf_state_bucket = "my-tfstate-bucket"
+acme_email      = "ops@example.com"
+
+cluster_name    = "k8-platform-mgmt"
+cluster_version = "1.29"
+
+node_instance_type = "t3.medium"
+node_desired_size  = 2
+node_min_size      = 1
+node_max_size      = 3
+
+availability_zones = ["us-east-1a", "us-east-1b"]
+
+# Helm chart versions — pin to known-good versions; bump deliberately
+argocd_version        = "6.7.3"
+crossplane_version    = "1.15.1"
+eso_version           = "0.9.13"
+ingress_nginx_version = "4.10.0"
+cert_manager_version  = "1.14.4"
