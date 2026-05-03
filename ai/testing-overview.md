@@ -30,9 +30,15 @@ Key properties:
 
 | Event | Behaviour |
 |-------|-----------|
-| Push to any non-`main` branch | Runs `terraform init` + `plan` for both modules |
-| `workflow_dispatch` with `mode=plan-only` | Same as push |
+| Push to a `test/**` branch | Runs `terraform init` + `plan` for both modules |
+| Push to any other non-`main` branch | **No CI** — trigger manually if needed |
+| `workflow_dispatch` with `mode=plan-only` | Same as push (works on any branch) |
 | `workflow_dispatch` with `mode=apply-and-destroy` | Full `init → plan → apply → destroy` cycle |
+
+The `test/` prefix is the opt-in signal for automatic CI. Normal development
+branches (`feat/`, `fix/`, `chore/`) don't hit the sandbox on every push —
+only when you deliberately name the branch `test/<something>` or trigger
+manually via `workflow_dispatch`.
 
 ### Concurrency
 One run per branch at a time. A new push cancels any in-progress run on the
