@@ -11,8 +11,6 @@ locals {
 }
 
 # ---- ArgoCD ----
-# ArgoCD itself doesn't need AWS API access today.
-# This role is a placeholder for future integrations (e.g. AWS CodeCommit).
 
 module "irsa_argocd" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
@@ -31,8 +29,6 @@ module "irsa_argocd" {
 }
 
 # ---- Crossplane AWS Provider ----
-# Needs broad permissions to provision EKS clusters, VPCs, IAM roles, and
-# Secrets Manager entries on behalf of platform consumers.
 
 resource "aws_iam_policy" "crossplane_aws" {
   name        = "${var.cluster_name}-crossplane-aws"
@@ -44,9 +40,7 @@ resource "aws_iam_policy" "crossplane_aws" {
       {
         Sid    = "EKS"
         Effect = "Allow"
-        Action = [
-          "eks:*",
-        ]
+        Action = ["eks:*"]
         Resource = "*"
       },
       {
@@ -111,7 +105,6 @@ module "irsa_crossplane" {
 }
 
 # ---- External Secrets Operator ----
-# Read-only access to Secrets Manager under the k8-platform/ prefix.
 
 resource "aws_iam_policy" "eso" {
   name        = "${var.cluster_name}-eso"
@@ -151,13 +144,14 @@ module "irsa_eso" {
   }
 }
 
-# ---- cert-manager ----
-# DNS-01 ACME challenge requires Route53 write access scoped to the management
-# cluster's subdomain zone (management.<domain>).
+# ---- ExternalDNS ----
+# Route53 write access scoped to the hosted zone for this cluster's subdomain.
+# cert-manager is not installed on the management cluster (ACM handles TLS),
+# so ExternalDNS gets its own Route53 policy rather than sharing one.
 
-resource "aws_iam_policy" "cert_manager" {
-  name        = "${var.cluster_name}-cert-manager"
-  description = "cert-manager DNS-01 Route53 access for management cluster"
+resource "aws_iam_policy" "route53_editor" {
+  name        = "${var.cluster_name}-route53-editor"
+  description = "Route53 record management for ExternalDNS on the management cluster"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -184,28 +178,6 @@ resource "aws_iam_policy" "cert_manager" {
   })
 }
 
-module "irsa_cert_manager" {
-  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
-  version = "~> 5.0"
-
-  role_name = "${var.cluster_name}-cert-manager"
-
-  oidc_providers = {
-    main = {
-      provider_arn               = local.oidc_provider_arn
-      namespace_service_accounts = ["cert-manager:cert-manager"]
-    }
-  }
-
-  role_policy_arns = {
-    cert_manager = aws_iam_policy.cert_manager.arn
-  }
-}
-
-# ---- ExternalDNS ----
-# Route53 write access scoped to the management cluster subdomain.
-# Shares the same policy as cert-manager for Route53.
-
 module "irsa_external_dns" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
   version = "~> 5.0"
@@ -220,6 +192,6 @@ module "irsa_external_dns" {
   }
 
   role_policy_arns = {
-    external_dns = aws_iam_policy.cert_manager.arn
+    route53 = aws_iam_policy.route53_editor.arn
   }
 }

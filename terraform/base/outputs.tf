@@ -25,12 +25,17 @@ output "private_subnet_ids" {
 
 output "route53_zone_id" {
   description = "Route53 hosted zone ID for the root domain"
-  value       = aws_route53_zone.root.zone_id
+  value       = local.zone_id
 }
 
 output "route53_zone_name_servers" {
-  description = "Name servers for the hosted zone — delegate from your registrar to these"
-  value       = aws_route53_zone.root.name_servers
+  description = "Name servers to delegate to (empty when using a pre-existing zone)"
+  value       = local.zone_name_servers
+}
+
+output "acm_certificate_arn" {
+  description = "ARN of the validated wildcard ACM certificate (*.domain + domain)"
+  value       = aws_acm_certificate_validation.wildcard.certificate_arn
 }
 
 output "cognito_user_pool_id" {

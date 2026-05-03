@@ -20,11 +20,6 @@ variable "tf_state_bucket" {
   type        = string
 }
 
-variable "acme_email" {
-  description = "Email address registered with Let's Encrypt for certificate expiry notifications"
-  type        = string
-}
-
 variable "cluster_name" {
   description = "EKS cluster name for the management cluster"
   type        = string
@@ -38,25 +33,29 @@ variable "cluster_version" {
 }
 
 variable "node_instance_type" {
-  description = "EC2 instance type for the management cluster node group"
+  description = <<-EOT
+    EC2 instance type for management cluster nodes.
+    Pluralsight sandbox restriction: use t3.medium or smaller.
+    t3.medium (2 vCPU / 4 GiB) is the recommended minimum for running
+    ArgoCD + Crossplane + ESO on the same node group.
+  EOT
   type        = string
   default     = "t3.medium"
 }
 
 variable "node_desired_size" {
-  description = "Desired number of nodes in the management cluster node group"
+  description = "Desired node count. Keep at 2 for management cluster HA; reduce to 1 to stay within sandbox instance limits."
   type        = number
   default     = 2
 }
 
 variable "node_min_size" {
-  description = "Minimum number of nodes in the management cluster node group"
-  type        = number
-  default     = 1
+  type    = number
+  default = 1
 }
 
 variable "node_max_size" {
-  description = "Maximum number of nodes in the management cluster node group"
+  description = "Max nodes. Pluralsight sandbox caps total EC2 instances across all services — stay conservative."
   type        = number
   default     = 3
 }
@@ -86,13 +85,7 @@ variable "eso_version" {
 }
 
 variable "ingress_nginx_version" {
-  description = "ingress-nginx Helm chart version (management cluster only — for ArgoCD UI)"
+  description = "ingress-nginx Helm chart version"
   type        = string
   default     = "4.10.0"
-}
-
-variable "cert_manager_version" {
-  description = "cert-manager Helm chart version"
-  type        = string
-  default     = "1.14.4"
 }

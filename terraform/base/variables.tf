@@ -27,6 +27,18 @@ variable "availability_zones" {
   default     = ["us-east-1a", "us-east-1b"]
 }
 
+variable "route53_zone_id" {
+  description = <<-EOT
+    ID of a pre-existing Route53 public hosted zone for var.domain.
+    When set, Terraform uses the existing zone instead of creating one.
+    Pluralsight sandboxes always provide a pre-created zone — set this to
+    that zone ID. Leave empty for real deployments where Terraform creates
+    the zone from scratch.
+  EOT
+  type        = string
+  default     = ""
+}
+
 variable "cognito_test_user_email" {
   description = "Email address for the Cognito test user created during base setup"
   type        = string

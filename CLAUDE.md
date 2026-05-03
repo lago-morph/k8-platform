@@ -20,20 +20,25 @@ chore/<short-description>   # maintenance (deps, docs, refactor)
 
 ## Required GitHub Actions Secrets
 
-Before the CI workflow can execute, these secrets must be set in the
-repository's Settings → Secrets and variables → Actions:
+Set these in repository Settings → Secrets and variables → Actions.
+Items marked **auto** are discovered at runtime and do not need to be secrets.
 
-| Secret | Purpose |
-|--------|---------|
-| `AWS_ACCESS_KEY_ID` | AWS credentials |
-| `AWS_SECRET_ACCESS_KEY` | AWS credentials |
-| `AWS_REGION` | AWS region, e.g. `us-east-1` |
-| `TF_STATE_BUCKET` | S3 bucket for Terraform remote state |
-| `TF_STATE_DYNAMODB_TABLE` | DynamoDB table for state locking |
-| `TF_VAR_DOMAIN` | Root domain, e.g. `example.com` |
-| `TF_VAR_COGNITO_TEST_USER_EMAIL` | Cognito test user email |
-| `TF_VAR_COGNITO_TEST_USER_PASSWORD` | Cognito test user password |
-| `TF_VAR_ACME_EMAIL` | Let's Encrypt registration email |
+| Secret | Purpose | Required? |
+|--------|---------|-----------|
+| `AWS_ACCESS_KEY_ID` | AWS credentials from the sandbox session | **Yes** |
+| `AWS_SECRET_ACCESS_KEY` | AWS credentials from the sandbox session | **Yes** |
+| `AWS_REGION` | AWS region, e.g. `us-east-1` | **Yes** |
+| `TF_VAR_COGNITO_TEST_USER_EMAIL` | Cognito test user email | **Yes** |
+| `TF_VAR_COGNITO_TEST_USER_PASSWORD` | Cognito test user password | **Yes** |
+| `TF_STATE_BUCKET` | S3 state bucket | **auto** — derived from account ID |
+| `TF_STATE_DYNAMODB_TABLE` | DynamoDB lock table | **auto** — fixed name |
+| `TF_VAR_DOMAIN` | Root domain | **auto** — queried from Route53 |
+| `TF_VAR_ACME_EMAIL` | Let's Encrypt email | **removed** — ACM used instead |
+
+The CI workflow creates the S3 bucket and DynamoDB table on first run.
+The domain is discovered from the pre-existing Route53 zone in the sandbox.
+See `ai/testing-overview.md` for the full testing setup and `ai/testing-guidelines.md`
+for Pluralsight sandbox resource limits.
 
 ---
 
