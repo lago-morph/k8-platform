@@ -1,0 +1,15 @@
+# Copy to terraform.tfvars and fill in real values. Never commit terraform.tfvars.
+
+aws_region  = "us-east-1"
+environment = "dev"
+domain      = "example.com"   # must be a real domain you control
+
+availability_zones = ["us-east-1a", "us-east-1b"]
+vpc_cidr           = "10.0.0.0/16"
+
+# Pluralsight sandbox: set this to the pre-created zone ID (e.g. "Z1234ABCD").
+# The CI workflow sets this automatically. Leave empty for real deployments.
+route53_zone_id = ""
+
+cognito_test_user_email    = "test@example.com"
+cognito_test_user_password = "ChangeMe123!"   # must meet Cognito complexity rules
