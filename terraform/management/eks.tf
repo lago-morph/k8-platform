@@ -9,7 +9,7 @@ module "eks" {
   cluster_name    = var.cluster_name
   cluster_version = var.cluster_version
 
-  vpc_id     = data.terraform_remote_state.base.outputs.vpc_id
+  vpc_id     = try(data.terraform_remote_state.base.outputs.vpc_id, "")
   subnet_ids = aws_subnet.management[*].id
 
   # Public endpoint for local kubectl and Terraform access.
@@ -18,9 +18,6 @@ module "eks" {
 
   # Enable OIDC provider — required for IRSA.
   enable_irsa = true
-
-  # aws-auth managed by Terraform so it's reproducible.
-  manage_aws_auth_configmap = true
 
   eks_managed_node_groups = {
     default = {

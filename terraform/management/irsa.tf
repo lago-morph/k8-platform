@@ -7,7 +7,7 @@ locals {
   oidc_provider     = module.eks.cluster_oidc_issuer_url
   account_id        = data.aws_caller_identity.current.account_id
   region            = var.aws_region
-  zone_id           = data.terraform_remote_state.base.outputs.route53_zone_id
+  zone_id           = try(data.terraform_remote_state.base.outputs.route53_zone_id, "")
 }
 
 # ---- ArgoCD ----
@@ -95,7 +95,7 @@ module "irsa_crossplane" {
   oidc_providers = {
     main = {
       provider_arn               = local.oidc_provider_arn
-      namespace_service_accounts = ["crossplane-system:crossplane", "crossplane-system:provider-aws-*"]
+      namespace_service_accounts = ["crossplane-system:upbound-provider-family-aws"]
     }
   }
 

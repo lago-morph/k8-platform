@@ -5,14 +5,14 @@ the current state of the codebase, and the next concrete steps.
 
 ---
 
-## Current State (as of 2026-05-03)
+## Current State (as of 2026-05-04)
 
 ### Iteration progress
 
 | Iteration | Description | Status |
 |-----------|-------------|--------|
-| 0 | Base environment (VPC, Route53, Cognito, ACM) | Code complete, plan passes — **not yet apply-tested** |
-| 1 | Management cluster (EKS, ArgoCD, Crossplane, ESO, ExternalDNS) | Code complete, plan passes after base apply — **not yet apply-tested** |
+| 0 | Base environment (VPC, Route53, Cognito, ACM) | Code complete, **plan ✅ apply-tested ✅** (apply+destroy confirmed 2026-05-04) |
+| 1 | Management cluster (EKS, ArgoCD, Crossplane, ESO, ExternalDNS) | Code complete, **plan ✅** — apply not yet tested (blocked by EKS+Crossplane bugs, now fixed) |
 | 2 | Crossplane foundations (PlatformSecret XRD) | Not started |
 | 3 | Platform services cluster | Not started |
 | 4 | Observability (Grafana, Prometheus) | Not started |
@@ -22,13 +22,40 @@ the current state of the codebase, and the next concrete steps.
 ### What "plan passes" means
 
 The GitHub Actions CI workflow runs `terraform plan` on every push. Both modules
-plan cleanly against a real sandbox AWS account with no errors. However, the plan
-has never been promoted to a full `apply-and-destroy` cycle. That is the immediate
-next milestone.
+now plan cleanly against a real sandbox AWS account — base and management init+plan
+both succeed regardless of whether base has been applied first.
 
 ---
 
-## What Was Done This Session
+## What Was Done This Session (2026-05-04)
+
+1. **Investigated real CI run** — a `workflow_dispatch apply-and-destroy` run on
+   `main` was missed because CI results are posted as commit comments (not PR
+   comments or check runs) when no PR exists. Updated CLAUDE.md CI loop with
+   explicit two-path instructions and `curl` commands for reading commit comments.
+
+2. **Fixed management module Terraform errors** found in the CI apply run:
+   - `manage_aws_auth_configmap = true` removed (no longer valid in EKS module v20+)
+   - Remote state `try()` guards added so management plans when base state is empty
+   - `aws_nat_gateways` data source guarded with `count` conditional
+   - NAT gateway route block converted to `dynamic` to avoid index-out-of-bounds
+   - Removed `kubernetes` provider entirely — replaced with `terraform_data`
+     local-exec for Crossplane manifests; ArgoCD ingress moved to Helm values
+
+3. **Upgraded to Crossplane v2 APIs** — the previous code used v1 APIs that were
+   removed in Crossplane v2:
+   - `ControllerConfig` (v1alpha1) → `DeploymentRuntimeConfig` (v1beta1)
+   - `controllerConfigRef` → `runtimeConfigRef` (with explicit apiVersion/kind)
+   - Provider package: `upbound/provider-aws:v0.46.0` → `upbound/provider-family-aws:v1.12.0`
+   - Crossplane Helm chart: `1.15.1` → `2.0.1`
+   - IRSA service account: `provider-aws-*` → `upbound-provider-family-aws`
+
+4. **Plan-only CI now fully green** — both base (25 resources) and management
+   (51 resources) init and plan without errors on every push to `test/**`.
+
+---
+
+## Previous Session Work (2026-05-03)
 
 1. **Created the entire repo structure** — directory skeleton, all placeholder
    `.gitkeep` files, README, CLAUDE.md agent instructions.
@@ -79,17 +106,26 @@ or generated at runtime.
 
 ## Immediate Next Step
 
-**Run a full `apply-and-destroy` cycle** to validate the infrastructure
-actually provisions end-to-end.
+**Run a full `apply-and-destroy` cycle** to validate management module
+end-to-end (base apply+destroy was confirmed on 2026-05-04; management was
+blocked by EKS/Crossplane bugs which are now fixed).
 
-1. Start a fresh Pluralsight AWS sandbox session
-2. Copy the three AWS credentials into GitHub repository secrets
-3. Go to **Actions → Terraform Test → Run workflow**
-4. Select the `main` branch, mode `apply-and-destroy`
-5. Watch for the summary comment — it should show ✅ for all steps
+1. Merge `claude/review-handoff-actions-TmBhJ` to `main` (or run directly from it)
+2. Start a fresh Pluralsight AWS sandbox session
+3. Copy the three AWS credentials into GitHub repository secrets
+4. Go to **Actions → Terraform Test → Run workflow**
+5. Select the branch, mode `apply-and-destroy`
+6. Watch for the commit comment — it should show ✅ for all steps
 
-Expected duration: ~25 minutes (ACM cert validation takes 1–3 min, EKS
-cluster creation ~15 min, ArgoCD Helm install ~3 min, destroy ~10 min).
+Expected duration: ~30 minutes (ACM cert 1–3 min, EKS cluster ~15 min,
+ArgoCD+Crossplane Helm installs ~5 min, destroy ~10 min).
+
+**Known remaining risks for the apply:**
+- Crossplane `DeploymentRuntimeConfig` (v1beta1) requires Crossplane v2 to be
+  fully up before the CRD is available — `terraform_data` depends_on handles
+  ordering, but watch for timing issues.
+- ArgoCD ingress via Helm `server.ingress.*` values — confirm ExternalDNS
+  creates the DNS record correctly after apply.
 
 If the apply fails, the CI loop in CLAUDE.md defines how to diagnose and fix.
 
