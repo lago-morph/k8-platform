@@ -9,7 +9,7 @@ module "eks" {
   cluster_name    = var.cluster_name
   cluster_version = var.cluster_version
 
-  vpc_id     = data.terraform_remote_state.base.outputs.vpc_id
+  vpc_id     = try(data.terraform_remote_state.base.outputs.vpc_id, "")
   subnet_ids = aws_subnet.management[*].id
 
   # Public endpoint for local kubectl and Terraform access.

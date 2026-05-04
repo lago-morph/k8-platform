@@ -27,7 +27,7 @@ resource "helm_release" "ingress_nginx" {
   # ACM wildcard cert — NLB terminates TLS; nginx sees plain HTTP.
   set {
     name  = "controller.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-ssl-cert"
-    value = data.terraform_remote_state.base.outputs.acm_certificate_arn
+    value = try(data.terraform_remote_state.base.outputs.acm_certificate_arn, "")
   }
   set {
     name  = "controller.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-ssl-ports"

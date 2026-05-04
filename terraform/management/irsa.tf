@@ -7,7 +7,7 @@ locals {
   oidc_provider     = module.eks.cluster_oidc_issuer_url
   account_id        = data.aws_caller_identity.current.account_id
   region            = var.aws_region
-  zone_id           = data.terraform_remote_state.base.outputs.route53_zone_id
+  zone_id           = try(data.terraform_remote_state.base.outputs.route53_zone_id, "")
 }
 
 # ---- ArgoCD ----
