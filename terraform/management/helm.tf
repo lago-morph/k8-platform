@@ -77,29 +77,41 @@ resource "helm_release" "crossplane" {
   depends_on = [module.eks]
 }
 
-resource "kubernetes_manifest" "crossplane_aws_provider" {
-  manifest = {
-    apiVersion = "pkg.crossplane.io/v1"
-    kind       = "Provider"
-    metadata   = { name = "provider-aws" }
-    spec = {
-      package             = "xpkg.upbound.io/upbound/provider-aws:v0.46.0"
-      controllerConfigRef = { name = "aws-provider-config" }
-    }
-  }
-  depends_on = [helm_release.crossplane]
-}
+# Install the Crossplane AWS provider and its IRSA-annotated ControllerConfig
+# via kubectl after Crossplane's Helm release is up. Using local-exec avoids
+# the kubernetes Terraform provider (which requires a live API server at plan
+# time), and lets us template the IRSA role ARN directly.
+resource "terraform_data" "crossplane_aws_provider" {
+  triggers_replace = [module.irsa_crossplane.iam_role_arn]
 
-resource "kubernetes_manifest" "crossplane_aws_controller_config" {
-  manifest = {
-    apiVersion = "pkg.crossplane.io/v1alpha1"
-    kind       = "ControllerConfig"
-    metadata = {
-      name        = "aws-provider-config"
-      annotations = { "eks.amazonaws.com/role-arn" = module.irsa_crossplane.iam_role_arn }
-    }
-    spec = {}
+  provisioner "local-exec" {
+    command = <<-EOT
+      aws eks update-kubeconfig \
+        --name ${module.eks.cluster_name} \
+        --region ${var.aws_region} \
+        --kubeconfig /tmp/k8-platform-kubeconfig
+      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl apply -f - <<'MANIFEST'
+      ---
+      apiVersion: pkg.crossplane.io/v1alpha1
+      kind: ControllerConfig
+      metadata:
+        name: aws-provider-config
+        annotations:
+          eks.amazonaws.com/role-arn: "${module.irsa_crossplane.iam_role_arn}"
+      spec: {}
+      ---
+      apiVersion: pkg.crossplane.io/v1
+      kind: Provider
+      metadata:
+        name: provider-aws
+      spec:
+        package: "xpkg.upbound.io/upbound/provider-aws:v0.46.0"
+        controllerConfigRef:
+          name: aws-provider-config
+      MANIFEST
+    EOT
   }
+
   depends_on = [helm_release.crossplane]
 }
 
@@ -126,41 +138,24 @@ resource "helm_release" "argocd" {
     name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
     value = module.irsa_argocd.iam_role_arn
   }
+  # Ingress configured here so no separate kubernetes_ingress_v1 resource is
+  # needed (which would require the kubernetes provider at plan time).
+  set {
+    name  = "server.ingress.enabled"
+    value = "true"
+  }
+  set {
+    name  = "server.ingress.ingressClassName"
+    value = "nginx"
+  }
+  set {
+    name  = "server.ingress.annotations.external-dns\\.alpha\\.kubernetes\\.io/hostname"
+    value = "argocd.management.${var.domain}"
+  }
+  set {
+    name  = "server.ingress.hosts[0]"
+    value = "argocd.management.${var.domain}"
+  }
 
   depends_on = [helm_release.ingress_nginx]
-}
-
-# ---- ArgoCD Ingress ----
-# ExternalDNS creates argocd.management.<domain> → NLB CNAME in Route53.
-# TLS is handled by the NLB+ACM wildcard; no cert-manager annotation needed.
-
-resource "kubernetes_ingress_v1" "argocd" {
-  metadata {
-    name      = "argocd"
-    namespace = "argocd"
-    annotations = {
-      "kubernetes.io/ingress.class"               = "nginx"
-      "external-dns.alpha.kubernetes.io/hostname" = "argocd.management.${var.domain}"
-    }
-  }
-
-  spec {
-    rule {
-      host = "argocd.management.${var.domain}"
-      http {
-        path {
-          path      = "/"
-          path_type = "Prefix"
-          backend {
-            service {
-              name = "argocd-server"
-              port { number = 80 }
-            }
-          }
-        }
-      }
-    }
-  }
-
-  depends_on = [helm_release.argocd]
 }
