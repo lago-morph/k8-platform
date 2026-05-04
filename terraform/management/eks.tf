@@ -19,9 +19,6 @@ module "eks" {
   # Enable OIDC provider — required for IRSA.
   enable_irsa = true
 
-  # aws-auth managed by Terraform so it's reproducible.
-  manage_aws_auth_configmap = true
-
   eks_managed_node_groups = {
     default = {
       instance_types = [var.node_instance_type]
