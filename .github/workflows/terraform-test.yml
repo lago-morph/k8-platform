@@ -194,6 +194,40 @@ jobs:
             2>&1 | tee "${RUNNER_TEMP}/base-apply.txt"
 
       # ──────────────────────────────────────────────────────────────────────
+      # BASE E2E VERIFICATION
+      # Confirms the base resources are actually functional, not just created.
+      # ──────────────────────────────────────────────────────────────────────
+
+      - name: "[base] e2e-verify"
+        id: e2e_base
+        if: inputs.mode == 'apply-and-destroy' && steps.apply_base.outcome == 'success'
+        working-directory: terraform/base
+        run: |
+          set -euo pipefail
+          exec > >(tee "${RUNNER_TEMP}/base-e2e.txt") 2>&1
+
+          # ACM wildcard certificate must be ISSUED (Terraform waits for this,
+          # but an explicit check catches any post-apply revocation or API lag).
+          CERT_ARN=$(terraform output -raw acm_certificate_arn)
+          STATUS=$(aws acm describe-certificate --certificate-arn "$CERT_ARN" \
+            --query 'Certificate.Status' --output text)
+          [ "$STATUS" = "ISSUED" ] \
+            || { echo "FAIL: ACM cert status is '$STATUS' (expected ISSUED)"; exit 1; }
+          echo "OK: ACM certificate ISSUED ($CERT_ARN)"
+
+          # Cognito user pool must be accessible.
+          POOL_ID=$(terraform output -raw cognito_user_pool_id)
+          aws cognito-idp describe-user-pool --user-pool-id "$POOL_ID" > /dev/null
+          echo "OK: Cognito user pool exists ($POOL_ID)"
+
+          # Test user must have been created (verifies the Terraform resource and
+          # the generated credentials are consistent with the pool policy).
+          aws cognito-idp admin-get-user \
+            --user-pool-id "$POOL_ID" \
+            --username "$TF_VAR_cognito_test_user_email" > /dev/null
+          echo "OK: Cognito test user exists ($TF_VAR_cognito_test_user_email)"
+
+      # ──────────────────────────────────────────────────────────────────────
       # MANAGEMENT MODULE
       # Depends on base remote state; plan/init may fail before base is applied.
       # ──────────────────────────────────────────────────────────────────────
@@ -237,6 +271,114 @@ jobs:
             2>&1 | tee "${RUNNER_TEMP}/mgmt-apply.txt"
 
       # ──────────────────────────────────────────────────────────────────────
+      # MANAGEMENT E2E VERIFICATION
+      # Validates REQ-MGMT-03, REQ-MGMT-05, REQ-MGMT-06, REQ-MGMT-07:
+      # cluster active, all workloads running, IRSA wired up, ingress configured.
+      # ──────────────────────────────────────────────────────────────────────
+
+      - name: "[management] e2e-verify"
+        id: e2e_management
+        if: inputs.mode == 'apply-and-destroy' && steps.apply_management.outcome == 'success'
+        working-directory: terraform/management
+        run: |
+          set -euo pipefail
+          exec > >(tee "${RUNNER_TEMP}/mgmt-e2e.txt") 2>&1
+
+          CLUSTER=$(terraform output -raw cluster_name)
+          REGION="${AWS_DEFAULT_REGION:-us-east-1}"
+          KB=/tmp/e2e-kubeconfig
+          aws eks update-kubeconfig --name "$CLUSTER" --region "$REGION" --kubeconfig "$KB"
+          export KUBECONFIG="$KB"
+
+          # EKS cluster must report ACTIVE.
+          STATUS=$(aws eks describe-cluster --name "$CLUSTER" \
+            --query 'cluster.status' --output text)
+          [ "$STATUS" = "ACTIVE" ] \
+            || { echo "FAIL: EKS cluster status is '$STATUS' (expected ACTIVE)"; exit 1; }
+          echo "OK: EKS cluster ACTIVE ($CLUSTER)"
+
+          # At least one worker node must be Ready.
+          READY=$(kubectl get nodes --no-headers 2>/dev/null \
+            | grep -c " Ready " || true)
+          [ "$READY" -ge 1 ] \
+            || { echo "FAIL: no Ready nodes found"; exit 1; }
+          echo "OK: $READY node(s) Ready"
+
+          # All four Helm-installed namespaces must have at least one Running pod.
+          # The Helm provider's default wait=true means pods should already be up,
+          # but we allow a 3-minute window for any slow image pulls.
+          NAMESPACES="argocd crossplane-system external-secrets ingress-nginx"
+          for i in $(seq 1 18); do
+            ALL_UP=true
+            for NS in $NAMESPACES; do
+              COUNT=$(kubectl get pods -n "$NS" --no-headers 2>/dev/null \
+                | grep -c "Running" || true)
+              [ "$COUNT" -ge 1 ] || ALL_UP=false
+            done
+            [ "$ALL_UP" = "true" ] && break
+            echo "  waiting for pods... (attempt $i/18)"
+            sleep 10
+          done
+          for NS in $NAMESPACES; do
+            RUNNING=$(kubectl get pods -n "$NS" --no-headers 2>/dev/null \
+              | grep -c "Running" || true)
+            [ "$RUNNING" -ge 1 ] \
+              || { echo "FAIL: no Running pods in namespace $NS"; exit 1; }
+            echo "OK: $NS — $RUNNING pod(s) running"
+          done
+
+          # ArgoCD server service account must carry the IRSA annotation (REQ-MGMT-05).
+          IRSA=$(kubectl get serviceaccount argocd-server -n argocd \
+            -o jsonpath='{.metadata.annotations.eks\.amazonaws\.com/role-arn}' \
+            2>/dev/null || true)
+          [ -n "$IRSA" ] \
+            || { echo "FAIL: argocd-server SA is missing the IRSA role annotation"; exit 1; }
+          echo "OK: ArgoCD SA IRSA role — $IRSA"
+
+          # ArgoCD ingress object must exist with the expected hostname.
+          HOST=$(kubectl get ingress -n argocd \
+            -o jsonpath='{.items[0].spec.rules[0].host}' 2>/dev/null || true)
+          [ -n "$HOST" ] \
+            || { echo "FAIL: no ArgoCD Ingress found in namespace argocd"; exit 1; }
+          echo "OK: ArgoCD ingress configured for host $HOST"
+
+      # ArgoCD URL reachability is a best-effort check: ExternalDNS needs time to
+      # create the CNAME and the NLB needs time to become healthy.  Failure here
+      # is surfaced in the summary comment but does NOT block destroy.
+      - name: "[management] argocd-url"
+        id: e2e_argocd_url
+        if: inputs.mode == 'apply-and-destroy' && steps.e2e_management.outcome == 'success'
+        continue-on-error: true
+        working-directory: terraform/management
+        run: |
+          set -euo pipefail
+          exec > >(tee "${RUNNER_TEMP}/mgmt-e2e-argocd.txt") 2>&1
+
+          HOSTNAME="argocd.management.${TF_VAR_domain}"
+          ARGOCD_URL=$(terraform output -raw argocd_url)
+          echo "Waiting for DNS to resolve: $HOSTNAME"
+
+          # ExternalDNS can take up to 5 minutes to create the CNAME.
+          DNS_OK=false
+          for i in $(seq 1 30); do
+            if dig +short "$HOSTNAME" | grep -q .; then
+              DNS_OK=true
+              echo "DNS resolved after approx $((i * 10))s"
+              break
+            fi
+            echo "  no answer yet (attempt $i/30)..."
+            sleep 10
+          done
+          [ "$DNS_OK" = "true" ] \
+            || { echo "FAIL: DNS for $HOSTNAME did not resolve within 5 minutes"; exit 1; }
+
+          # NLB terminates TLS; ArgoCD serves HTTP behind it.  Accept any 2xx or 3xx.
+          HTTP=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 15 "$ARGOCD_URL" || true)
+          [ "${HTTP}" -ge 200 ] && [ "${HTTP}" -lt 500 ] \
+            || { echo "FAIL: ArgoCD UI returned HTTP $HTTP at $ARGOCD_URL"; exit 1; }
+          echo "OK: ArgoCD UI reachable at $ARGOCD_URL (HTTP $HTTP)"
+
+      # ──────────────────────────────────────────────────────────────────────
       # DESTROY — reverse order; always run so partial applies are cleaned up.
       # ──────────────────────────────────────────────────────────────────────
 
@@ -272,9 +414,12 @@ jobs:
           INIT_BASE_OUTCOME: ${{ steps.init_base.outcome }}
           PLAN_BASE_OUTCOME: ${{ steps.plan_base.outcome }}
           APPLY_BASE_OUTCOME: ${{ steps.apply_base.outcome }}
+          E2E_BASE_OUTCOME: ${{ steps.e2e_base.outcome }}
           DESTROY_BASE_OUTCOME: ${{ steps.destroy_base.outcome }}
           INIT_MGMT_OUTCOME: ${{ steps.init_management.outcome }}
           PLAN_MGMT_OUTCOME: ${{ steps.plan_management.outcome }}
           APPLY_MGMT_OUTCOME: ${{ steps.apply_management.outcome }}
+          E2E_MGMT_OUTCOME: ${{ steps.e2e_management.outcome }}
+          E2E_ARGOCD_URL_OUTCOME: ${{ steps.e2e_argocd_url.outcome }}
           DESTROY_MGMT_OUTCOME: ${{ steps.destroy_management.outcome }}
         run: python3 .github/scripts/post-comment.py

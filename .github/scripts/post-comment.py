@@ -30,25 +30,31 @@ OWNER = REPO.split("/")[0]
 MAX_LINES = 100  # truncate long outputs to keep the comment readable
 
 OUTCOMES = {
-    "init_base":    os.environ.get("INIT_BASE_OUTCOME"),
-    "plan_base":    os.environ.get("PLAN_BASE_OUTCOME"),
-    "apply_base":   os.environ.get("APPLY_BASE_OUTCOME"),
-    "destroy_base": os.environ.get("DESTROY_BASE_OUTCOME"),
-    "init_mgmt":    os.environ.get("INIT_MGMT_OUTCOME"),
-    "plan_mgmt":    os.environ.get("PLAN_MGMT_OUTCOME"),
-    "apply_mgmt":   os.environ.get("APPLY_MGMT_OUTCOME"),
-    "destroy_mgmt": os.environ.get("DESTROY_MGMT_OUTCOME"),
+    "init_base":       os.environ.get("INIT_BASE_OUTCOME"),
+    "plan_base":       os.environ.get("PLAN_BASE_OUTCOME"),
+    "apply_base":      os.environ.get("APPLY_BASE_OUTCOME"),
+    "e2e_base":        os.environ.get("E2E_BASE_OUTCOME"),
+    "destroy_base":    os.environ.get("DESTROY_BASE_OUTCOME"),
+    "init_mgmt":       os.environ.get("INIT_MGMT_OUTCOME"),
+    "plan_mgmt":       os.environ.get("PLAN_MGMT_OUTCOME"),
+    "apply_mgmt":      os.environ.get("APPLY_MGMT_OUTCOME"),
+    "e2e_mgmt":        os.environ.get("E2E_MGMT_OUTCOME"),
+    "e2e_argocd_url":  os.environ.get("E2E_ARGOCD_URL_OUTCOME"),
+    "destroy_mgmt":    os.environ.get("DESTROY_MGMT_OUTCOME"),
 }
 
 STEP_LABELS = {
-    "init_base":    "Base — Init",
-    "plan_base":    "Base — Plan",
-    "apply_base":   "Base — Apply",
-    "destroy_base": "Base — Destroy",
-    "init_mgmt":    "Management — Init",
-    "plan_mgmt":    "Management — Plan",
-    "apply_mgmt":   "Management — Apply",
-    "destroy_mgmt": "Management — Destroy",
+    "init_base":       "Base — Init",
+    "plan_base":       "Base — Plan",
+    "apply_base":      "Base — Apply",
+    "e2e_base":        "Base — E2E Verify",
+    "destroy_base":    "Base — Destroy",
+    "init_mgmt":       "Management — Init",
+    "plan_mgmt":       "Management — Plan",
+    "apply_mgmt":      "Management — Apply",
+    "e2e_mgmt":        "Management — E2E Verify",
+    "e2e_argocd_url":  "Management — ArgoCD URL",
+    "destroy_mgmt":    "Management — Destroy",
 }
 
 
@@ -105,15 +111,18 @@ def build_body() -> str:
         f"**Mode:** `{MODE}` &nbsp;|&nbsp; "
         f"[View run]({RUN_URL})\n\n",
         overall_status_line(),
-        section("Base — Init",    "base-init.txt",          OUTCOMES["init_base"]),
-        section("Base — Plan",    "base-plan.txt",          OUTCOMES["plan_base"]),
-        section("Base — Apply",   "base-apply.txt",         OUTCOMES["apply_base"]),
-        section("Management — Init",  "mgmt-init.txt",      OUTCOMES["init_mgmt"]),
-        section("Management — Plan",  "mgmt-plan.txt",      OUTCOMES["plan_mgmt"]),
+        section("Base — Init",         "base-init.txt",              OUTCOMES["init_base"]),
+        section("Base — Plan",         "base-plan.txt",              OUTCOMES["plan_base"]),
+        section("Base — Apply",        "base-apply.txt",             OUTCOMES["apply_base"]),
+        section("Base — E2E Verify",   "base-e2e.txt",               OUTCOMES["e2e_base"]),
+        section("Management — Init",   "mgmt-init.txt",              OUTCOMES["init_mgmt"]),
+        section("Management — Plan",   "mgmt-plan.txt",              OUTCOMES["plan_mgmt"]),
         section("Management — Plan (post-base apply)", "mgmt-plan-post-base.txt", None),
-        section("Management — Apply", "mgmt-apply.txt",     OUTCOMES["apply_mgmt"]),
-        section("Management — Destroy", "mgmt-destroy.txt", OUTCOMES["destroy_mgmt"]),
-        section("Base — Destroy", "base-destroy.txt",       OUTCOMES["destroy_base"]),
+        section("Management — Apply",  "mgmt-apply.txt",             OUTCOMES["apply_mgmt"]),
+        section("Management — E2E Verify",  "mgmt-e2e.txt",          OUTCOMES["e2e_mgmt"]),
+        section("Management — ArgoCD URL",  "mgmt-e2e-argocd.txt",   OUTCOMES["e2e_argocd_url"]),
+        section("Management — Destroy",     "mgmt-destroy.txt",      OUTCOMES["destroy_mgmt"]),
+        section("Base — Destroy",      "base-destroy.txt",           OUTCOMES["destroy_base"]),
     ]
     return "".join(parts)
 
