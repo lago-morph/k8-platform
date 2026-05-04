@@ -73,9 +73,15 @@ variable "argocd_version" {
 }
 
 variable "crossplane_version" {
-  description = "Crossplane Helm chart version"
+  description = "Crossplane Helm chart version (v2.x)"
   type        = string
-  default     = "1.15.1"
+  default     = "2.0.1"
+}
+
+variable "crossplane_provider_family_aws_version" {
+  description = "Upbound provider-family-aws package version (v1.x for Crossplane v2)"
+  type        = string
+  default     = "v1.12.0"
 }
 
 variable "eso_version" {

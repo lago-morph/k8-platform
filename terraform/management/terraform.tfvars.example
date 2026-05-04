@@ -20,6 +20,7 @@ availability_zones = ["us-east-1a", "us-east-1b"]
 
 # Helm chart versions — pin deliberately; bump with a commit explaining why.
 argocd_version        = "6.7.3"
-crossplane_version    = "1.15.1"
+crossplane_version                     = "2.0.1"
+crossplane_provider_family_aws_version = "v1.12.0"
 eso_version           = "0.9.13"
 ingress_nginx_version = "4.10.0"

@@ -77,12 +77,17 @@ resource "helm_release" "crossplane" {
   depends_on = [module.eks]
 }
 
-# Install the Crossplane AWS provider and its IRSA-annotated ControllerConfig
-# via kubectl after Crossplane's Helm release is up. Using local-exec avoids
-# the kubernetes Terraform provider (which requires a live API server at plan
-# time), and lets us template the IRSA role ARN directly.
+# Install the Crossplane AWS provider family using Crossplane v2 APIs.
+# DeploymentRuntimeConfig (v1beta1) replaces the v1 ControllerConfig;
+# IRSA annotation moves into spec.serviceAccountTemplate rather than
+# a top-level annotation on the config object.
+# Using local-exec avoids the kubernetes Terraform provider (which requires
+# a live API server at plan time) and lets us template the IRSA ARN directly.
 resource "terraform_data" "crossplane_aws_provider" {
-  triggers_replace = [module.irsa_crossplane.iam_role_arn]
+  triggers_replace = [
+    module.irsa_crossplane.iam_role_arn,
+    var.crossplane_provider_family_aws_version,
+  ]
 
   provisioner "local-exec" {
     command = <<-EOT
@@ -92,21 +97,25 @@ resource "terraform_data" "crossplane_aws_provider" {
         --kubeconfig /tmp/k8-platform-kubeconfig
       KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl apply -f - <<'MANIFEST'
       ---
-      apiVersion: pkg.crossplane.io/v1alpha1
-      kind: ControllerConfig
+      apiVersion: pkg.crossplane.io/v1beta1
+      kind: DeploymentRuntimeConfig
       metadata:
         name: aws-provider-config
-        annotations:
-          eks.amazonaws.com/role-arn: "${module.irsa_crossplane.iam_role_arn}"
-      spec: {}
+      spec:
+        serviceAccountTemplate:
+          metadata:
+            annotations:
+              eks.amazonaws.com/role-arn: "${module.irsa_crossplane.iam_role_arn}"
       ---
       apiVersion: pkg.crossplane.io/v1
       kind: Provider
       metadata:
-        name: provider-aws
+        name: provider-family-aws
       spec:
-        package: "xpkg.upbound.io/upbound/provider-aws:v0.46.0"
-        controllerConfigRef:
+        package: "xpkg.upbound.io/upbound/provider-family-aws:${var.crossplane_provider_family_aws_version}"
+        runtimeConfigRef:
+          apiVersion: pkg.crossplane.io/v1beta1
+          kind: DeploymentRuntimeConfig
           name: aws-provider-config
       MANIFEST
     EOT
