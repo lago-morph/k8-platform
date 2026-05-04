@@ -50,9 +50,13 @@ resource "aws_route_table" "management" {
   # Route to the NAT gateway in the same AZ.
   # We rely on the fact that the base module creates NAT GWs in the same AZ
   # order as var.availability_zones — confirmed by the base outputs.
-  route {
-    cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = local.base_nat_gateway_ids[count.index]
+  # The dynamic block is skipped when base hasn't been applied (empty list).
+  dynamic "route" {
+    for_each = local.base_applied ? [count.index] : []
+    content {
+      cidr_block     = "0.0.0.0/0"
+      nat_gateway_id = local.base_nat_gateway_ids[route.value]
+    }
   }
 
   tags = { Name = "k8-platform-mgmt-rt-${var.availability_zones[count.index]}" }
