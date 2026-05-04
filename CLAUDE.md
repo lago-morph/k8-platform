@@ -53,39 +53,71 @@ for Pluralsight sandbox resource limits.
 After every `git push` to a non-main branch, execute this loop **before
 reporting back to the user**:
 
-### 1. Find the Actions run
+### How CI results are posted
 
-Use `mcp__github__pull_request_read` to read the PR associated with the
-branch, or `mcp__github__list_commits` / `mcp__github__get_commit` to find
-the commit SHA. The commit's check runs reflect the Actions status.
+The workflow (`post-comment.py`) posts a Markdown summary as either:
+- A **PR comment** — when an open PR exists for the branch
+- A **commit comment** — when no PR exists (direct push or manual dispatch)
 
-Alternatively, use the GitHub REST API via available MCP tools to call:
+This means **check runs / commit statuses do NOT carry the result content**.
+You must read the comment directly to get plan/apply/destroy output.
+
+### 1. Find the commit SHA and determine PR status
+
+Use `mcp__github__list_commits` on the branch to get the HEAD commit SHA.
+
+Then check for an open PR:
 ```
-GET /repos/{owner}/{repo}/actions/runs?branch={branch}&per_page=1
+mcp__github__list_pull_requests  (filter by head branch)
 ```
 
-### 2. Poll until terminal
+### 2. Poll the Actions run until terminal
 
-Poll every 30 seconds until the run reaches a terminal state:
-`completed` (success), `failure`, `cancelled`, or `timed_out`.
+The workflow run status is available via the GitHub REST API. Use Bash + curl:
+```bash
+curl -s \
+  "https://api.github.com/repos/{owner}/{repo}/actions/runs?branch={branch}&per_page=1" \
+  | python3 -c "import json,sys; r=json.load(sys.stdin)['workflow_runs']; print(r[0]['status'], r[0]['conclusion'], r[0]['html_url']) if r else print('none')"
+```
+
+Poll every 30 seconds until `status` is a terminal state:
+`completed` → check `conclusion` for `success`, `failure`, `cancelled`, or `timed_out`.
 
 A run is **still in progress** when `status` is `queued` or `in_progress`.
 
-### 3. On success
+### 3. Read the result comment
+
+**If a PR exists** — use `mcp__github__pull_request_read` with `get_comments`
+to read the most recent Terraform summary comment on the PR.
+
+**If no PR exists** — fetch commit comments via Bash + curl:
+```bash
+curl -s \
+  "https://api.github.com/repos/{owner}/{repo}/commits/{sha}/comments" \
+  | python3 -c "import json,sys; comments=json.load(sys.stdin); [print(c['body']) for c in comments]"
+```
+Note: this requires the repo to be public, or set a `GITHUB_TOKEN` env var
+(`-H "Authorization: Bearer $GITHUB_TOKEN"`). The repo is public, so
+unauthenticated reads work.
+
+### 4. On success
 
 Report back with:
 - One sentence confirming success
 - The Actions run URL
-- Any notable plan output from the comment posted on the PR/commit
+- Key output from the Terraform summary comment (overall status line +
+  any plan/apply highlights)
 
-### 4. On failure — attempt autonomous fix
+### 5. On failure — attempt autonomous fix
 
-a. Fetch the workflow run logs. The run logs are available at:
+a. Fetch the workflow run logs via Bash + curl:
+   ```bash
+   curl -s \
+     "https://api.github.com/repos/{owner}/{repo}/actions/runs/{run_id}/logs" \
+     -L -o /tmp/run-logs.zip && unzip -p /tmp/run-logs.zip | head -200
    ```
-   GET /repos/{owner}/{repo}/actions/runs/{run_id}/logs
-   ```
-   If this returns a redirect to a zip URL, fetch and read the relevant
-   log file(s) from the zip.
+   If there are multiple log files in the zip, unzip selectively to find
+   the failing step's log.
 
 b. Identify the root cause. Common failure categories:
    - **Missing secret** — variable is empty, `terraform init` fails with
@@ -105,7 +137,7 @@ d. Commit with a message that references the failure:
 
 e. Push and return to step 1.
 
-### 5. After 3 consecutive failed fix attempts — stop
+### 6. After 3 consecutive failed fix attempts — stop
 
 Report to the user with:
 - The exact error text from the most recent log
