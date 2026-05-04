@@ -27,12 +27,12 @@ both succeed regardless of whether base has been applied first.
 
 ---
 
-## What Was Done This Session (2026-05-04)
+## What Was Done — 2026-05-04 (Terraform fixes + Crossplane v2)
 
 1. **Investigated real CI run** — a `workflow_dispatch apply-and-destroy` run on
    `main` was missed because CI results are posted as commit comments (not PR
-   comments or check runs) when no PR exists. Updated CLAUDE.md CI loop with
-   explicit two-path instructions and `curl` commands for reading commit comments.
+   comments or check runs) when no PR exists. Updated `terraform-ci-watch` skill
+   with explicit two-path instructions and `curl` commands for reading commit comments.
 
 2. **Fixed management module Terraform errors** found in the CI apply run:
    - `manage_aws_auth_configmap = true` removed (no longer valid in EKS module v20+)
@@ -42,8 +42,7 @@ both succeed regardless of whether base has been applied first.
    - Removed `kubernetes` provider entirely — replaced with `terraform_data`
      local-exec for Crossplane manifests; ArgoCD ingress moved to Helm values
 
-3. **Upgraded to Crossplane v2 APIs** — the previous code used v1 APIs that were
-   removed in Crossplane v2:
+3. **Upgraded to Crossplane v2 APIs** — the previous code used v1 APIs removed in v2:
    - `ControllerConfig` (v1alpha1) → `DeploymentRuntimeConfig` (v1beta1)
    - `controllerConfigRef` → `runtimeConfigRef` (with explicit apiVersion/kind)
    - Provider package: `upbound/provider-aws:v0.46.0` → `upbound/provider-family-aws:v1.12.0`
@@ -55,41 +54,48 @@ both succeed regardless of whether base has been applied first.
 
 ---
 
-## Previous Session Work (2026-05-03)
+## What Was Done — 2026-05-03 second session (docs cleanup + skills)
 
-1. **Created the entire repo structure** — directory skeleton, all placeholder
-   `.gitkeep` files, README, CLAUDE.md agent instructions.
+Branch: `claude/plan-and-cleanup-docs-w7OKB`. Implementation phases 1–4 of
+the plan in `/root/.claude/plans/we-need-to-plan-vectorized-moore.md`.
 
-2. **Scaffolded `terraform/base/`** (Iteration 0):
-   - VPC with 2 AZs, public/private subnets, IGW, NAT gateways
-   - Route53 dual-mode: creates a new zone for real deployments, or uses a
-     pre-existing zone (Pluralsight sandbox mode) when `route53_zone_id` is set
-   - ACM wildcard certificate (`*.{domain}`) with Route53 DNS-01 validation
-   - Cognito user pool, app client (for Keycloak OIDC federation), test user
+1. **Slimmed `CLAUDE.md`** — secrets table reduced from 9 rows to 3 (only
+   the actually-required GitHub secrets), CI Loop section (~65 lines)
+   replaced with a 4-line pointer to the new skills. Net 168 → 110 lines.
 
-3. **Scaffolded `terraform/management/`** (Iteration 1):
-   - EKS cluster (`t3.medium` × 2 nodes) via `terraform-aws-modules/eks`
-   - IRSA roles for ArgoCD, Crossplane, ESO, ExternalDNS
-   - Helm installs: ingress-nginx (NLB + ACM TLS termination), ESO, Crossplane
-     (with AWS provider), ArgoCD
-   - ArgoCD Ingress with ExternalDNS annotation
+2. **Reorganized `ai/`**:
+   - `ai/testing-overview.md` → `ai/archive/` (superseded by skill)
+   - `ai/BLOG-OVERVIEW.md`, `ai/BLOG-OUTLINES.md` → `ai/blog/`
+   - Added `ai/archive/README.md` and `ai/blog/README.md`
+   - Kept in place: `REQUIREMENTS.md`, `DESIGN.md`, `handoff.md`,
+     `testing-guidelines.md`
 
-4. **Set up CI** (`.github/workflows/terraform-test.yml`):
-   - Triggers on push to non-main branches and `workflow_dispatch`
-   - Bootstrap step creates S3/DynamoDB state backend if absent
-   - Auto-discovers Route53 zone and domain from the sandbox account
-   - Auto-generates Cognito test credentials (no GitHub secrets needed for these)
-   - Posts collapsible plan/apply/destroy output as PR/commit comment
-   - Shows overall ✅/❌ status and per-step outcomes in the comment
+3. **Added a `SessionEnd` hook** at `.claude/settings.json` that copies
+   each session's transcript to `logs/<session-id>.jsonl` automatically.
+   The `.gitignore` rule on `*.jsonl` is preserved — files land untracked
+   until a human reviews and `git add -f`s them. See `logs/README.md`.
 
-5. **Fixed bugs found during CI runs**:
-   - `issues: write` permission needed for PR comments
-   - `set -o pipefail` on all `command | tee` steps
-   - Cognito variables default to `""` so plan doesn't fail without secrets
-   - HCL syntax: semicolons invalid in single-line `set` blocks in `helm_release`
+4. **Created `terraform-ci-watch` skill** at
+   `.claude/skills/terraform-ci-watch/`. Reusable across other Terraform-
+   on-AWS-via-GitHub-Actions projects. Drives the post-push CI loop:
+   locate run, poll, fetch logs on failure, classify, fix, re-push,
+   3-strike escalation. Reference docs split out:
+   `failure-taxonomy.md`, `log-fetching.md`, `escalation-template.md`.
 
-6. **Documented testing approach** in `ai/testing-guidelines.md` and
-   `ai/testing-overview.md`.
+5. **Created `crossplane-claim-verify` skill** at
+   `.claude/skills/crossplane-claim-verify/`. Independent of the
+   terraform skill; use whichever fits the change. Drives the
+   post-claim-apply loop: wait for `Synced`/`Ready`, descend into managed
+   resources, verify the actual cloud resource out-of-band, classify and
+   fix, 3-strike escalation. Reference docs: `readiness-conditions.md`,
+   `failure-taxonomy.md`, `cloud-verification.md`,
+   `escalation-template.md`.
+
+### Iteration code state — unchanged from first session
+
+Iterations 0 and 1 are still code-complete and CI-plan-passing but not
+yet apply-tested. That's still the immediate next milestone (Phase 5 in
+the plan).
 
 ### Only 3 GitHub secrets are required
 
@@ -108,26 +114,34 @@ or generated at runtime.
 
 **Run a full `apply-and-destroy` cycle** to validate management module
 end-to-end (base apply+destroy was confirmed on 2026-05-04; management was
-blocked by EKS/Crossplane bugs which are now fixed).
+blocked by EKS/Crossplane bugs, now fixed).
 
-1. Merge `claude/review-handoff-actions-TmBhJ` to `main` (or run directly from it)
-2. Start a fresh Pluralsight AWS sandbox session
-3. Copy the three AWS credentials into GitHub repository secrets
-4. Go to **Actions → Terraform Test → Run workflow**
-5. Select the branch, mode `apply-and-destroy`
-6. Watch for the commit comment — it should show ✅ for all steps
+1. Start a fresh Pluralsight AWS sandbox session
+2. Copy the three AWS credentials into GitHub repository secrets
+3. Go to **Actions → Terraform Test → Run workflow**
+4. Select `main`, mode `apply-and-destroy`
+5. Use the `terraform-ci-watch` skill to follow the run
 
-Expected duration: ~30 minutes (ACM cert 1–3 min, EKS cluster ~15 min,
-ArgoCD+Crossplane Helm installs ~5 min, destroy ~10 min).
+After apply succeeds (before destroy runs), verify intent — not just
+"no Terraform errors":
+- ACM cert status: `ISSUED`
+- EKS cluster status: `ACTIVE`, 2 nodes `Ready`
+- ArgoCD pods running with IRSA annotation
+- ESO and Crossplane installed in their namespaces
+- ArgoCD UI reachable at `argocd.management.<domain>` over HTTPS
 
-**Known remaining risks for the apply:**
-- Crossplane `DeploymentRuntimeConfig` (v1beta1) requires Crossplane v2 to be
-  fully up before the CRD is available — `terraform_data` depends_on handles
-  ordering, but watch for timing issues.
-- ArgoCD ingress via Helm `server.ingress.*` values — confirm ExternalDNS
-  creates the DNS record correctly after apply.
+**Known risks:**
+- Crossplane `DeploymentRuntimeConfig` (v1beta1) CRD must be registered
+  before `terraform_data` applies the Provider — `depends_on` handles this
+  but watch for timing issues.
+- ArgoCD ingress via Helm `server.ingress.*` — confirm ExternalDNS creates
+  the DNS CNAME correctly.
 
-If the apply fails, the CI loop in CLAUDE.md defines how to diagnose and fix.
+Expected duration: ~25 minutes (ACM cert validation 1–3 min, EKS cluster
+creation ~15 min, ArgoCD Helm install ~3 min, destroy ~10 min).
+
+If the apply fails, the `terraform-ci-watch` skill drives the diagnose-
+and-fix loop (3-strike escalation).
 
 ---
 
