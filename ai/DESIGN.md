@@ -132,6 +132,38 @@ Once the management cluster exists, using Terraform to provision additional clus
 
 *Why:* This is the OIDC/JWT pattern that service meshes, API gateways, and modern applications all use. Keycloak issuing JWTs that workloads can verify against Keycloak's JWKS endpoint is a real pattern that works without a service mesh.
 
+**Kubernetes API server federated to Keycloak** — human `kubectl` access is authenticated by Keycloak, not by AWS IAM.
+
+*Why:* Real platform teams don't hand out IAM users so engineers can run `kubectl`. They federate the API server to the same identity provider that powers everything else, so leaving the company revokes cluster access in one place. EKS supports this through `aws_eks_identity_provider_config`, which registers an external OIDC issuer with the API server.
+
+*Two distinct OIDC roles to keep straight:*
+- **EKS cluster as OIDC issuer** — the cluster signs ServiceAccount JWTs that AWS IAM trusts. This is how IRSA works. Unrelated to Keycloak.
+- **EKS API server as OIDC client** — the API server validates JWTs issued by Keycloak. This is how human users authenticate. Unrelated to IRSA.
+
+*Authentication flow for a human user:*
+
+```
+kubectl ──(oidc-login plugin)──► browser ──► Keycloak ──► Cognito ──► back to Keycloak
+                                                                          │
+                                                              issues ID token (JWT)
+                                                                          │
+kubectl ◄──────────────────────────────────────────────────────────────────┘
+   │
+   │  Authorization: Bearer <keycloak-jwt>
+   ▼
+EKS API server ──► fetches JWKS at https://auth.platform.<domain>/realms/platform/protocol/openid-connect/certs
+              ──► verifies signature; extracts `preferred_username` and `groups`
+              ──► hands user + (prefixed) groups to k8s RBAC
+```
+
+The API server never talks to Cognito directly — Keycloak is the only identity provider it knows about. Cognito sits behind Keycloak as the user store, consistent with ADR-004.
+
+*Why Cognito groups, not Keycloak groups:* REQ-AUTH-03 says no user management in Keycloak, and group membership is user management. Cognito groups are mapped through Keycloak's Cognito IdP attribute mapper into a `groups` claim on the issued JWT. Keycloak shapes the token; it does not own the data.
+
+*Why a username/group prefix (`kc:`):* EKS supports exactly one external OIDC provider per cluster, but IAM-based authentication remains active alongside it as a break-glass path. Prefixing keeps Keycloak-derived identities in their own namespace so a Keycloak group named `admins` can never collide with an IAM-mapped principal named `admins`.
+
+*Why IAM stays as break-glass:* Keycloak runs on the platform cluster. If Keycloak is broken, you still need a way to fix it. EKS Access Entries provide that path. It is intentional, not a workaround.
+
 ### 2.6 Observability
 
 **Prometheus + Grafana + Loki** — central observability stack on platform services cluster.
@@ -282,18 +314,23 @@ Each iteration has a defined end state — a thing you can use or demonstrate �
 
 ### Iteration 5: Authentication
 
-**What:** Keycloak on platform cluster; SSO wired to Cognito; ArgoCD and Grafana use Keycloak.
+**What:** Keycloak on platform cluster; SSO wired to Cognito; ArgoCD and Grafana use Keycloak; `kubectl` access to all clusters federated to Keycloak.
 
 **Components:**
 - Keycloak via Helm on platform cluster, accessible at `auth.platform.<domain>` with TLS
-- Keycloak realm configured with Cognito as OIDC identity provider
+- Keycloak realm `platform` configured with Cognito as OIDC identity provider, including an attribute mapper that lifts the Cognito group claim into a `groups` claim on issued JWTs
 - ArgoCD configured to use Keycloak OIDC for SSO
 - Grafana configured to use Keycloak OIDC for SSO
 - `PlatformSecret` claims used for all Keycloak client secrets
+- Keycloak `kubernetes` OIDC client (public, PKCE) for `kubectl` users — group-membership mapper enabled
+- `aws_eks_identity_provider_config` on management and platform clusters pointing at the Keycloak `platform` realm, with username claim `preferred_username`, groups claim `groups`, and prefix `kc:`
+- ClusterRoleBindings under `clusters/<cluster>/rbac/` that bind `kc:k8s-admins` to `cluster-admin` and `kc:k8s-viewers` to `view`, deployed via ArgoCD
+- Cognito groups `k8s-admins` and `k8s-viewers` created in the base environment with at least one test user assigned to each
+- `docs/operations.md` updated with the `oidc-login` krew plugin install + kubeconfig snippet
 
-**End state:** Log into ArgoCD and Grafana using a Cognito user. No separate ArgoCD or Grafana passwords needed.
+**End state:** Log into ArgoCD and Grafana using a Cognito user. Run `kubectl get pods` from a workstation that has only the `oidc-login` plugin installed and a kubeconfig pointing at Keycloak — no AWS credentials, no IAM principal mapping. Removing the user from their Cognito group revokes cluster access on the next token refresh.
 
-**Blog angle:** "SSO for platform services — Keycloak as the identity broker and why you don't want to manage users yourself."
+**Blog angle:** "SSO for platform services *and* the API server — federating EKS to Keycloak and why you should never hand out IAM users for kubectl."
 
 ### Iteration 6: First Workload Cluster
 
@@ -400,3 +437,23 @@ The blog series should be explicit about this boundary: "here's the floor, not t
 **Context:** The previous project (`lago-morph/ai-k8s`) used a local kind cluster running Crossplane to provision the EKS management cluster. This added complexity (kind cluster lifecycle, kubeconfig management, Crossplane on a throwaway cluster) without adding value. Terraform does the same job more reliably with better state management and no local cluster to manage.
 
 **Consequences:** Terraform is now required as a local tool. The "everything is Kubernetes" purity is broken for the management cluster — which is the right trade-off.
+
+### ADR-007: EKS API server federates to Keycloak; Cognito stays behind Keycloak; IAM is break-glass
+
+**Decision:** Configure each EKS cluster's API server with a single external OIDC provider — the Keycloak `platform` realm — for human `kubectl` authentication. Do not configure Cognito as an OIDC provider on the API server directly. Keep AWS IAM authentication enabled as a break-glass admin path. Source group membership from Cognito and pass it through Keycloak as a claim mapper; do not store group state in Keycloak.
+
+**Context:** EKS supports at most one external OIDC identity provider per cluster, in addition to the always-on AWS IAM path. Two design questions follow: which provider gets that slot, and where do groups live?
+
+For the provider slot, the choice is Keycloak vs Cognito directly. ArgoCD, Grafana, and any future workload that needs SSO already point at Keycloak (ADR-004). If the API server pointed at Cognito, every component would need to know about both IdPs, the `client_id` audiences would multiply, and adding a future upstream IdP (Active Directory, Okta) would require touching every cluster's API server config. Pointing the API server at Keycloak means there is one OIDC issuer the platform cares about, regardless of what sits behind it.
+
+For groups, the choice is Cognito vs Keycloak. REQ-AUTH-03 says user management does not live in Keycloak, and group assignment is user management. Cognito already supports groups, and Keycloak's IdP configuration includes attribute mappers that can lift a claim from the upstream token into the issued token. So the "right" answer falls out of existing constraints.
+
+For IAM, removing it would mean a broken Keycloak takes the cluster offline for administration. EKS Access Entries are cheap to keep around and provide the only realistic recovery path. The cost of leaving them in place is one more thing to audit; the cost of removing them is occasional total loss of cluster access.
+
+**Consequences:**
+- Cognito group state must be created in Iteration 0 (the base environment) for the federation to have anything to pass through. The base module gains a `cognito-groups.tf` or similar.
+- Keycloak realm configuration is more involved: Cognito IdP setup, attribute mappers, the `kubernetes` public client with PKCE, a Group Membership mapper on that client.
+- Username and group prefixes (`kc:`) are mandatory to keep Keycloak-derived identities from colliding with IAM-mapped ones in RBAC bindings.
+- The kubectl client side requires the `oidc-login` krew plugin. This is one more local tool for operators to install. Documented in `docs/operations.md`.
+- API-server OIDC config is part of cluster-bring-up but cannot be wired until Keycloak is healthy. Iteration 5 takes the dependency. Earlier iterations rely on IAM for `kubectl`, which is fine.
+- Token refresh latency (typically minutes) bounds how fast removing a user from a Cognito group actually revokes cluster access. Acceptable for a learning platform; would warrant token lifetime tuning in production.
