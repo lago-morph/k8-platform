@@ -5,7 +5,7 @@ the current state of the codebase, and the next concrete steps.
 
 ---
 
-## Current State (as of 2026-05-04)
+## Current State (as of 2026-05-10)
 
 ### Iteration progress
 
@@ -16,7 +16,7 @@ the current state of the codebase, and the next concrete steps.
 | 2 | Crossplane foundations (PlatformSecret XRD) | Not started |
 | 3 | Platform services cluster | Not started |
 | 4 | Observability (Grafana, Prometheus) | Not started |
-| 5 | Authentication (Keycloak → Cognito SSO) | Not started |
+| 5 | Authentication (Keycloak → Cognito SSO; EKS API → Keycloak) | Spec updated, not started |
 | 6 | First workload cluster | Not started |
 
 ### What "plan passes" means
@@ -24,6 +24,47 @@ the current state of the codebase, and the next concrete steps.
 The GitHub Actions CI workflow runs `terraform plan` on every push. Both modules
 now plan cleanly against a real sandbox AWS account — base and management init+plan
 both succeed regardless of whether base has been applied first.
+
+---
+
+## What Was Done — 2026-05-10 (Iteration 5 spec extension: kubectl via Keycloak)
+
+Branch: `claude/keycloak-k8s-integration-LurOa`. Spec-only change; no Terraform
+or manifest work yet.
+
+1. **Untangled the two OIDC roles in EKS** — the cluster as OIDC *issuer* (IRSA,
+   already in scope) versus the API server as OIDC *client* (the new bit).
+   Documented this distinction in `DESIGN.md` §2.5 so it is not re-confused later.
+
+2. **Added the kubectl-via-Keycloak federation flow** to `DESIGN.md` §2.5,
+   including the diagram, the "Keycloak is the only IdP EKS sees" stance, and
+   the rationale for username/group prefixes (`kc:`).
+
+3. **Extended Iteration 5 deliverables** in `DESIGN.md` §4 to include
+   `aws_eks_identity_provider_config`, the Keycloak `kubernetes` public/PKCE
+   client, the Cognito → Keycloak group-claim mapper, and ClusterRoleBindings
+   for `kc:k8s-admins` / `kc:k8s-viewers`.
+
+4. **Added REQ-AUTH-07..10** in `REQUIREMENTS.md`:
+   - 07: associated OIDC config on the API server pointing at Keycloak
+   - 08: groups originate in Cognito, mapped through Keycloak
+   - 09: ClusterRoleBindings under `clusters/<cluster>/`; IAM stays as break-glass
+   - 10: documented kubectl/`oidc-login` setup
+
+5. **Added ADR-007** "EKS API server federates to Keycloak; Cognito stays
+   behind Keycloak; IAM is break-glass" with the full reasoning chain
+   (provider slot choice, group source choice, IAM-as-recovery, token
+   refresh latency caveat).
+
+**Decisions captured this session:**
+- Group source: Cognito groups, passed through Keycloak (preserves ADR-004
+  and REQ-AUTH-03).
+- Sequencing: extend Iteration 5 rather than splitting into 5b — auth lights
+  up as one coherent milestone.
+
+**Immediate next step:** when Iteration 5 begins, the base module needs Cognito
+groups (`k8s-admins`, `k8s-viewers`) added before Keycloak realm work can be
+tested end-to-end.
 
 ---
 

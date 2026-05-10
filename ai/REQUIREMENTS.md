@@ -142,6 +142,14 @@ REQ-AUTH-05: Grafana must use Keycloak for SSO.
 
 REQ-AUTH-06: Keycloak must be accessible at `auth.platform.<domain>` with valid TLS.
 
+REQ-AUTH-07: Each EKS cluster that supports human kubectl access must have an associated OIDC identity provider configuration (`aws_eks_identity_provider_config`) pointing at the Keycloak `platform` realm. The `kubernetes` audience must be a public OIDC client in Keycloak with PKCE enabled (no client secret). The API server must extract the username from the `preferred_username` claim and groups from the `groups` claim, with both prefixed (e.g. `kc:`) so Keycloak-issued identities cannot collide with IAM-mapped identities.
+
+REQ-AUTH-08: Group membership presented to Kubernetes must originate in Cognito. Keycloak's Cognito IdP configuration must include an attribute mapper that copies the Cognito group claim into a `groups` claim on the Keycloak-issued ID token. No group state may be created or maintained inside Keycloak; Keycloak's only role is brokering and token shaping.
+
+REQ-AUTH-09: ClusterRoleBindings must exist that bind the prefixed Keycloak groups (e.g. `kc:k8s-admins`, `kc:k8s-viewers`) to standard cluster roles. These bindings must be managed as Kubernetes manifests under `clusters/<cluster>/` and deployed via ArgoCD. AWS IAM access via EKS Access Entries must remain available as a break-glass admin path independent of Keycloak.
+
+REQ-AUTH-10: The repository must document the kubectl client setup for Keycloak-authenticated access (the `oidc-login` krew plugin and the kubeconfig stanza needed) so that a new operator can authenticate without IAM credentials.
+
 ### 4.7 First Workload Cluster (Iteration 6)
 
 REQ-WL-01: A workload cluster must be provisionable by creating a Crossplane claim against the base cluster XRD with no manual AWS steps.
