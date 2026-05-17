@@ -51,6 +51,9 @@ k8-platform/
 │   ├── archive/                     # Superseded docs (e.g. testing-overview.md)
 │   └── blog/                        # Blog-post outlines for the iteration series
 ├── docs/
+│   ├── decisions/                   # empty placeholder for ADRs
+│   ├── diagrams/                    # empty placeholder
+│   ├── iterations/                  # empty placeholder
 │   └── operations.md                # User-facing runbook
 ├── logs/
 │   └── README.md                    # Explains transcript capture (*.jsonl gitignored)
@@ -311,7 +314,7 @@ The point: **the workflow's bootstrap-then-discover pattern means a fresh Plural
 
 ## 5. Branch policy & PR flow (observed reality)
 
-`CLAUDE.md` says "Never commit to `main` directly." The merged PR history confirms this — every change since #1 has gone through a branch + PR.
+`CLAUDE.md` says "Never commit to `main` directly." The merged PR history is consistent with this for nearly all work; the two known exceptions are direct commits `6ed86c8` (`Add draft blog information`) and `9e68e2b` (`changed k8s version from 1.29 to 1.35`, 2026-05-04), both small and predating the current branch-policy enforcement habit.
 
 ### Branch-prefix -> behavior map
 
@@ -541,7 +544,7 @@ On session end: copies the transcript file to `logs/<session-id>.jsonl`. [`logs/
 [`ai/handoff.md`](../ai/handoff.md) is the **single source of truth a new session reads first**. It contains:
 
 - A **Current State** section dated to the most recent session (currently `2026-05-10`).
-- An **Iteration progress** table with a Status column (✅ / 🟡 / not started) per iteration 0–6.
+- An **Iteration progress** table with a Status column (✅ for done, "Not started" otherwise) per iteration 0–6.
 - A reverse-chronological list of "What Was Done — YYYY-MM-DD" entries.
 - An **Immediate Next Step** section with exact commands.
 - A **Key Design Decisions (summary)** table cross-referencing `ai/DESIGN.md`.
