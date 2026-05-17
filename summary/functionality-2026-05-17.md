@@ -26,7 +26,7 @@ This document describes the **process side** of the repo (workflows, branches, a
 k8-platform/
 ├── CLAUDE.md                        # Operating instructions for Claude (branch policy, secrets, skills)
 ├── README.md                        # Human-facing intro + iteration table
-├── .gitignore                       # Ignores *.jsonl (session transcripts) etc.
+├── .gitignore                       # Ignores .claude/settings.local.json and .claude/worktrees/
 ├── .github/
 │   ├── workflows/
 │   │   └── terraform-test.yml       # THE one CI workflow (push test/**, workflow_dispatch)
@@ -116,7 +116,7 @@ The `test/` prefix is the only one that fires CI automatically. This was a delib
 
 ## 3. The CI workflow in depth
 
-File: [`.github/workflows/terraform-test.yml`](../.github/workflows/terraform-test.yml) (426 lines).
+File: [`.github/workflows/terraform-test.yml`](../.github/workflows/terraform-test.yml) (425 lines).
 
 ### 3.1 Trigger surface (lines 3–18)
 
@@ -354,7 +354,7 @@ Issue #2 is the canonical example of the loop: human reports a CI failure → br
 
 ## 7. PR timeline — every merged PR
 
-PR numbers `#2`, `#4`'s pair etc. are NOT missing — `#2` is the one issue (PRs and issues share the number namespace) and there's no PR `#4` in the table because that number went to an issue or unreviewed superseded PR (`#4` was actually a precursor to `#5`, both touched `chore/docs-handoff-and-runbook`, see below).
+`#2` does not appear in the PR table — that number belongs to the single closed Issue (PRs and Issues share the GitHub number namespace). PRs #4 and #5 both shipped on the same `chore/docs-handoff-and-runbook` branch within minutes of each other; both are listed below.
 
 | #  | Title                                                                | Merged           | Purpose (one line)                                                                                                                |
 |----|----------------------------------------------------------------------|------------------|-----------------------------------------------------------------------------------------------------------------------------------|
@@ -532,7 +532,7 @@ These are **generalized authoring/orchestration patterns**, not k8-platform-spec
 }
 ```
 
-On session end: copies the transcript file to `logs/<session-id>.jsonl`. The repo `.gitignore` ignores `*.jsonl` so transcripts land untracked — humans review them for secrets and `git add -f` selectively. [`logs/README.md`](../logs/README.md) explains the workflow.
+On session end: copies the transcript file to `logs/<session-id>.jsonl`. [`logs/.gitignore`](../logs/.gitignore) ignores `*.jsonl` (scoped to the `logs/` directory) so transcripts land untracked — humans review them for secrets and `git add -f` selectively. [`logs/README.md`](../logs/README.md) explains the workflow.
 
 ---
 
