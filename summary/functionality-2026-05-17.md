@@ -75,7 +75,7 @@ There is **no `.github/ISSUE_TEMPLATE/`** directory, **no PR template**, **no De
 
 ```mermaid
 flowchart TD
-    A[Developer / Claude<br/>creates feat|fix|chore|test branch] --> B[Edit files locally<br/>or in agent worktree]
+    A[Developer / Claude<br/>creates feat/fix/chore/test branch] --> B[Edit files locally<br/>or in agent worktree]
     B --> C{Branch prefix?}
     C -- "test/**" --> D[git push]
     C -- "feat/**, fix/**, chore/**" --> D
@@ -619,7 +619,7 @@ flowchart TB
     end
 
     subgraph Loop["The agent loop"]
-        Branch[Create branch<br/>feat|fix|chore|test|claude]
+        Branch[Create branch<br/>feat/fix/chore/test/claude]
         Edit[Edit files]
         Push[git push]
         CI{Branch == test/**?}
