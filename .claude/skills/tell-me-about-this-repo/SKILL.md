@@ -37,15 +37,47 @@ Implements [`lago-morph/idea-pipeline#16`](https://github.com/lago-morph/idea-pi
 
 ## Routing
 
-Classify the user's intent before dispatching:
+Two things determine what happens: (a) what the user asked for, and (b) whether the OTHER kind of report already exists for the current commit hash. The combination decides both dispatch AND whether the consistency review loop runs.
 
-| User intent | `MODE` | Dispatch |
-|---|---|---|
-| Generic — "summary of this repo", "tell me about this repo" | `both` | Two subagents in parallel, one per kind |
-| Functionality-only — "what does this repo do", "what is this repo" | `functionality_only` | One subagent (functionality) |
-| Status-only — "where are we", "what's left", "project status" | `status_only` | One subagent (status) |
+```mermaid
+flowchart TD
+    U[User intent] --> C{Classify}
+    C -->|generic summary| Both[MODE = both]
+    C -->|functionality only| FO[MODE = functionality_only]
+    C -->|status only| SO[MODE = status_only]
+
+    Both --> DB[Dispatch BOTH subagents in parallel<br/>worktree-isolated]
+    FO --> DF[Dispatch functionality subagent<br/>worktree-isolated]
+    SO --> DS[Dispatch status subagent<br/>worktree-isolated]
+
+    DB --> LR[Run consistency review loop<br/>both same-hash files now exist]
+
+    DF --> QS{Did status-HASH.md<br/>already exist?}
+    QS -->|yes| LR
+    QS -->|no| Skip1[Skip loop<br/>note in run-log]
+
+    DS --> QF{Did functionality-HASH.md<br/>already exist?}
+    QF -->|yes| LR
+    QF -->|no| Skip2[Skip loop<br/>note in run-log]
+
+    LR --> P[Render-verify, commit, PR]
+    Skip1 --> P
+    Skip2 --> P
+```
+
+Decision table:
+
+| User intent | `MODE` | Subagent(s) dispatched | Review loop runs? |
+|---|---|---|---|
+| Generic — "summary of this repo", "tell me about this repo" | `both` | functionality + status in parallel | **Always** (both same-hash files now exist) |
+| Functionality-only, status doesn't yet exist for this hash | `functionality_only` | functionality only | No (skip; note in run-log) |
+| Functionality-only, **status already exists** for this hash | `functionality_only` | functionality only | **Yes** — both same-hash files now exist |
+| Status-only, functionality doesn't yet exist for this hash | `status_only` | status only | No (skip; note in run-log) |
+| Status-only, **functionality already exists** for this hash | `status_only` | status only | **Yes** — both same-hash files now exist |
 
 If the phrasing is ambiguous between two interpretations, ask once via `AskUserQuestion`. Do not guess.
+
+The detection that determines which row applies happens in **Step 2** (pre-existing same-hash artifacts). The loop itself runs in **Step 5**.
 
 ## Workflow
 
