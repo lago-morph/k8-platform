@@ -8,18 +8,29 @@ on:
       - "test/**"
   workflow_dispatch:
     inputs:
-      mode:
-        description: "Run mode"
+      phase:
+        description: "Which module to act on"
         required: true
-        default: plan-only
+        default: base
         type: choice
         options:
-          - plan-only
-          - apply-and-destroy
+          - base
+          - management
+      action:
+        description: "What to do with that module"
+        required: true
+        default: plan
+        type: choice
+        options:
+          - plan
+          - apply
+          - verify
+          - apply-and-verify
+          - destroy
 
-# One run per branch at a time; cancel in-flight runs on new push.
+# One run per branch+phase at a time; cancel in-flight runs on new push to same.
 concurrency:
-  group: terraform-${{ github.ref }}
+  group: terraform-${{ github.ref }}-${{ inputs.phase || 'push' }}
   cancel-in-progress: true
 
 env:
@@ -34,7 +45,7 @@ env:
 
 jobs:
   terraform:
-    name: Terraform (${{ inputs.mode || 'plan-only' }})
+    name: Terraform (${{ inputs.phase || 'push' }} / ${{ inputs.action || 'plan' }})
     runs-on: ubuntu-latest
 
     permissions:
@@ -53,6 +64,65 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "~1.6"
+
+      # ──────────────────────────────────────────────────────────────────────
+      # Compute per-step gates from (event, phase, action). Push events run
+      # plan-only on both modules; dispatch events run exactly the actions
+      # selected, on exactly the chosen phase. See ai/testing-guidelines.md §6.
+      # ──────────────────────────────────────────────────────────────────────
+
+      - name: Compute gates
+        id: gates
+        run: |
+          set -euo pipefail
+          EVENT="${{ github.event_name }}"
+          PHASE="${{ inputs.phase }}"
+          ACTION="${{ inputs.action }}"
+
+          bi=false; bp=false; ba=false; bv=false; bd=false
+          mi=false; mp=false; ma=false; mv=false; md=false
+
+          if [ "$EVENT" = "push" ]; then
+            bi=true; bp=true; mi=true; mp=true
+          else
+            case "$PHASE" in
+              base)
+                bi=true
+                case "$ACTION" in
+                  plan)             bp=true ;;
+                  apply)            bp=true; ba=true ;;
+                  verify)           bv=true ;;
+                  apply-and-verify) bp=true; ba=true; bv=true ;;
+                  destroy)          bd=true ;;
+                esac
+                ;;
+              management)
+                mi=true
+                case "$ACTION" in
+                  plan)             mp=true ;;
+                  apply)            mp=true; ma=true ;;
+                  verify)           mv=true ;;
+                  apply-and-verify) mp=true; ma=true; mv=true ;;
+                  destroy)          md=true ;;
+                esac
+                ;;
+            esac
+          fi
+
+          {
+            echo "base_init=$bi"
+            echo "base_plan=$bp"
+            echo "base_apply=$ba"
+            echo "base_verify=$bv"
+            echo "base_destroy=$bd"
+            echo "mgmt_init=$mi"
+            echo "mgmt_plan=$mp"
+            echo "mgmt_apply=$ma"
+            echo "mgmt_verify=$mv"
+            echo "mgmt_destroy=$md"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Gates: base[i=$bi p=$bp a=$ba v=$bv d=$bd] mgmt[i=$mi p=$mp a=$ma v=$mv d=$md]"
 
       # ──────────────────────────────────────────────────────────────────────
       # BOOTSTRAP — runs once per job; sets up the S3/DynamoDB backend and
@@ -164,7 +234,7 @@ jobs:
 
       - name: "[base] init"
         id: init_base
-        if: steps.modules.outputs.has_base == 'true'
+        if: steps.modules.outputs.has_base == 'true' && steps.gates.outputs.base_init == 'true'
         working-directory: terraform/base
         run: |
           set -o pipefail
@@ -177,7 +247,7 @@ jobs:
 
       - name: "[base] plan"
         id: plan_base
-        if: steps.init_base.outcome == 'success'
+        if: steps.gates.outputs.base_plan == 'true' && steps.init_base.outcome == 'success'
         working-directory: terraform/base
         run: |
           set -o pipefail
@@ -186,7 +256,7 @@ jobs:
 
       - name: "[base] apply"
         id: apply_base
-        if: inputs.mode == 'apply-and-destroy' && steps.plan_base.outcome == 'success'
+        if: steps.gates.outputs.base_apply == 'true' && steps.plan_base.outcome == 'success'
         working-directory: terraform/base
         run: |
           set -o pipefail
@@ -196,11 +266,15 @@ jobs:
       # ──────────────────────────────────────────────────────────────────────
       # BASE E2E VERIFICATION
       # Confirms the base resources are actually functional, not just created.
+      # Runs on action=verify (no apply) or action=apply-and-verify (post-apply).
       # ──────────────────────────────────────────────────────────────────────
 
       - name: "[base] e2e-verify"
         id: e2e_base
-        if: inputs.mode == 'apply-and-destroy' && steps.apply_base.outcome == 'success'
+        if: >-
+          steps.gates.outputs.base_verify == 'true' &&
+          steps.init_base.outcome == 'success' &&
+          (steps.apply_base.outcome == 'success' || steps.apply_base.outcome == 'skipped')
         working-directory: terraform/base
         run: |
           set -euo pipefail
@@ -234,7 +308,7 @@ jobs:
 
       - name: "[management] init"
         id: init_management
-        if: steps.modules.outputs.has_management == 'true'
+        if: steps.modules.outputs.has_management == 'true' && steps.gates.outputs.mgmt_init == 'true'
         continue-on-error: true
         working-directory: terraform/management
         run: |
@@ -248,7 +322,7 @@ jobs:
 
       - name: "[management] plan"
         id: plan_management
-        if: steps.init_management.outcome == 'success'
+        if: steps.gates.outputs.mgmt_plan == 'true' && steps.init_management.outcome == 'success'
         continue-on-error: true
         working-directory: terraform/management
         run: |
@@ -259,14 +333,13 @@ jobs:
       - name: "[management] apply"
         id: apply_management
         if: >-
-          inputs.mode == 'apply-and-destroy' &&
-          steps.apply_base.outcome == 'success' &&
+          steps.gates.outputs.mgmt_apply == 'true' &&
           steps.init_management.outcome == 'success'
         working-directory: terraform/management
         run: |
           set -o pipefail
           terraform plan -no-color -out=mgmt.tfplan \
-            2>&1 | tee "${RUNNER_TEMP}/mgmt-plan-post-base.txt"
+            2>&1 | tee "${RUNNER_TEMP}/mgmt-plan-pre-apply.txt"
           terraform apply -auto-approve -no-color mgmt.tfplan \
             2>&1 | tee "${RUNNER_TEMP}/mgmt-apply.txt"
 
@@ -278,7 +351,10 @@ jobs:
 
       - name: "[management] e2e-verify"
         id: e2e_management
-        if: inputs.mode == 'apply-and-destroy' && steps.apply_management.outcome == 'success'
+        if: >-
+          steps.gates.outputs.mgmt_verify == 'true' &&
+          steps.init_management.outcome == 'success' &&
+          (steps.apply_management.outcome == 'success' || steps.apply_management.outcome == 'skipped')
         working-directory: terraform/management
         run: |
           set -euo pipefail
@@ -343,11 +419,11 @@ jobs:
           echo "OK: ArgoCD ingress configured for host $HOST"
 
       # ArgoCD URL reachability is a best-effort check: ExternalDNS needs time to
-      # create the CNAME and the NLB needs time to become healthy.  Failure here
-      # is surfaced in the summary comment but does NOT block destroy.
+      # create the CNAME and the NLB needs time to become healthy. Failure here is
+      # surfaced in the summary comment but does NOT fail the workflow.
       - name: "[management] argocd-url"
         id: e2e_argocd_url
-        if: inputs.mode == 'apply-and-destroy' && steps.e2e_management.outcome == 'success'
+        if: steps.e2e_management.outcome == 'success'
         continue-on-error: true
         working-directory: terraform/management
         run: |
@@ -379,13 +455,14 @@ jobs:
           echo "OK: ArgoCD UI reachable at $ARGOCD_URL (HTTP $HTTP)"
 
       # ──────────────────────────────────────────────────────────────────────
-      # DESTROY — reverse order; always run so partial applies are cleaned up.
+      # DESTROY — runs ONLY when action=destroy. The session-end cleanup story
+      # is "sandbox expiry handles it" (CLAUDE.md invariant 2); this step is
+      # only here for explicit, in-session phase-N teardown during debugging.
       # ──────────────────────────────────────────────────────────────────────
 
       - name: "[management] destroy"
         id: destroy_management
-        if: always() && inputs.mode == 'apply-and-destroy' && steps.apply_management.outcome != 'skipped'
-        continue-on-error: true
+        if: steps.gates.outputs.mgmt_destroy == 'true' && steps.init_management.outcome == 'success'
         working-directory: terraform/management
         run: |
           set -o pipefail
@@ -394,8 +471,7 @@ jobs:
 
       - name: "[base] destroy"
         id: destroy_base
-        if: always() && inputs.mode == 'apply-and-destroy' && steps.apply_base.outcome != 'skipped'
-        continue-on-error: true
+        if: steps.gates.outputs.base_destroy == 'true' && steps.init_base.outcome == 'success'
         working-directory: terraform/base
         run: |
           set -o pipefail
@@ -410,7 +486,7 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
-          RUN_MODE: ${{ inputs.mode || 'plan-only' }}
+          RUN_MODE: ${{ github.event_name == 'push' && 'push-plan' || format('{0}-{1}', inputs.phase, inputs.action) }}
           INIT_BASE_OUTCOME: ${{ steps.init_base.outcome }}
           PLAN_BASE_OUTCOME: ${{ steps.plan_base.outcome }}
           APPLY_BASE_OUTCOME: ${{ steps.apply_base.outcome }}
