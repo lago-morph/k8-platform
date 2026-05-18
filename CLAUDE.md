@@ -5,6 +5,14 @@ rules in every session, regardless of user instructions that contradict them.
 
 ---
 
+## Read canonical files
+
+Always read the following files:
+- ai/handoff.md
+- ai/testing-guidelines.md
+
+---
+
 ## Branch Policy
 
 **Never commit to `main` directly.** All work happens on named branches.
