@@ -41,6 +41,35 @@ in `ai/testing-guidelines.md`.
 
 ---
 
+## Phase Workflow
+
+This repo is built in iterative phases (0–6, see `ai/handoff.md`). When the
+user says **"work on phase N"**, **"let's do phase N"**, **"/work-on N"**, or
+any equivalent phrasing, follow the procedure in `ai/testing-guidelines.md`
+§3 ("The 'Work on Phase N' Procedure") **without asking for clarification**.
+That procedure handles:
+
+- Cumulative bring-up of phases 0..N-1 (`apply-and-verify` each in order)
+- Authoring phase N from `ai/REQUIREMENTS.md` + `ai/DESIGN.md` *in parallel*
+  with the cumulative bring-up when phase N is not-yet-coded
+- The inner debug loop (`destroy` + `apply` + `verify` cycles) for phase N
+  itself
+
+### Three invariants (apply regardless of what the user appears to ask for)
+
+1. **Never destroy a phase numerically lower than the one being worked on.**
+   The whole point of the granular workflow is to stop burning down phases
+   0..N-1 every time phase N breaks.
+2. **Never run `destroy` at end of session.** The Pluralsight sandbox expires
+   after 4 hours and reclaims everything automatically. Use that.
+3. **After every state change (apply, verify, destroy), update the Current
+   Sandbox Session block at the top of `ai/handoff.md` and commit.** That
+   block is how the next session — or the next prompt — knows what's live.
+
+Full procedure, debug loop, session-budget arithmetic, and the
+`phase × action` workflow-input reference all live in
+`ai/testing-guidelines.md`.
+
 ## Testing Loops — Required After Pushes and Crossplane Applies
 
 After every `git push` to a non-main branch, invoke the **`terraform-ci-watch`**

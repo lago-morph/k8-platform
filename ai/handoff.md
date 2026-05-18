@@ -3,6 +3,41 @@
 This file is updated at the end of every AI session. It captures what was done,
 the current state of the codebase, and the next concrete steps.
 
+The **Current Sandbox Session** block immediately below tracks per-session
+state — what's currently live in AWS, which phase is being worked on, when
+the sandbox expires. The agent reads it first and writes back to it after
+every workflow run. See `ai/testing-guidelines.md` for the procedure that
+drives those updates.
+
+---
+
+## Current Sandbox Session
+
+| Field | Value |
+|---|---|
+| Sandbox started | _(none — no live sandbox)_ |
+| Estimated expiry | _(none)_ |
+| Active phase | _(none)_ |
+
+### Phase states (this session)
+
+| Phase | State | Last action | Run URL |
+|---|---|---|---|
+| 0 base | not-applied-this-session | — | — |
+| 1 management | not-applied-this-session | — | — |
+| 2 xrds | not-coded | — | — |
+| 3 platform | not-coded | — | — |
+| 4 observability | not-coded | — | — |
+| 5 auth | not-coded | — | — |
+| 6 workload | not-coded | — | — |
+
+State values: `not-coded`, `code-only`, `plan-green`, `applied`, `verified`,
+`broken`, `not-applied-this-session` (code exists and has been verified in
+a *prior* session; needs re-apply in the current sandbox).
+
+The agent updates this block after each `workflow_dispatch` completes. If
+the sandbox is expired or unknown, ask the user once and then refresh.
+
 ---
 
 ## Current State (as of 2026-05-10)
