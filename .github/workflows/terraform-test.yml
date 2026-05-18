@@ -9,15 +9,16 @@ on:
   workflow_dispatch:
     inputs:
       phase:
-        description: "Which module to act on"
+        description: "Which module to act on (test = run the harness's own tests)"
         required: true
         default: base
         type: choice
         options:
           - base
           - management
+          - test
       action:
-        description: "What to do with that module"
+        description: "What to do (test-unit/test-e2e only valid with phase=test)"
         required: true
         default: plan
         type: choice
@@ -27,6 +28,21 @@ on:
           - verify
           - apply-and-verify
           - destroy
+          - test-unit
+          - test-e2e
+  # Reusable entry point for the agent-trigger workflow (see agent-trigger.yml
+  # and ai/testing-guidelines.md §8). Keeps the test pipeline single-purpose
+  # while allowing both human dispatch and agent-driven file-commit triggers.
+  workflow_call:
+    inputs:
+      phase:
+        description: "Which module to act on (base | management | test)"
+        required: true
+        type: string
+      action:
+        description: "plan | apply | verify | apply-and-verify | destroy | test-unit | test-e2e"
+        required: true
+        type: string
 
 # One run per branch+phase at a time; cancel in-flight runs on new push to same.
 concurrency:
@@ -75,54 +91,13 @@ jobs:
         id: gates
         run: |
           set -euo pipefail
-          EVENT="${{ github.event_name }}"
-          PHASE="${{ inputs.phase }}"
-          ACTION="${{ inputs.action }}"
-
-          bi=false; bp=false; ba=false; bv=false; bd=false
-          mi=false; mp=false; ma=false; mv=false; md=false
-
-          if [ "$EVENT" = "push" ]; then
-            bi=true; bp=true; mi=true; mp=true
-          else
-            case "$PHASE" in
-              base)
-                bi=true
-                case "$ACTION" in
-                  plan)             bp=true ;;
-                  apply)            bp=true; ba=true ;;
-                  verify)           bv=true ;;
-                  apply-and-verify) bp=true; ba=true; bv=true ;;
-                  destroy)          bd=true ;;
-                esac
-                ;;
-              management)
-                mi=true
-                case "$ACTION" in
-                  plan)             mp=true ;;
-                  apply)            mp=true; ma=true ;;
-                  verify)           mv=true ;;
-                  apply-and-verify) mp=true; ma=true; mv=true ;;
-                  destroy)          md=true ;;
-                esac
-                ;;
-            esac
-          fi
-
-          {
-            echo "base_init=$bi"
-            echo "base_plan=$bp"
-            echo "base_apply=$ba"
-            echo "base_verify=$bv"
-            echo "base_destroy=$bd"
-            echo "mgmt_init=$mi"
-            echo "mgmt_plan=$mp"
-            echo "mgmt_apply=$ma"
-            echo "mgmt_verify=$mv"
-            echo "mgmt_destroy=$md"
-          } >> "$GITHUB_OUTPUT"
-
-          echo "Gates: base[i=$bi p=$bp a=$ba v=$bv d=$bd] mgmt[i=$mi p=$mp a=$ma v=$mv d=$md]"
+          # Logic lives in a separate script so unit tests in
+          # tests/unit/test_compute_gates.sh exercise the exact same code.
+          .github/scripts/compute-gates.sh \
+            "${{ github.event_name }}" \
+            "${{ inputs.phase }}" \
+            "${{ inputs.action }}" \
+            | tee -a "$GITHUB_OUTPUT"
 
       # ──────────────────────────────────────────────────────────────────────
       # BOOTSTRAP — runs once per job; sets up the S3/DynamoDB backend and
@@ -131,6 +106,7 @@ jobs:
       # ──────────────────────────────────────────────────────────────────────
 
       - name: Bootstrap state backend
+        if: steps.gates.outputs.test_unit != 'true' && steps.gates.outputs.test_e2e != 'true'
         run: |
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           BUCKET="k8-platform-tfstate-${ACCOUNT_ID}"
@@ -178,6 +154,7 @@ jobs:
           echo "TF_VAR_tf_state_bucket=${BUCKET}"        >> "$GITHUB_ENV"
 
       - name: Discover Route53 zone
+        if: steps.gates.outputs.test_unit != 'true' && steps.gates.outputs.test_e2e != 'true'
         run: |
           # Pluralsight sandboxes provide a pre-created hosted zone.
           # We query the first zone in the account and use its domain.
@@ -205,6 +182,7 @@ jobs:
           echo "TF_VAR_route53_zone_id=${ZONE_ID}"     >> "$GITHUB_ENV"
 
       - name: Generate Cognito test credentials
+        if: steps.gates.outputs.test_unit != 'true' && steps.gates.outputs.test_e2e != 'true'
         run: |
           # Sandbox accounts are ephemeral — generate fresh credentials each run.
           # The Cognito pool is created by Terraform; these values are passed
@@ -479,6 +457,30 @@ jobs:
             2>&1 | tee "${RUNNER_TEMP}/base-destroy.txt"
 
       # ──────────────────────────────────────────────────────────────────────
+      # TEST PHASE — the harness's own unit and e2e tests. No Terraform.
+      # See ai/testing-guidelines.md §9 ("Testing the harness").
+      # ──────────────────────────────────────────────────────────────────────
+
+      - name: "[test] unit"
+        id: test_unit
+        if: steps.gates.outputs.test_unit == 'true'
+        run: |
+          set -o pipefail
+          tests/unit/run.sh 2>&1 | tee "${RUNNER_TEMP}/test-unit.txt"
+
+      - name: "[test] e2e"
+        id: test_e2e
+        if: steps.gates.outputs.test_e2e == 'true'
+        env:
+          # Surface AWS region/creds explicitly for the e2e harness so it
+          # behaves identically whether invoked here or locally with the
+          # same env set.
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -o pipefail
+          tests/e2e/run.sh 2>&1 | tee "${RUNNER_TEMP}/test-e2e.txt"
+
+      # ──────────────────────────────────────────────────────────────────────
       # SUMMARY COMMENT — posted to the PR (if one exists) or the commit.
       # ──────────────────────────────────────────────────────────────────────
 
@@ -498,4 +500,6 @@ jobs:
           E2E_MGMT_OUTCOME: ${{ steps.e2e_management.outcome }}
           E2E_ARGOCD_URL_OUTCOME: ${{ steps.e2e_argocd_url.outcome }}
           DESTROY_MGMT_OUTCOME: ${{ steps.destroy_management.outcome }}
+          TEST_UNIT_OUTCOME: ${{ steps.test_unit.outcome }}
+          TEST_E2E_OUTCOME: ${{ steps.test_e2e.outcome }}
         run: python3 .github/scripts/post-comment.py
