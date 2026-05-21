@@ -41,6 +41,8 @@ OUTCOMES = {
     "e2e_mgmt":        os.environ.get("E2E_MGMT_OUTCOME"),
     "e2e_argocd_url":  os.environ.get("E2E_ARGOCD_URL_OUTCOME"),
     "destroy_mgmt":    os.environ.get("DESTROY_MGMT_OUTCOME"),
+    "test_unit":       os.environ.get("TEST_UNIT_OUTCOME"),
+    "test_e2e":        os.environ.get("TEST_E2E_OUTCOME"),
 }
 
 STEP_LABELS = {
@@ -123,6 +125,8 @@ def build_body() -> str:
         section("Management — ArgoCD URL",  "mgmt-e2e-argocd.txt",   OUTCOMES["e2e_argocd_url"]),
         section("Management — Destroy",     "mgmt-destroy.txt",      OUTCOMES["destroy_mgmt"]),
         section("Base — Destroy",      "base-destroy.txt",           OUTCOMES["destroy_base"]),
+        section("Test — Unit",         "test-unit.txt",              OUTCOMES["test_unit"]),
+        section("Test — E2E",          "test-e2e.txt",               OUTCOMES["test_e2e"]),
     ]
     return "".join(parts)
 
