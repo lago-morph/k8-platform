@@ -20,12 +20,12 @@ risks repeating mistakes already made.
 ### Required procedure
 
 1. **Process every open risk in §Open risks before doing any other
-   review.** For each numbered item, either select one of the three
+   review.** For each numbered item, ask the user to either select one of the three
    proposed mitigations (a / b / c) or write a fourth in 1–3 sentences,
-   and record your selection plus a short reasoning in the §Resolutions
+   and record the user's selection in the §Resolutions
    table near the top of this file.
 2. **Then perform a fresh-eyes critical review of the design as a whole,
-   with your resolutions incorporated.** Use the §Critique section.
+   with the user's resolutions incorporated.** Use the §Critique section.
    Surface concerns the prior review loop missed. Be specific about
    likelihood and severity using the same Low / Med / High scale used
    in §Open risks.
@@ -38,7 +38,7 @@ risks repeating mistakes already made.
 
 ## Resolutions
 
-To be populated by the next agent before §Critique. One row per open risk.
+To be populated by the next agent by querying user before §Critique. One row per open risk.
 
 | # | Risk title                              | Selected mitigation | Reasoning |
 |---|-----------------------------------------|---------------------|-----------|
@@ -120,7 +120,7 @@ tokens or secrets into the repository or the sandbox environment.
 
 ## Source material
 
-### Problem (verbatim, lightly redacted to remove issue and section cross-references)
+### Problem
 
 > Claude Code on the web has **no primitive for `workflow_dispatch`**.
 > The available GitHub MCP toolset exposes PR, issue, content, branch,
@@ -172,11 +172,11 @@ text:
 > The name for these created skills should be [`ext-{service name}`],
 > for instance for GitHub it would be [`ext-github`], for aws would be
 > [`ext-aws`]. If you figured it out, then enter that api and instructions
-> in the skill for how to use it, what it does, and when it should be used.
+> in the ext-{servicename} skill for how to use it, what it does, and when it should be used.
 > If it doesn't exist, use the template in [`external-api-bridge`]/resources
-> to create. You should create this template as part of the skill,
-> explaining to the future agent user how to access a skill with jentic
-> mcp, and how to add new APIs to this skill (the sequence I described
+> to create. You should create this template as part of creating the external-api-bridge skill,
+> explaining to the future agent user of an ext-{servicename} skill how to access a skill with jentic
+> mcp, and how to add new APIs to this ext-{servicename} skill (the sequence I described
 > above).
 >
 > Then use this to create [an `ext-github`] skill to do what you need.
