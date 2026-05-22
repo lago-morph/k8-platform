@@ -250,8 +250,8 @@ green by the 5th, stop and think rather than burn the remaining budget.
 - `action`: `plan` | `apply` | `verify` | `apply-and-verify` | `destroy` | `test-unit` | `test-e2e`
 
 `test-unit` and `test-e2e` are only valid when `phase=test`; the other
-five actions are only valid for `base` and `management`. The Agent
-Trigger workflow (§8) and `compute-gates.sh` enforce this.
+five actions are only valid for `base` and `management`.
+`compute-gates.sh` enforces this.
 
 | `phase` × `action` | What runs |
 |---|---|
@@ -268,9 +268,8 @@ Trigger workflow (§8) and `compute-gates.sh` enforce this.
 | `test, test-unit` | `tests/unit/run.sh` (no AWS, no Terraform) |
 | `test, test-e2e` | `tests/e2e/run.sh` (read-only AWS assertions) |
 
-Push to `test/**` keeps the old behaviour: plan both phases on every push
-(no apply, no destroy). It does not exercise the `phase=test` path —
-that is dispatch-only or agent-trigger-only.
+Every action is dispatched via `workflow_dispatch` — there are no
+auto-triggers on `terraform-test.yml`.
 
 ---
 
@@ -292,81 +291,13 @@ Commit with `chore(handoff): phase N → <new-state>`.
 
 ---
 
-## 8. Agent-Triggered Runs (`.trigger-action.json`)
+## 8. Testing the Harness (`phase = test`)
 
-Claude Code on the web has no `workflow_dispatch` primitive — no `gh` CLI,
-no direct GitHub API, and the available MCP toolset omits dispatch. To let
-the agent drive the phase procedure end-to-end without a human in the
-Actions UI, the repo provides a **commit-based trigger**: when the file
-`.trigger-action.json` changes on a non-default branch, the
-`Agent Trigger` workflow parses it and calls `terraform-test.yml` with the
-parsed `phase` and `action`.
-
-### File schema
-
-```json
-{
-  "phase":  "base | management | test",
-  "action": "<see below>",
-  "nonce":  "<arbitrary string>"
-}
-```
-
-Action is tuple-validated against phase:
-
-- `phase ∈ {base, management}` → `action ∈ {plan, apply, verify, apply-and-verify, destroy}`
-- `phase = test` → `action ∈ {test-unit, test-e2e}`
-
-- `phase` and `action` are validated by the trigger workflow; invalid
-  values fail fast with `::error` annotations in the Actions log.
-- `nonce` is informational only — its purpose is to let the agent
-  re-fire the same `phase + action` combination by changing the nonce.
-  Without it, an identical JSON body would be a no-op commit and CI
-  would not re-run.
-
-A canonical example lives at `.trigger-action.json.example`.
-
-### Agent flow
-
-1. Decide the next `phase × action` per §3.
-2. Write `.trigger-action.json` with that decision and a fresh nonce
-   (timestamp works well).
-3. Commit (`ci: fire <phase> <action>`) and push.
-4. Use the `terraform-ci-watch` skill to poll the resulting run.
-5. After the run completes, update `ai/handoff.md` per §7.
-
-### Safety properties
-
-- **Audit trail.** Every CI fire is a git commit. The PR diff shows
-  exactly what the agent intended.
-- **Default-branch guard.** The trigger workflow skips when
-  `github.ref == refs/heads/<default>`, so merging a PR that contains
-  a stale `.trigger-action.json` will not accidentally re-apply
-  Terraform.
-- **Concurrency.** The Agent Trigger and Terraform Test workflows both
-  set `concurrency:` groups keyed on `github.ref`, so a new fire on
-  the same branch cancels an in-flight one.
-- **Validation.** Malformed JSON, missing fields, or values outside the
-  allowed enums fail the trigger job before any Terraform code runs.
-
-### What this does *not* change
-
-- `workflow_dispatch` on `terraform-test.yml` still works for humans.
-- The `test/**` push trigger still runs plan-only on both modules.
-- The phase × action gate logic in `terraform-test.yml` is the single
-  source of truth for what each action actually does (§6).
-
----
-
-## 9. Testing the Harness (`phase = test`)
-
-The trigger mechanism (§8), the gate logic (§6), and the helper
-scripts under `.github/scripts/` are themselves software, and they
-fail in interesting ways: a regex typo in `parse-trigger.sh` could
-silently let `phase=destroy_everything` through; a bad case in
-`compute-gates.sh` could fire `mgmt_destroy` when the agent asked
-for `mgmt_plan`. Those failures are catastrophic *for the procedure*
-even when the underlying Terraform code is fine.
+The gate logic (§6) and the helper scripts under `.github/scripts/`
+are themselves software, and they fail in interesting ways: a bad
+case in `compute-gates.sh` could fire `mgmt_destroy` when the agent
+asked for `mgmt_plan`. Those failures are catastrophic *for the
+procedure* even when the underlying Terraform code is fine.
 
 The `phase=test` pair exists so these components have automated
 coverage independent of the AWS-touching paths.
@@ -375,14 +306,14 @@ coverage independent of the AWS-touching paths.
 
 | `action` | What runs | AWS needed? | Typical duration |
 |---|---|---|---|
-| `test-unit` | `tests/unit/run.sh` — exercises `parse-trigger.sh` and `compute-gates.sh` against `tests/unit/fixtures/*.json` | No | <10 s |
+| `test-unit` | `tests/unit/run.sh` — exercises `compute-gates.sh` against `(phase, action)` tuples | No | <10 s |
 | `test-e2e`  | `tests/e2e/run.sh` — read-only assertions against the live sandbox (sts:GetCallerIdentity, Route53, S3 bucket, DynamoDB table) | Yes | <30 s |
 
 ### When to run them
 
 - **Every PR that touches `.github/scripts/`, `.github/workflows/`,
-  `tests/`, or `.trigger-action.json.example`** should fire
-  `phase=test, action=test-unit` at least once and confirm it passes.
+  or `tests/`** should fire `phase=test, action=test-unit` at least
+  once and confirm it passes.
 - **Every fresh sandbox session** should fire `phase=test, action=test-e2e`
   once after the first `apply-and-verify` on phase 0 — it's the cheapest
   way to confirm bootstrap actually produced the expected side effects
@@ -392,10 +323,10 @@ coverage independent of the AWS-touching paths.
 
 ### Adding coverage
 
-The fixture-driven shape (`tests/unit/fixtures/*.json` for parse tests;
-`(event, phase, action)` tuples for gate tests) keeps each test cheap
-to add. When you discover a class of misconfiguration that slipped
-through review, add a fixture and a test before the fix.
+The fixture-driven shape (`(phase, action)` tuples for gate tests)
+keeps each test cheap to add. When you discover a class of
+misconfiguration that slipped through review, add a fixture and a
+test before the fix.
 
 ### Limits
 
