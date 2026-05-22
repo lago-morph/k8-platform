@@ -13,6 +13,25 @@ Always read the following files:
 
 ---
 
+## Authoritative specs
+
+When work is scoped to one of the design specs in `ai/specs/`, that spec is
+**the sole authoritative source** for the design. In particular:
+
+- **`ai/specs/ext-github-design.md`** governs the external API bridge and the
+  `ext-github` skill (PR1 and PR2 described inside it). When implementing
+  that work, do not derive design from historical files (`retrospective/`,
+  `summary/`, `ai/archive/`), from prior commits, or from patterns found
+  elsewhere in the repo. Conflicts resolve in favor of the spec. If
+  anything is ambiguous, ask — do not synthesize.
+
+This rule exists because a prior session, while building the ext-github
+skill, attempted to harmonize the spec with the (now deleted) trigger-file
+machinery in the repo and produced a hybrid the user explicitly did not
+want. Treat the spec as load-bearing.
+
+---
+
 ## Branch Policy
 
 **Never commit to `main` directly.** All work happens on named branches.

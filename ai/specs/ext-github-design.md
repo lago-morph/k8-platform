@@ -17,6 +17,27 @@ risks repeating mistakes already made.
    this work is meant to unblock.
 4. `CLAUDE.md` — operating rules for this repository.
 
+### Non-goals — do not build, do not resurrect
+
+- **Do not** introduce, restore, or extend any file-commit-based CI trigger
+  (e.g. `.trigger-action.json`, `agent-trigger.yml`, or branch-name auto-triggers
+  like `test/**`). These mechanisms were removed in PR #23 because they exist
+  *only* to work around the very sandbox limitation that this skill removes.
+  If you find references to them in historical files (retrospectives,
+  summaries, `ai/archive/`, prior sections of this very file), treat those as
+  history, not as design input.
+- **Do not** preserve "fallback paths" to the old mechanisms. There is no
+  fallback. `terraform-test.yml` is `workflow_dispatch`-only by design, and
+  this skill is what dispatches it.
+- **Do not** synthesize a hybrid design from this spec and any other doc.
+  If this spec disagrees with anything else in the repo, **this spec wins**.
+  Stop and ask the user before reconciling.
+- **Do not** "be helpful" by harmonizing this design with patterns you find
+  elsewhere in the codebase. The previous attempt at this work failed
+  precisely because the agent tried to merge this spec with the (now
+  deleted) trigger-file machinery. The user spent significant effort
+  constructing this design; treat it as load-bearing, not a starting point.
+
 ### Required procedure
 
 1. **Process every open risk in §Open risks before doing any other
