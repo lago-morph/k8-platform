@@ -63,18 +63,18 @@ These are the **only** secrets needed. Everything else is auto-discovered.
 
 ### Step 3 — Trigger the workflow
 
+All Terraform CI runs are manual: Actions → Terraform Test → Run workflow.
+Pick the `phase` (`base` | `management` | `test`) and `action` (`plan` |
+`apply` | `verify` | `apply-and-verify` | `destroy` | `test-unit` | `test-e2e`)
+and dispatch.
+
 **Plan only (safe, no AWS resources created):**
-- Push to a branch named `test/<anything>` — CI runs automatically on every push
-- Or: Actions → Terraform Test → Run workflow → any branch → mode: `plan-only`
+- Actions → Terraform Test → Run workflow → phase: `base` (or `management`) → action: `plan`
 
-Normal development branches (`feat/`, `fix/`, `chore/`) do **not** trigger CI
-automatically. Use `test/` when you want continuous validation, or trigger
-manually for one-off checks.
-
-**Full apply-and-destroy (creates and then destroys all resources):**
-- Actions → Terraform Test → Run workflow → branch: `main` → mode: `apply-and-destroy`
-- Duration: ~25 minutes
-- The sandbox session must have at least 30 minutes remaining
+**Apply and verify a phase (creates real AWS resources):**
+- Actions → Terraform Test → Run workflow → phase: `base` (or `management`) → action: `apply-and-verify`
+- Duration: ~3 min (base) / ~15 min (management)
+- The sandbox session must have enough time remaining (see `ai/testing-guidelines.md` §5)
 
 ### Step 4 — Read the results
 
@@ -168,14 +168,13 @@ git checkout -b feat/my-feature   # or fix/..., chore/...
 git add <files>
 git commit -m "feat: describe the change"
 git push -u origin feat/my-feature
-# open PR → CI runs automatically → merge when green
+# open PR → dispatch terraform-test.yml manually when ready → merge when green
 ```
 
 Branch naming:
 - `feat/` — new functionality
 - `fix/` — bug fixes
 - `chore/` — docs, maintenance, refactoring
-- `test/` — triggers CI automatically on every push (use when iterating on Terraform)
 
 ---
 
@@ -226,7 +225,7 @@ instances** (including stopped). Check `node_desired_size` in
 
 ## Sandbox Session Checklist
 
-Before triggering `apply-and-destroy`:
+Before triggering `apply-and-verify`:
 
 - [ ] Fresh sandbox session started (credentials not expired)
 - [ ] GitHub secrets updated with new credentials

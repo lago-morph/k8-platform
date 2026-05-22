@@ -25,7 +25,6 @@ run_suite() {
   fi
 }
 
-run_suite tests/unit/test_parse_trigger.sh
 run_suite tests/unit/test_compute_gates.sh
 
 echo ""

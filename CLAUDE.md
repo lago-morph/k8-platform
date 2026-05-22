@@ -22,13 +22,11 @@ Branch naming convention:
 feat/<short-description>    # new functionality
 fix/<short-description>     # bug or CI fix
 chore/<short-description>   # maintenance (deps, docs, refactor)
-test/<short-description>    # triggers CI automatically on push
 ```
 
-The `test/` prefix is special: pushing to a `test/**` branch automatically
-triggers the Terraform CI workflow (plan-only). All other branches require a
-manual `workflow_dispatch` trigger. Use `test/` when you want CI to validate
-Terraform changes against a real AWS sandbox on every push.
+The Terraform CI workflow (`terraform-test.yml`) is `workflow_dispatch`-only.
+The agent invokes it directly via the GitHub API; humans invoke it from the
+Actions UI.
 
 ---
 

@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# Compute per-step gate booleans from (event, phase, action).
+# Compute per-step gate booleans from (phase, action).
 #
 # Usage:
-#   compute-gates.sh <event> <phase> <action>
+#   compute-gates.sh <phase> <action>
 #
-#   <event>  github.event_name — e.g. push | workflow_dispatch | workflow_call
-#   <phase>  base | management | test  (ignored for push events)
-#   <action> see ai/testing-guidelines.md §6 + §8  (ignored for push events)
+#   <phase>  base | management | test
+#   <action> see ai/testing-guidelines.md §6
 #
 # Output (one key=value per line, suitable for $GITHUB_OUTPUT):
 #   base_init      base_plan      base_apply      base_verify      base_destroy
@@ -14,7 +13,6 @@
 #   test_unit      test_e2e
 #
 # Semantics:
-#   push events  → base_init + base_plan + mgmt_init + mgmt_plan (plan-both)
 #   phase=base  + action ∈
 #       plan              → base_init, base_plan
 #       apply             → base_init, base_plan, base_apply
@@ -32,53 +30,48 @@
 
 set -euo pipefail
 
-EVENT="${1:-}"
-PHASE="${2:-}"
-ACTION="${3:-}"
+PHASE="${1:-}"
+ACTION="${2:-}"
 
 bi=false; bp=false; ba=false; bv=false; bd=false
 mi=false; mp=false; ma=false; mv=false; md=false
 tu=false; te=false
 
-if [ "$EVENT" = "push" ]; then
-  bi=true; bp=true; mi=true; mp=true
-else
-  case "$PHASE" in
-    base)
-      bi=true
-      case "$ACTION" in
-        plan)             bp=true ;;
-        apply)            bp=true; ba=true ;;
-        verify)           bv=true ;;
-        apply-and-verify) bp=true; ba=true; bv=true ;;
-        destroy)          bi=true; bd=true ;;
-        *) echo "compute-gates: invalid action '$ACTION' for phase base" >&2; exit 2 ;;
-      esac
-      ;;
-    management)
-      mi=true
-      case "$ACTION" in
-        plan)             mp=true ;;
-        apply)            mp=true; ma=true ;;
-        verify)           mv=true ;;
-        apply-and-verify) mp=true; ma=true; mv=true ;;
-        destroy)          mi=true; md=true ;;
-        *) echo "compute-gates: invalid action '$ACTION' for phase management" >&2; exit 2 ;;
-      esac
-      ;;
-    test)
-      case "$ACTION" in
-        test-unit) tu=true ;;
-        test-e2e)  te=true ;;
-        *) echo "compute-gates: invalid action '$ACTION' for phase test" >&2; exit 2 ;;
-      esac
-      ;;
-    "")
-      echo "compute-gates: phase required when event is not 'push'" >&2; exit 2 ;;
-    *)
-      echo "compute-gates: invalid phase '$PHASE'" >&2; exit 2 ;;
-  esac
-fi
+case "$PHASE" in
+  base)
+    bi=true
+    case "$ACTION" in
+      plan)             bp=true ;;
+      apply)            bp=true; ba=true ;;
+      verify)           bv=true ;;
+      apply-and-verify) bp=true; ba=true; bv=true ;;
+      destroy)          bi=true; bd=true ;;
+      *) echo "compute-gates: invalid action '$ACTION' for phase base" >&2; exit 2 ;;
+    esac
+    ;;
+  management)
+    mi=true
+    case "$ACTION" in
+      plan)             mp=true ;;
+      apply)            mp=true; ma=true ;;
+      verify)           mv=true ;;
+      apply-and-verify) mp=true; ma=true; mv=true ;;
+      destroy)          mi=true; md=true ;;
+      *) echo "compute-gates: invalid action '$ACTION' for phase management" >&2; exit 2 ;;
+    esac
+    ;;
+  test)
+    case "$ACTION" in
+      test-unit) tu=true ;;
+      test-e2e)  te=true ;;
+      *) echo "compute-gates: invalid action '$ACTION' for phase test" >&2; exit 2 ;;
+    esac
+    ;;
+  "")
+    echo "compute-gates: phase required" >&2; exit 2 ;;
+  *)
+    echo "compute-gates: invalid phase '$PHASE'" >&2; exit 2 ;;
+esac
 
 cat <<EOF
 base_init=$bi

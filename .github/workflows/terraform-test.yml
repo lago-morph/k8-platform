@@ -1,11 +1,6 @@
 name: Terraform Test
 
 on:
-  push:
-    # Auto-run only on test/* branches — opt in by naming your branch test/<name>.
-    # For any other branch, trigger manually via workflow_dispatch below.
-    branches:
-      - "test/**"
   workflow_dispatch:
     inputs:
       phase:
@@ -30,23 +25,10 @@ on:
           - destroy
           - test-unit
           - test-e2e
-  # Reusable entry point for the agent-trigger workflow (see agent-trigger.yml
-  # and ai/testing-guidelines.md §8). Keeps the test pipeline single-purpose
-  # while allowing both human dispatch and agent-driven file-commit triggers.
-  workflow_call:
-    inputs:
-      phase:
-        description: "Which module to act on (base | management | test)"
-        required: true
-        type: string
-      action:
-        description: "plan | apply | verify | apply-and-verify | destroy | test-unit | test-e2e"
-        required: true
-        type: string
 
-# One run per branch+phase at a time; cancel in-flight runs on new push to same.
+# One run per branch+phase at a time; cancel in-flight dispatches on the same ref.
 concurrency:
-  group: terraform-${{ github.ref }}-${{ inputs.phase || 'push' }}
+  group: terraform-${{ github.ref }}-${{ inputs.phase }}
   cancel-in-progress: true
 
 env:
@@ -61,7 +43,7 @@ env:
 
 jobs:
   terraform:
-    name: Terraform (${{ inputs.phase || 'push' }} / ${{ inputs.action || 'plan' }})
+    name: Terraform (${{ inputs.phase }} / ${{ inputs.action }})
     runs-on: ubuntu-latest
 
     permissions:
@@ -82,9 +64,7 @@ jobs:
           terraform_version: "~1.6"
 
       # ──────────────────────────────────────────────────────────────────────
-      # Compute per-step gates from (event, phase, action). Push events run
-      # plan-only on both modules; dispatch events run exactly the actions
-      # selected, on exactly the chosen phase. See ai/testing-guidelines.md §6.
+      # Compute per-step gates from (phase, action). See ai/testing-guidelines.md §6.
       # ──────────────────────────────────────────────────────────────────────
 
       - name: Compute gates
@@ -94,7 +74,6 @@ jobs:
           # Logic lives in a separate script so unit tests in
           # tests/unit/test_compute_gates.sh exercise the exact same code.
           .github/scripts/compute-gates.sh \
-            "${{ github.event_name }}" \
             "${{ inputs.phase }}" \
             "${{ inputs.action }}" \
             | tee -a "$GITHUB_OUTPUT"

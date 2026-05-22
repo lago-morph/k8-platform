@@ -1,12 +1,12 @@
 # Tests
 
-The harness that the agent uses to drive Terraform — workflow gates,
-trigger-file parsing, the `.github/scripts/*` helpers — has its own
-unit and e2e suites. They live here so the agent (and reviewers) can
-run them locally and so CI can exercise them via the `phase=test`
-dispatch path.
+The harness that the agent uses to drive Terraform — workflow gates
+and the `.github/scripts/*` helpers — has its own unit and e2e
+suites. They live here so the agent (and reviewers) can run them
+locally and so CI can exercise them via the `phase=test` dispatch
+path.
 
-See `ai/testing-guidelines.md` §9 for the full doctrine.
+See `ai/testing-guidelines.md` §8 for the full doctrine.
 
 ## Layout
 
@@ -16,9 +16,7 @@ tests/
 │   └── assert.sh                 # shared helpers (assert_eq, assert_contains, ...)
 ├── unit/
 │   ├── run.sh                    # entry point: runs all test_*.sh
-│   ├── test_parse_trigger.sh     # validates .github/scripts/parse-trigger.sh
-│   ├── test_compute_gates.sh     # validates .github/scripts/compute-gates.sh
-│   └── fixtures/                 # canonical .trigger-action.json bodies
+│   └── test_compute_gates.sh     # validates .github/scripts/compute-gates.sh
 └── e2e/
     ├── run.sh                    # entry point; needs AWS creds in env
     ├── test_aws_creds.sh         # sts:GetCallerIdentity must work
@@ -45,16 +43,13 @@ tests/e2e/run.sh
 
 ## Run in CI
 
-Either dispatch from the Actions UI:
+Dispatch from the Actions UI (or via the GitHub API):
 
 ```
 Actions → Terraform Test → Run workflow
   phase  = test
   action = test-unit   # or test-e2e
 ```
-
-Or, from the agent, write `.trigger-action.json` with that pair and push.
-The Agent Trigger workflow picks it up. See `ai/testing-guidelines.md` §8.
 
 ## Adding a test
 

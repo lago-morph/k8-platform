@@ -40,9 +40,8 @@ Verify in one step before starting Phase 1:
   `terraform`. If not, this skill does not apply.
 - Either `gh` CLI is authenticated (`gh auth status`) or the GitHub MCP
   tools are available in this session.
-- Read the project's `CLAUDE.md` first — it may define branch conventions
-  (e.g., `test/**` for auto-trigger), required secrets, or sandbox
-  constraints that shape diagnosis.
+- Read the project's `CLAUDE.md` first — it may define branch conventions,
+  required secrets, or sandbox constraints that shape diagnosis.
 
 ## Phase 1 — Locate the run
 
