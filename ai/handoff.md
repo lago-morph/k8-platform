@@ -23,8 +23,8 @@ drives those updates.
 
 | Phase | State | Last action | Run URL |
 |---|---|---|---|
-| 0 base | not-applied-this-session | — | — |
-| 1 management | not-applied-this-session | — | — |
+| 0 base | verified | 2026-05-23T03:24Z apply-and-verify ✅ | https://github.com/lago-morph/k8-platform/actions/runs/26322143492 |
+| 1 management | applying | 2026-05-23T03:24Z apply-and-verify dispatched | (pending) |
 | 2 xrds | not-coded | — | — |
 | 3 platform | not-coded | — | — |
 | 4 observability | not-coded | — | — |
