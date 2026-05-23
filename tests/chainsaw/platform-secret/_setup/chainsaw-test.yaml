@@ -1,0 +1,155 @@
+# Shared setup for every PlatformSecret scenario.
+#
+# Installs:
+#   - AWS credentials Secret + ProviderConfig in kind (the kind cluster
+#     has no IRSA — we authenticate via static creds passed through
+#     from the CI workflow).
+#   - The ClusterSecretStore that ESO will use to talk to ASM.
+#   - The XRD and Composition under test.
+#
+# Asserts the provider is Healthy before any claim can race the CRD
+# install (adversarial-reviewer B.A.1).
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: platform-secret-setup
+spec:
+  steps:
+    - name: install ESO (External Secrets Operator)
+      try:
+        - script:
+            content: |
+              helm repo add external-secrets https://charts.external-secrets.io >/dev/null 2>&1 || true
+              helm repo update external-secrets >/dev/null
+              helm install external-secrets external-secrets/external-secrets \
+                --namespace external-secrets --create-namespace \
+                --version 0.10.4 \
+                --set installCRDs=true \
+                --wait --timeout 5m
+
+    - name: assert provider-family-aws Healthy
+      try:
+        - assert:
+            resource:
+              apiVersion: pkg.crossplane.io/v1
+              kind: Provider
+              metadata:
+                name: provider-family-aws
+              status:
+                conditions:
+                  - type: Healthy
+                    status: "True"
+
+    - name: assert AWS Secret + ExternalSecret CRDs Established
+      try:
+        - assert:
+            resource:
+              apiVersion: apiextensions.k8s.io/v1
+              kind: CustomResourceDefinition
+              metadata:
+                name: secrets.secretsmanager.aws.upbound.io
+              status:
+                conditions:
+                  - type: Established
+                    status: "True"
+        - assert:
+            resource:
+              apiVersion: apiextensions.k8s.io/v1
+              kind: CustomResourceDefinition
+              metadata:
+                name: externalsecrets.external-secrets.io
+              status:
+                conditions:
+                  - type: Established
+                    status: "True"
+
+    - name: create AWS creds Secret + ProviderConfig (kind has no IRSA)
+      try:
+        - script:
+            content: |
+              kubectl create namespace crossplane-system --dry-run=client -o yaml | kubectl apply -f -
+              kubectl create secret generic aws-creds \
+                --namespace crossplane-system \
+                --from-literal=creds="[default]
+              aws_access_key_id=${AWS_ACCESS_KEY_ID}
+              aws_secret_access_key=${AWS_SECRET_ACCESS_KEY}
+              " --dry-run=client -o yaml | kubectl apply -f -
+        - apply:
+            resource:
+              apiVersion: aws.upbound.io/v1beta1
+              kind: ProviderConfig
+              metadata:
+                name: default
+              spec:
+                credentials:
+                  source: Secret
+                  secretRef:
+                    namespace: crossplane-system
+                    name: aws-creds
+                    key: creds
+
+    - name: apply the ClusterSecretStore (uses static creds in kind)
+      try:
+        - script:
+            # In kind we replace the IRSA auth with static creds via
+            # accessKeyIDSecretRef. Override the file's jwt auth.
+            content: |
+              cat <<MANIFEST | kubectl apply -f -
+              apiVersion: external-secrets.io/v1beta1
+              kind: ClusterSecretStore
+              metadata:
+                name: aws-secrets-manager
+              spec:
+                provider:
+                  aws:
+                    service: SecretsManager
+                    region: ${AWS_REGION:-us-east-1}
+                    auth:
+                      secretRef:
+                        accessKeyIDSecretRef:
+                          name: eso-aws-creds
+                          namespace: external-secrets
+                          key: access-key-id
+                        secretAccessKeySecretRef:
+                          name: eso-aws-creds
+                          namespace: external-secrets
+                          key: secret-access-key
+              MANIFEST
+              kubectl create secret generic eso-aws-creds \
+                --namespace external-secrets \
+                --from-literal=access-key-id="${AWS_ACCESS_KEY_ID}" \
+                --from-literal=secret-access-key="${AWS_SECRET_ACCESS_KEY}" \
+                --dry-run=client -o yaml | kubectl apply -f -
+
+    - name: apply the XRD and Composition under test
+      try:
+        - apply:
+            file: ../../../../crossplane/xrds/platform-secret.yaml
+        - apply:
+            file: ../../../../crossplane/compositions/platform-secret.yaml
+
+    - name: assert PlatformSecret CRD Established
+      try:
+        - assert:
+            resource:
+              apiVersion: apiextensions.k8s.io/v1
+              kind: CustomResourceDefinition
+              metadata:
+                name: platformsecrets.platform.k8-platform.io
+              status:
+                conditions:
+                  - type: Established
+                    status: "True"
+
+    - name: assert ClusterSecretStore Ready
+      try:
+        - assert:
+            resource:
+              apiVersion: external-secrets.io/v1beta1
+              kind: ClusterSecretStore
+              metadata:
+                name: aws-secrets-manager
+              status:
+                conditions:
+                  - type: Ready
+                    status: "True"

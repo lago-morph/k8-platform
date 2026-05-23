@@ -1,0 +1,2 @@
+claimName: ("scenario01-" + (env('CHAINSAW_RUN_ID') || 'local'))
+region: (env('AWS_REGION') || 'us-east-1')
