@@ -63,18 +63,18 @@ To be populated by the next agent by querying user before §Critique. One row pe
 
 | # | Risk title                              | Selected mitigation | Reasoning |
 |---|-----------------------------------------|---------------------|-----------|
-| 1 | Probe has side effects                  | TBD                 | TBD       |
-| 2 | Retry cap against mutating API          | TBD                 | TBD       |
-| 3 | Concurrency vs cancel-in-progress       | TBD                 | TBD       |
-| 4 | Jentic search output fidelity           | TBD                 | TBD       |
-| 5 | Cross-session discoverability           | TBD                 | TBD       |
-| 6 | Wait-state across context compaction    | TBD                 | TBD       |
-| 7 | Mandatory sections on `ext-*` skills    | TBD                 | TBD       |
-| 8 | Scope creep in `ext-github`             | TBD                 | TBD       |
-| 9 | Jentic outage mid-loop                  | TBD                 | TBD       |
-| 10| Auto-redispatch on CI failure           | TBD                 | TBD       |
-| 11| Sandbox-budget policy for long CI runs  | TBD                 | TBD       |
-| 12| Dispatch targeting `main`               | TBD                 | TBD       |
+| 1 | Probe has side effects                  | (d) Defer per-skill | Meta-skill (PR1) prompts the user to negotiate a test plan at child-authoring time. No one-size-fits-all probe policy baked into the template; user chooses what may/may not be live-fired for each new ext-* skill. |
+| 2 | Retry cap against mutating API          | (c) No retries      | One shot per call, then escalate. Probe-time verification (negotiated per Risk #1) makes production retries unnecessary; eliminates misclassification risk. |
+| 3 | Concurrency vs cancel-in-progress       | (c)+queue-depth gate | Disable `cancel-in-progress` so dispatches queue. ext-github also checks queue depth before dispatching: if >2 runs already queued, the agent attempts a non-destructive diagnosis (why is the queue stacking up?). If it can't resolve non-destructively, it stops and asks the user. Implies a workflow edit (out of pure-PR1 scope — flag for Phase B). |
+| 4 | Jentic search output fidelity           | (d) Test-plan dialog | During PR1's test-plan negotiation (Risk #1 mechanism), the meta-skill explicitly recommends a full live test of every API to be exposed, citing this risk. At call time, if the live response shape has drifted from what's recorded in the child skill, the agent notifies the user and asks what to do (no silent re-validation, no auto-fix). |
+| 5 | Cross-session discoverability           | (d) Aggressive metadata | Rely on a generous, trigger-phrase-rich `description:` in each skill's frontmatter (parent and children). If a future session still misses the skill, the user adjusts the frontmatter and proposes a change to the PR1 template. No CLAUDE.md/INDEX/hook plumbing added preemptively; revisit only if discoverability problems are actually observed. |
+| 6 | Wait-state across context compaction    | (c) One-turn timeout | Skill waits exactly one user turn for confirmation that the missing API has been added to jentic, then stops. User re-invokes if needed. No persistence machinery. |
+| 7 | Mandatory sections on `ext-*` skills    | (a) TEMPLATE + checklist | TEMPLATE.md ships with required headings (action class, test plan, expected response shape, concurrency precondition, etc.) plus a pre-commit checklist. Meta-skill procedure instructs the agent to verify the checklist before declaring the child ready. No CI lint added now. |
+| 8 | Scope creep in `ext-github`             | (d) Accept           | What is and isn't covered by an MCP server depends on the sandbox host's policy and can change at any time. The boundary cannot be enforced at the skill level. No forbidden-surface list, no rename, no per-endpoint split. The user manages scope per session as the gaps shift. |
+| 9 | Jentic outage mid-loop                  | (a) handoff fallback | When ext-github call fails (jentic 5xx, rate-limited, or unreachable), agent writes the intended next dispatch (phase/action/ref) to ai/handoff.md, commits, stops. Human resumes via Actions UI. Documented in ai/testing-guidelines.md. |
+| 10| Auto-redispatch on CI failure           | (b) Class-based      | Auto-retry once on classified-transient failures (network, AWS throttling, runner allocation, jentic 5xx). Hand off on logic failures (Terraform diagnostics, schema errors, drift). Classification leans on terraform-ci-watch's `failure-taxonomy.md`; ext-github respects the outer 3-strike envelope from that skill. |
+| 11| Sandbox-budget policy for long CI runs  | (a) Fire-and-forget  | Agent dispatches regardless of remaining sandbox budget. Human collects results from Actions UI if a run outlives the sandbox. The whole workflow only needs to be durable until platform implementation completes — total dispatch volume is 10–20 ever, so optimising for the rare end-of-session case is overengineering. |
+| 12| Dispatch targeting `main`               | (c) Rely on repo     | No skill-level restriction. Relies on repository branch protections / environment protection rules. Consistent with the lightweight, "fix-when-it-bites" stance from Risks #5/#7/#11. |
 
 (Add rows 13+ here if §Critique introduces additional risks worth slotting in.)
 
