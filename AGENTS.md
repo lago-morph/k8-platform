@@ -171,6 +171,52 @@ gone and a regression-catching test exists.
 *minimum* verification — it does not exhaust the test bundle. The full
 bundle is required for phase sign-off.
 
+### 6.4 Adversarial subagent review of test plans
+
+For every new phase (and for any meaningful expansion within a phase),
+after drafting the list of tests you intend to write, **spawn one or
+more subagents with an adversarial-reviewer brief** before authoring
+the tests. Their job is to attack the plan: enumerate contracts the
+plan does not cover, name failure modes the existing layers miss,
+propose specific tests at specific layers that would catch those gaps.
+Then implement their suggestions.
+
+Default subagent type: `general-purpose`. Run two or more in parallel
+for high-value phases — they reach independent conclusions because
+they don't see each other's reports.
+
+The brief MUST include:
+
+1. **What the phase ships** — bullet list of new files / resources /
+   contracts. No prose; just facts.
+2. **The current test plan** — the list of tests the lead agent is
+   planning to write, with the layer (unit / kyverno / integration /
+   chainsaw) and the assertion shape for each.
+3. **The known bug history** — for new phases, paste the bug-to-test
+   traceability matrix from `ai/TESTING-PLAN.md`. For phase expansions,
+   paste any recent retros' bug-class findings.
+4. **The job** — verbatim: *"Tear this test plan apart. For each
+   contract not covered or under-covered, propose a specific test:
+   layer + file path + assertion. Be ruthless about what would
+   silently pass with the bug present. Aim for ten or more concrete
+   additions; restate which contracts each one defends."*
+5. **What to skip** — declared non-goals (e.g. "we are not testing
+   AWS API rate-limiting behaviour"). Without this the reviewer
+   wastes effort on out-of-scope material.
+
+Adopt every adversarial-reviewer suggestion **unless** you can write a
+one-line explanation in the PR description for why it's out of scope.
+The cost of writing more tests is small; the cost of missed coverage
+is paid every time the phase fails in CI.
+
+The default heuristic is **lots of tests, but useful ones**. "Useful"
+means: each test defends an identifiable contract, fails for a
+specific reason in language that points at the cause, and would not
+trivially pass against a regression. Tests that overlap on the same
+contract across different layers (unit + Kyverno + integration) are
+not redundant — they fire in different environments and catch the
+contract at different lifecycle moments.
+
 ---
 
 ## 7. Testing loops — companion skills
