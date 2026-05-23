@@ -179,12 +179,60 @@ chart-shape mismatches.
 
 ---
 
-## Suggestion 5: Adversarial subagent review on every new phase
+## Suggestion 5: Adversarial subagent review whenever new tests are drafted
 
 ### Proposed addition
 
-(Already landed as `AGENTS.md §6.4` in PR #36. This entry is here
-only to make `AGENTS-suggestions.md` complete; no action needed.)
+> **Adversarial subagent review of test plans.** Whenever any new
+> tests are about to be drafted, or any existing test is about to be
+> extended with a new assertion shape, spawn one or more subagents
+> with an adversarial-reviewer brief before authoring the tests. The
+> trigger is **source-agnostic** — it does not depend on who
+> proposed the tests (user, agent, external review, copy-paste from
+> another repo). It is a gate on the *act* of drafting tests, not on
+> the source.
+>
+> Applies to: new phases, new components within a phase (new
+> `helm_release`, IRSA role, XRD, ingress, IAM policy), standalone
+> test additions in stable phases, extensions to existing tests that
+> introduce a new assertion shape.
+>
+> Does NOT apply to: pure refactors, test file moves/renames,
+> fixture updates that don't change assertion semantics.
+>
+> Default subagent type: `general-purpose`. Run two or more in
+> parallel for substantial additions; one is acceptable for small
+> standalone additions. Brief MUST include five sections: what
+> ships, current test plan, known bug-class history (pasted from
+> the bug-class registry), the verbatim job statement, declared
+> non-goals. Adopt every adversarial suggestion unless declining
+> with a one-line PR-description rationale per skipped item.
+>
+> *Grounded in: the 2026-05-23 phase-1 bring-up that hit seven
+> distinct bug classes, each one in a contract the lead agent had
+> not explicitly tested for.*
+
+### Why this earns its place in your agents file
+
+The cognitive failure mode is "test the contracts you already
+thought of." Bugs hide in the contracts you didn't. The 2026-05-23
+phase-1 bring-up surfaced seven distinct bug classes, each one in a
+contract the lead agent had not added to the test plan; an
+adversarial reviewer attacking the plan before the tests were
+written would likely have caught at least four (helm chart key
+spelling, IRSA-on-wrong-SA, missing helm_release for an existing
+IRSA role, IAM action superset).
+
+The cost is one subagent dispatch per test-drafting episode — a
+~3-minute round trip in parallel with the lead agent doing other
+work. The benefit is permanent: every test the adversary surfaces
+catches a class of bugs that would otherwise reach a 15-minute
+apply cycle.
+
+Source-agnostic triggering is important because review-quality
+falls off cliff if the discipline depends on who proposed the
+tests. A user-proposed test list is not necessarily better than an
+agent-proposed one; both benefit from adversarial attack.
 
 ---
 
@@ -192,7 +240,50 @@ only to make `AGENTS-suggestions.md` complete; no action needed.)
 
 ### Proposed addition
 
-(Already landed as `AGENTS.md §6.2` in PR #35. No action needed.)
+> **TDD discipline when fixing bugs.** When the agent finds any
+> issue — CI failure, verify mismatch, runtime surprise,
+> user-reported bug, anything — the order of operations is:
+>
+> 1. **Write a test that would have caught the bug.** Pick the test
+>    layer closest to the bug's authoring time (e.g. an IAM-policy
+>    completeness bug is a unit test, a runtime drift bug is a
+>    Kyverno policy, a multi-step AWS flow bug is an integration
+>    test). If the bug fits multiple layers, author the test in each.
+> 2. **Run the test against the unfixed code.** Confirm it **fails**
+>    (red). If the test passes against buggy code, the test does
+>    not actually catch the bug — rewrite it before continuing.
+> 3. **Implement the fix.**
+> 4. **Verify both:** the new test now passes (green), AND the
+>    original symptom (CI step, e2e check, etc.) is resolved.
+> 5. **Commit the fix and the test together.** The PR diff must
+>    show both so reviewers see what would have caught the
+>    regression.
+>
+> Skipping any step is a procedure violation. Applies to every bug,
+> including "obvious" ones — those are exactly the silent-failure
+> class that tests prevent.
+>
+> Does **not** apply to pure refactors (no bug, no test) or net-new
+> features (those follow the author-tests-alongside-features rule).
+>
+> *Grounded in: the 2026-05-23 phase-1 bring-up that took 6 fix
+> attempts because regressions reappeared in adjacent forms.*
+
+### Why this earns its place in your agents file
+
+Without this rule, the agent's natural impulse on a bug is "find
+the cause, fix, move on." That impulse loses the value of the
+bug — the regression-catching test that would prevent it next time.
+The 2026-05-23 phase-1 cycle paid this cost concretely: bugs 3, 6,
+and 7 were all chart-value mismatches in different shapes; the
+unit tests added in response to bug 7 would have caught 3 and 6
+too if they'd been written then.
+
+The marginal cost of writing the test first is 5–15 minutes; the
+marginal value is permanent (every future regression-catching
+session benefits). The asymmetry doesn't need defending — it just
+needs codifying so the rule is the default rather than a virtuous
+exception.
 
 ---
 
@@ -200,8 +291,37 @@ only to make `AGENTS-suggestions.md` complete; no action needed.)
 
 ### Proposed addition
 
-(Already landed as `AGENTS.md §3 — Stacked PRs` in PR #35. No
-action needed.)
+> **Stacked PRs.** When dependent work needs to start before a
+> parent PR has merged, stack:
+>
+> 1. Create the parent PR off `main` as normal.
+> 2. From the parent branch, create the child branch.
+> 3. Open the child PR with `base = <parent branch>` (not `main`).
+> 4. Once the parent merges, GitHub auto-rebases the child to `main`.
+>
+> Do not wait for a parent to merge before starting the child. State
+> the dependency in the child PR's description.
+>
+> Naming convention for stacks: parent branch reflects the parent's
+> purpose; child branches do not need to reference the parent
+> (GitHub tracks it via `base`).
+>
+> *Grounded in: the 2026-05-23 session's multiple stacked PRs
+> (#36 → handoff PR → retro PR), which let the user review and
+> merge in parallel with the agent finishing the chain.*
+
+### Why this earns its place in your agents file
+
+Without stacked PRs, multi-step work serializes on reviewer
+availability — each PR has to merge before the next can be
+authored. That turns a one-day delivery into a multi-day one
+because the agent sits idle between reviews.
+
+Stacked PRs decouple authoring from merging. The reviewer gets a
+clean per-PR diff (each PR contains one logical change), the agent
+keeps moving, and GitHub handles the rebase automatically when the
+parent merges. The cost is one extra step at PR-open time ("set
+base = parent"); the benefit is wall-clock parallelism.
 
 ---
 

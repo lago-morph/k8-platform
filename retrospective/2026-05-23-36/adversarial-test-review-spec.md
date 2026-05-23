@@ -23,6 +23,11 @@ to author.
 
 ## Trigger
 
+**Source-agnostic — fires whenever new tests are drafted or existing
+tests are extended with a new assertion shape, regardless of who
+proposed the tests** (user, lead agent, external review comment,
+copy-paste from another repo, anyone).
+
 **Direct user phrases:**
 
 - "Review my test plan"
@@ -31,15 +36,23 @@ to author.
 
 **Proactive triggers:**
 
-- Before starting test authoring for any phase ≥ 1 of the project.
-- When `AGENTS.md §6.4` semantics apply: new phase, OR meaningful
-  expansion (new XRD, new helm_release, new IRSA role).
+- Before starting test authoring for any new phase.
+- Before adding tests for a new component within an existing phase
+  (new `helm_release`, new IRSA role, new XRD, new ingress, new
+  IAM policy).
+- Before any standalone test addition that introduces a new
+  assertion shape — even in an otherwise-stable phase.
+- Before extending an existing test with a new assertion shape (new
+  yq path, new resource kind, new failure path).
 
 **Negative triggers:**
 
-- Pure refactors that don't change observable contracts.
+- Pure refactors that don't change what's asserted.
+- Test file moves / renames.
+- Fixture updates that don't change assertion semantics.
 - Test additions that themselves came from a prior adversarial review
-  (no infinite loop).
+  (no infinite loop — the prior review's output is implementation,
+  not new drafting).
 
 ## Inputs
 
