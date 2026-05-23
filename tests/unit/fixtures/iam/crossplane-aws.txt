@@ -1,0 +1,13 @@
+# Required IAM actions for the Crossplane AWS provider (provider-family-aws v1).
+# This list is intentionally minimal — the in-tree policy is broader. We
+# assert the policy is at least a superset of these critical actions so a
+# regression that drops a needed permission is caught.
+eks:DescribeCluster
+ec2:DescribeVpcs
+ec2:DescribeSubnets
+iam:GetRole
+iam:CreateRole
+iam:PassRole
+iam:CreateOpenIDConnectProvider
+secretsmanager:GetSecretValue
+secretsmanager:DescribeSecret

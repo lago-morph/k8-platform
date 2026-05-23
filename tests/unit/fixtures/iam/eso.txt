@@ -1,0 +1,5 @@
+# Required IAM actions for the External Secrets Operator using AWS Secrets Manager.
+# Source: https://external-secrets.io/latest/provider/aws-secrets-manager/
+secretsmanager:GetSecretValue
+secretsmanager:DescribeSecret
+secretsmanager:ListSecretVersionIds

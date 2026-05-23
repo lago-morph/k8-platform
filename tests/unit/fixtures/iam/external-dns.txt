@@ -1,0 +1,8 @@
+# Required IAM actions for external-dns (kubernetes-sigs/external-dns).
+# Source: https://github.com/kubernetes-sigs/external-dns/blob/master/docs/tutorials/aws.md
+# One action per line. Lines starting with # are ignored.
+route53:ChangeResourceRecordSets
+route53:ListResourceRecordSets
+route53:ListHostedZones
+route53:ListHostedZonesByName
+route53:GetChange
