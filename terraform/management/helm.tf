@@ -143,8 +143,10 @@ resource "helm_release" "argocd" {
     name  = "server.extraArgs[0]"
     value = "--insecure"
   }
+  # argo-cd chart has per-component ServiceAccounts; the server SA is the one
+  # that needs the IRSA role-arn annotation for any AWS API calls argo makes.
   set {
-    name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
+    name  = "server.serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
     value = module.irsa_argocd.iam_role_arn
   }
   # Ingress configured here so no separate kubernetes_ingress_v1 resource is
