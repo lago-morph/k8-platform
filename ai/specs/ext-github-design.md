@@ -88,7 +88,10 @@ To be populated by the next agent by querying user before §Critique. One row pe
 | 20| `body_inputs_schema` per-key shape       | (a) Fixed sub-shape  | Each `body_inputs_schema` entry: `required` (bool), optional `values` (array of allowed literals; omit for unbounded), optional `default` (value when key absent at call time). README shows examples for enumerated, free-form, defaulted. |
 | 21| GET query parameters not in schema      | (a) Add query parallel | Schema adds `request.query` and `request.query_inputs_schema`, parallel to `request.body` and `request.body_inputs_schema`. Body fields used for POSTs; query fields used for GETs. |
 
-(Add rows 22+ here if a later §Critique introduces additional risks worth slotting in.)
+| 22| Veto of a load-bearing endpoint         | (a) Stop and ask     | If the user vetoes any endpoint in the test plan, the meta-skill stops the authoring procedure and asks for direction (skip the endpoint, use an unverified recording, abandon the skill). No silent fallbacks. |
+| 23| Test-plan friction for GETs vs POSTs    | (d) Pragmatic        | No formal resolution. User noted that the agent is capable of handling this judgment at invocation time. Procedure stays uniform; the agent applies sensible defaults in practice. |
+
+(Spec marked ACCEPTED by user after row 23. tmp/draft-spec.md is the resolved design; this table is the audit trail.)
 
 ---
 

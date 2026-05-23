@@ -1,8 +1,8 @@
 # Resolved Design — external-api-bridge + ext-github
 
-**Status:** draft for fresh-eyes critique (iteration 4, after risks #20–#21).
-Folds the §Resolutions from `ai/specs/ext-github-design.md` (rows 1–21)
-into the design itself.
+**Status:** **ACCEPTED** (iteration 5). Folds §Resolutions from
+`ai/specs/ext-github-design.md` (rows 1–23) into the design itself.
+This is the resolved design that PR1 and PR2 will implement.
 
 **Scope reminder.** Total dispatch volume over the project's lifetime
 is expected to be 10–20 dispatches ever. The bridge only has to be
@@ -93,6 +93,11 @@ Two flows: **create-new** and **extend-existing** (Res #16).
    `vetoed (reason)`.
 5. **Live-fire execution.** Run the approved test plan. Each call is
    one-shot — no retries (Res #2). On failure, stop and escalate.
+   If the user vetoed any endpoint during negotiation, the meta-skill
+   does not silently skip it: stop the authoring procedure and ask
+   for explicit direction — skip the endpoint, ship with an
+   unverified recording (and a `verified: false` note in the child
+   SKILL.md), or abandon (Res #22).
 6. **Record verified shapes.** For each successful probe, write
    `resources/<endpoint>.json` in the child skill's tree, conforming
    to the schema in `external-api-bridge/resources/README.md`
