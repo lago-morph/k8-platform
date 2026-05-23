@@ -1,0 +1,159 @@
+# PlatformCluster — the platform's EKS cluster abstraction (REQ-XP-02).
+#
+# A claim against this XRD provisions a complete EKS cluster:
+#   1. Cluster IAM role (AmazonEKSClusterPolicy)
+#   2. Node group IAM role (worker / CNI / ECR-read policies)
+#   3. EKS Cluster (control plane)
+#   4. EKS Managed Node Group
+#
+# Out-of-scope for v1alpha1 (deliberately):
+#   - VPC creation. The claim references existing private subnets from
+#     the base module. Platform/workload clusters share the management
+#     account's VPC; cross-VPC clusters belong to a future v1beta1.
+#   - OIDC provider for IRSA. The cluster issuer URL is published on
+#     status.oidcIssuer; the actual aws_iam_openid_connect_provider is
+#     created out-of-band in the consuming module (phase 3) where the
+#     workload-specific IRSA roles are also defined. Wiring IRSA inside
+#     this XRD forces a generic Composition to predict caller IAM
+#     policy needs, which it cannot.
+#   - Kubeconfig secret generation. EKS exposes endpoint + CA on
+#     cluster status; downstream tooling (ArgoCD ApplicationSet,
+#     Iteration 3) consumes those directly via the cluster Secret
+#     written by the EKS provider's connectionDetails.
+#
+# Per DESIGN.md §3.2 (Iteration 2 end state): this XRD defines the
+# pattern; it is not invoked yet. First real invocation is Iteration 3
+# (platform services cluster).
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xplatformclusters.platform.k8-platform.io
+spec:
+  group: platform.k8-platform.io
+  names:
+    kind: XPlatformCluster
+    plural: xplatformclusters
+    listKind: XPlatformClusterList
+    singular: xplatformcluster
+  claimNames:
+    kind: PlatformCluster
+    plural: platformclusters
+    listKind: PlatformClusterList
+    singular: platformcluster
+  defaultCompositionRef:
+    name: platform-cluster-aws
+  connectionSecretKeys:
+    - kubeconfig
+    - endpoint
+    - cluster-ca
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: >-
+                    EKS cluster name. Used as the suffix for IAM role
+                    names too (cluster-<name>, nodegroup-<name>). Must
+                    be unique within the AWS account.
+                  pattern: "^[a-z][a-z0-9-]{1,38}[a-z0-9]$"
+                region:
+                  type: string
+                  description: >-
+                    AWS region. Defaults to us-east-1 — match the
+                    region of the VPC whose subnets you pass in
+                    spec.vpc.subnetIds. Cross-region EKS is not
+                    supported by this XRD.
+                  pattern: "^[a-z]{2}-[a-z]+-[0-9]$"
+                  default: "us-east-1"
+                version:
+                  type: string
+                  description: >-
+                    Kubernetes control plane version. EKS supports the
+                    current minus three minor versions; bumping requires
+                    a node group AMI bump too. Defaults to "1.32" — keep
+                    in sync with terraform/management/variables.tf
+                    (kubernetes_version) so management and platform
+                    clusters share an upgrade cadence.
+                  pattern: "^[0-9]+\\.[0-9]+$"
+                  default: "1.32"
+                vpc:
+                  type: object
+                  description: >-
+                    Existing VPC + subnets to attach the cluster to.
+                    No VPC creation in this XRD by design (see header).
+                  properties:
+                    subnetIds:
+                      type: array
+                      description: >-
+                        Private subnet IDs the cluster ENIs land in.
+                        At least 2 subnets across 2 AZs (EKS HA req).
+                      items:
+                        type: string
+                        pattern: "^subnet-[a-z0-9]+$"
+                      minItems: 2
+                  required:
+                    - subnetIds
+                nodeGroup:
+                  type: object
+                  description: Managed node group sizing + instance choice.
+                  properties:
+                    instanceTypes:
+                      type: array
+                      description: >-
+                        EC2 instance types the managed node group draws
+                        from. Defaults to t3.medium — sized for the
+                        9-instance EC2 quota in this account. Use larger
+                        types in production-grade environments.
+                      items:
+                        type: string
+                      default: ["t3.medium"]
+                      minItems: 1
+                    desiredSize:
+                      type: integer
+                      minimum: 1
+                      maximum: 10
+                      default: 2
+                    minSize:
+                      type: integer
+                      minimum: 1
+                      maximum: 10
+                      default: 1
+                    maxSize:
+                      type: integer
+                      minimum: 1
+                      maximum: 20
+                      default: 3
+                  default:
+                    instanceTypes: ["t3.medium"]
+                    desiredSize: 2
+                    minSize: 1
+                    maxSize: 3
+              required:
+                - name
+                - vpc
+            status:
+              type: object
+              properties:
+                clusterArn:
+                  type: string
+                  description: ARN of the EKS cluster once Active.
+                endpoint:
+                  type: string
+                  description: API server endpoint URL.
+                oidcIssuer:
+                  type: string
+                  description: >-
+                    OIDC issuer URL. Phase 3 creates the
+                    aws_iam_openid_connect_provider against this issuer
+                    so workloads on the cluster can use IRSA.
+                nodeGroupArn:
+                  type: string
+                  description: ARN of the managed node group.

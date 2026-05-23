@@ -1,0 +1,33 @@
+# Example PlatformCluster claim — copy/paste starting point.
+#
+# WARNING: applying this `kubectl apply -f` will create a REAL EKS
+# cluster + managed node group in AWS. Provisioning takes ~15 minutes.
+# Teardown is ~10 minutes more.
+#
+# Substitute spec.vpc.subnetIds with the actual private subnet IDs
+# from your base module's output (terraform output -json | jq).
+#
+# After apply:
+#   - kubectl get platformcluster -A
+#   - kubectl get xplatformcluster
+#   - kubectl get cluster.eks.aws.upbound.io
+#   - kubectl get nodegroup.eks.aws.upbound.io
+#   - aws eks describe-cluster --name workload1 --region us-east-1
+apiVersion: platform.k8-platform.io/v1alpha1
+kind: PlatformCluster
+metadata:
+  name: workload1
+  namespace: default
+spec:
+  name: k8-platform-workload1
+  region: us-east-1
+  version: "1.32"
+  vpc:
+    subnetIds:
+      - subnet-REPLACE-ME-AZ1
+      - subnet-REPLACE-ME-AZ2
+  nodeGroup:
+    instanceTypes: ["t3.medium"]
+    desiredSize: 2
+    minSize: 1
+    maxSize: 3
