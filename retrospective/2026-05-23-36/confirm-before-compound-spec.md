@@ -77,19 +77,27 @@ A structured repeat-back message containing:
    format. Use real branch names, file paths, and PR numbers from
    context.
 4. **If not triggered**, proceed as normal.
-5. **Wait for the user's response.** Their reply may:
-   - Confirm verbatim: proceed exactly as drafted.
-   - Correct one or more steps: incorporate corrections and re-confirm
+5. **Wait for the user's chat response.** Approval comes from chat,
+   explicitly, with words. Their reply may:
+   - Confirm: proceed exactly as drafted.
+   - Correct one or more steps: incorporate corrections; re-confirm
      only if the corrections were substantial.
    - Add new asks: treat the combined set as a new compound prompt
      and re-confirm.
-   - Skip confirmation by merging an in-flight PR or saying "go":
-     treat that as an implicit green light for the most recent
-     repeat-back.
-6. **If the user did not respond and instead acted on the
-   environment** (merged a PR, pushed a commit, etc.), proceed on
-   the drafted plan but **flag in the next message** that
-   confirmation was inferred from action rather than explicit reply.
+   - Use an explicit opt-out ("go", "just do it"): proceed without
+     re-confirming further sub-questions.
+6. **System actions are not approval.** If the user takes a system
+   action (merges a PR, leaves a review comment, dispatches a
+   workflow, edits a file the agent is mid-work on) without replying
+   in chat, **do not interpret it as approval**. The user is often
+   reviewing and approving pull requests in parallel with agents
+   doing work, and may take those actions without even realizing
+   the agent has asked for approval for something. Continue waiting.
+7. **If the wait is unproductive**, the agent may:
+   - Continue any orthogonal work unaffected by the pending question.
+   - Send a follow-up chat reminder naming the specific question.
+   - Do not proceed on the pending question itself until the user
+     replies in chat.
 
 ## Concrete examples
 
@@ -165,10 +173,11 @@ clarifying question — that's a different discipline, not this skill.
   the *content* of the work. If you don't know how to do X, ask "how
   should I approach X?" — that's a different kind of question and
   doesn't belong inside this skill's output format.
-- **Do not** silently re-interpret the prompt if the user doesn't
-  reply but takes an action. Surface the inference in the next
-  message ("merging PR #34 looked like a green light, so I'm
-  proceeding on…").
+- **Do not** treat system actions (PR merges, review comments,
+  workflow dispatches, file edits) as approval of a pending
+  repeat-back. The user works in parallel; their environment
+  actions are orthogonal to the question they were asked. Wait for
+  chat.
 
 ## Acceptance criteria
 
@@ -179,8 +188,10 @@ clarifying question — that's a different discipline, not this skill.
    stopping points, flagged ambiguities, implicit assumptions.
 3. For prompts containing an opt-out phrase, the agent skips the
    repeat-back and proceeds directly.
-4. When the user acts on the environment instead of replying,
-   the agent's next message names the inference explicitly.
+4. When the user takes system actions but does not reply in chat,
+   the agent does NOT proceed on the pending question. It either
+   waits, does orthogonal work, or sends a chat-only follow-up
+   naming the open question.
 
 ## Files this skill creates / modifies
 

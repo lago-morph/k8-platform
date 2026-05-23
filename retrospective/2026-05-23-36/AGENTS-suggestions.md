@@ -25,44 +25,47 @@ operating posture; copy-paste the ones that do.
 > (a) numbered actions in execution order, (b) explicit stopping
 > points, (c) flagged ambiguities with intended interpretations,
 > (d) any assumptions inferred from context. The agent then waits
-> for the user's reply.
+> for the user's chat reply.
 >
 > The default is **only** skipped when the prompt itself contains
 > an explicit opt-out: "do this without confirming", "just do it",
 > "skip the recap", "no need to repeat back", or equivalent.
 >
-> When the user does not reply but instead acts on the environment
-> (merges a PR, pushes a commit), the agent may proceed on the
-> drafted plan but **must surface the inference** in its next
-> message ("merging PR #N looked like a green light, so I'm
-> proceeding on…").
+> **System actions are not approval.** If the user takes a system
+> action (merges a PR, leaves a review comment, dispatches a
+> workflow, edits a file) without replying in chat, **do not
+> interpret it as approval**. The user is often reviewing and
+> approving pull requests in parallel with agents doing work and
+> may take those actions without realizing the agent has asked for
+> approval for something. Continue waiting for the chat reply. If
+> the wait is unproductive, the agent may do orthogonal work or
+> send a chat-only follow-up naming the open question; the agent
+> does not proceed on the pending question until the user replies
+> in chat.
 >
-> *Grounded in: PR #34 / #35 merges on 2026-05-23, where the user
-> bypassed two repeat-back drafts by merging in-flight PRs.*
+> *Grounded in: 2026-05-23 session where the agent twice misread
+> PR merges as implicit approval of pending repeat-backs.*
 
 ### Why this earns its place in your agents file
 
-In the 2026-05-23 session, two of the three multi-step prompts I
-received bundled at least four distinct asks (one bundled six). My
-prior default was to interpret and act; the user's prior default
-was to either reply or — twice — to merge the in-flight PR as a
-signal of approval. The merge signal worked, but it left two
-ambiguity questions unanswered (AGENTS.md vs CLAUDE.md; "tear down
-phase X" scope). I made reasonable defaults and moved on, but a
-less reasonable default could have produced work the user did not
-want.
+The original framing of this rule treated system actions as
+implicit confirmation. The user corrected that mid-session: they
+are often reviewing and approving pull requests in parallel with
+agents doing work, and may take those actions without even
+realizing the agent has asked for approval for something. Treating
+those actions as approval would routinely commit the agent to
+work the user did not actually approve.
 
-The marginal cost of the rule is small: one structured message at
-the start of a compound prompt. The marginal benefit is that
-ambiguity is surfaced before the work, not after. The session's
-single largest time sink (the "tear down phase X" clarification
-round-trip) would have been ~30 seconds shorter with this rule
-applied uniformly.
+The corrected rule keeps the structured repeat-back as the default
+for compound prompts (which surfaces ambiguity before the work),
+and makes explicit that approval is **only** from chat, with words.
+System actions and chat replies are two orthogonal channels; only
+one of them carries approval.
 
-The user explicitly requested this rule during the 2026-05-23
-session, with the framing: "turn the default into 'you tell me what
-you think I want you to do', instead of the current 'run with it
-making assumptions as I go.'"
+The marginal cost is the agent occasionally waiting longer for an
+explicit chat reply when the user is busy. The marginal benefit is
+that the agent never silently moves forward on a question the user
+didn't actually answer.
 
 ---
 
