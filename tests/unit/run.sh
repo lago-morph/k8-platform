@@ -33,6 +33,7 @@ run_suite tests/unit/test_helm_render.sh
 run_suite tests/unit/test_post_comment.sh
 run_suite tests/unit/test_kyverno_policy_lint.sh
 run_suite tests/unit/test_chainsaw_kind_config.sh
+run_suite tests/unit/test_diag_component.sh
 
 echo ""
 if [ "$OVERALL" -eq 0 ]; then
