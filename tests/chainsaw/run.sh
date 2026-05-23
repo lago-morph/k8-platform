@@ -273,12 +273,84 @@ else
   echo "   (smoke scenarios will run; platform-secret scenarios will fail closed)"
 fi
 
+# ---------- on-failure diagnostics ------------------------------------------
+#
+# Chainsaw's own failure output only shows the assertion that failed.
+# When a PlatformSecret claim stays Ready=False ("waiting for composite
+# resource to become Ready"), the root cause is downstream — provider
+# not Healthy, composed ASM Secret stuck, ESO controller crashed, etc.
+# Without describes / logs, every failure looks identical.
+#
+# This block runs only when chainsaw exited non-zero. The cleanup trap
+# fires after this block and tears the kind cluster down, so this is
+# the last chance to capture state.
+dump_diagnostics() {
+  echo ""
+  echo "── ON-FAILURE DIAGNOSTICS (chainsaw rc=$1) ────────────────────"
+
+  echo ""
+  echo "── crossplane providers + functions ───────────────────────────"
+  kubectl get provider.pkg.crossplane.io,providerrevision.pkg.crossplane.io,function.pkg.crossplane.io 2>&1 | sed 's/^/  /' || true
+
+  echo ""
+  echo "── crossplane-system pods ─────────────────────────────────────"
+  kubectl -n crossplane-system get pods 2>&1 | sed 's/^/  /' || true
+  for pod in $(kubectl -n crossplane-system get pods -o name 2>/dev/null); do
+    echo ""
+    echo "── logs: $pod (tail 40) ──"
+    kubectl -n crossplane-system logs --tail=40 "$pod" 2>&1 | sed 's/^/    /' || true
+  done
+
+  echo ""
+  echo "── claims + composites + managed resources ────────────────────"
+  kubectl get platformsecret,xplatformsecret -A 2>&1 | sed 's/^/  /' || true
+  kubectl get platformcluster,xplatformcluster -A 2>&1 | sed 's/^/  /' || true
+  kubectl get managed 2>&1 | sed 's/^/  /' || true
+
+  echo ""
+  echo "── describe stuck composites (first 60 lines each) ────────────"
+  for kind in xplatformsecret xplatformcluster; do
+    for name in $(kubectl get "$kind" -o name 2>/dev/null); do
+      echo ""
+      echo "── describe $name ──"
+      kubectl describe "$name" 2>&1 | head -60 | sed 's/^/    /' || true
+    done
+  done
+
+  echo ""
+  echo "── ExternalSecret status (every ns) ───────────────────────────"
+  kubectl get externalsecret -A -o wide 2>&1 | sed 's/^/  /' || true
+
+  echo ""
+  echo "── external-secrets pods ──────────────────────────────────────"
+  kubectl -n external-secrets get pods 2>&1 | sed 's/^/  /' || true
+  for pod in $(kubectl -n external-secrets get pods -o name 2>/dev/null); do
+    echo ""
+    echo "── logs: $pod (tail 40) ──"
+    kubectl -n external-secrets logs --tail=40 "$pod" 2>&1 | sed 's/^/    /' || true
+  done
+
+  echo ""
+  echo "── recent events (cluster-wide, last 20) ──────────────────────"
+  kubectl get events -A --sort-by=.lastTimestamp 2>&1 | tail -20 | sed 's/^/  /' || true
+
+  echo ""
+  echo "── END DIAGNOSTICS ────────────────────────────────────────────"
+}
+
 # ---------- run chainsaw scenarios ------------------------------------------
 echo ""
 echo "── running chainsaw ───────────────────────────────────────────"
 SCENARIO_ARG="${CHAINSAW_SCENARIOS:-.}"
-chainsaw test "$SCENARIO_ARG" \
-  --config chainsaw-config.yaml
+set +e
+chainsaw test "$SCENARIO_ARG" --config chainsaw-config.yaml
+CHAINSAW_RC=$?
+set -e
+
+if [ "$CHAINSAW_RC" -ne 0 ]; then
+  dump_diagnostics "$CHAINSAW_RC"
+  exit "$CHAINSAW_RC"
+fi
 
 echo ""
 echo "── all scenarios passed ──────────────────────────────────────"
