@@ -1,5 +1,5 @@
 locals {
-  name_prefix = "k8-platform"
+  name_prefix       = "k8-platform"
   cluster_subdomain = "management.${var.domain}"
 
   # Pull base outputs via remote state.

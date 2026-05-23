@@ -6,9 +6,9 @@
 # Management cluster uses .20.x and .21.x to avoid overlap.
 
 locals {
-  base_vpc_id         = try(data.terraform_remote_state.base.outputs.vpc_id, "")
+  base_vpc_id          = try(data.terraform_remote_state.base.outputs.vpc_id, "")
   base_nat_gateway_ids = try(data.terraform_remote_state.base.outputs.nat_gateway_ids, [])
-  base_applied        = local.base_vpc_id != ""
+  base_applied         = local.base_vpc_id != ""
 }
 
 resource "aws_subnet" "management" {
@@ -19,9 +19,9 @@ resource "aws_subnet" "management" {
   availability_zone = var.availability_zones[count.index]
 
   tags = {
-    Name                                            = "k8-platform-mgmt-${var.availability_zones[count.index]}"
-    "kubernetes.io/role/internal-elb"               = "1"
-    "kubernetes.io/cluster/${var.cluster_name}"     = "owned"
+    Name                                        = "k8-platform-mgmt-${var.availability_zones[count.index]}"
+    "kubernetes.io/role/internal-elb"           = "1"
+    "kubernetes.io/cluster/${var.cluster_name}" = "owned"
   }
 }
 

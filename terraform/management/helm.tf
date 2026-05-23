@@ -197,7 +197,7 @@ resource "helm_release" "kyverno" {
   # Kyverno's admission webhook can race the API server during install on a
   # cold cluster; wait=false lets terraform return as soon as the helm release
   # is registered, and the e2e-verify pod check confirms readiness.
-  wait             = false
+  wait = false
 
   depends_on = [module.eks]
 }
