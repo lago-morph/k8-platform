@@ -180,6 +180,35 @@ resource "terraform_data" "crossplane_aws_provider" {
   depends_on = [helm_release.crossplane]
 }
 
+# Install function-patch-and-transform. Required by every Composition that
+# uses v2 Pipeline mode with the legacy resources/patches input shape;
+# Crossplane v2 removed `spec.resources` from the v1 Composition schema, so
+# every Composition the platform ships goes through this function.
+resource "terraform_data" "crossplane_function_patch_and_transform" {
+  triggers_replace = [
+    var.crossplane_function_patch_and_transform_version,
+  ]
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      aws eks update-kubeconfig \
+        --name ${module.eks.cluster_name} \
+        --region ${var.aws_region} \
+        --kubeconfig /tmp/k8-platform-kubeconfig
+      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl apply -f - <<'MANIFEST'
+      apiVersion: pkg.crossplane.io/v1beta1
+      kind: Function
+      metadata:
+        name: function-patch-and-transform
+      spec:
+        package: "xpkg.upbound.io/crossplane-contrib/function-patch-and-transform:${var.crossplane_function_patch_and_transform_version}"
+      MANIFEST
+    EOT
+  }
+
+  depends_on = [helm_release.crossplane]
+}
+
 # ---- Kyverno (audit-mode policy engine) ----
 # Acts as a continuously-running assertion store: policies in policies/audit/
 # declare what "well-configured" looks like, and any drift (chart bump, hand

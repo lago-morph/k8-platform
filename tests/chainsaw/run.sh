@@ -155,6 +155,21 @@ MANIFEST
 # grep can verify the gate exists.
 kubectl wait --for=condition=Healthy provider.pkg.crossplane.io/provider-family-aws --timeout=300s
 
+# ---------- install function-patch-and-transform ---------------------------
+# Crossplane v2 Pipeline compositions need a function to apply patches;
+# function-patch-and-transform implements the legacy `resources` shape.
+echo ""
+echo "── installing function-patch-and-transform ────────────────────"
+kubectl apply -f - <<MANIFEST
+apiVersion: pkg.crossplane.io/v1beta1
+kind: Function
+metadata:
+  name: function-patch-and-transform
+spec:
+  package: "xpkg.upbound.io/crossplane-contrib/function-patch-and-transform:${FUNCTION_PATCH_AND_TRANSFORM_VERSION}"
+MANIFEST
+kubectl wait --for=condition=Healthy function.pkg.crossplane.io/function-patch-and-transform --timeout=300s
+
 # ---------- install ESO + AWS ProviderConfig + ClusterSecretStore -----------
 #
 # These were previously inside `tests/chainsaw/platform-secret/_setup/`
