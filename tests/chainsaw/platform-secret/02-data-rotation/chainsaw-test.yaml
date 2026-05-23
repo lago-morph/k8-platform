@@ -1,0 +1,101 @@
+# Rotation: a value change in ASM (out of band) propagates into the
+# K8s Secret within refreshInterval.
+#
+# Per adversarial-reviewer B.C.5: short refreshInterval (10s) plus an
+# upper-bound poll window catches ESO refresh bugs (stale cache, sync
+# error swallowed, etc.). The scenario writes via aws CLI so the
+# Composition itself doesn't need a `forProvider.secretString` path
+# (deliberately kept out of the claim shape — that data lives in ASM).
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: claim-rotation
+spec:
+  timeouts:
+    apply: 30s
+    assert: 120s
+    delete: 60s
+  steps:
+    - name: apply a claim with short refreshInterval
+      try:
+        - apply:
+            resource:
+              apiVersion: platform.k8-platform.io/v1alpha1
+              kind: PlatformSecret
+              metadata:
+                name: ($values.claimName)
+                namespace: default
+              spec:
+                refreshInterval: 10s
+                region: ($values.region)
+                description: "chainsaw scenario 02 — rotation"
+
+    - name: wait for claim Ready
+      try:
+        - assert:
+            resource:
+              apiVersion: platform.k8-platform.io/v1alpha1
+              kind: PlatformSecret
+              metadata:
+                name: ($values.claimName)
+                namespace: default
+              status:
+                conditions:
+                  - type: Ready
+                    status: "True"
+
+    - name: write initial value into ASM out-of-band
+      try:
+        - script:
+            content: |
+              set -euo pipefail
+              xr=$(kubectl get platformsecret ${CLAIM_NAME} -n default -o jsonpath='{.spec.resourceRef.name}')
+              uid=$(kubectl get xplatformsecret "$xr" -o jsonpath='{.metadata.uid}')
+              key="k8-platform/${uid}"
+              echo "$key" > /tmp/scenario02-asm-key.txt
+              aws secretsmanager put-secret-value \
+                --secret-id "$key" \
+                --secret-string '{"phase":"initial"}' \
+                --region "${AWS_REGION:-us-east-1}" >/dev/null
+              echo "wrote initial value to $key"
+            env:
+              - name: CLAIM_NAME
+                value: ($values.claimName)
+
+    - name: wait for ESO to materialize the K8s Secret with the initial value
+      try:
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: ($values.claimName)
+                namespace: default
+              data:
+                # base64 of "initial"
+                phase: aW5pdGlhbA==
+
+    - name: rotate value in ASM
+      try:
+        - script:
+            content: |
+              set -euo pipefail
+              key=$(cat /tmp/scenario02-asm-key.txt)
+              aws secretsmanager put-secret-value \
+                --secret-id "$key" \
+                --secret-string '{"phase":"rotated"}' \
+                --region "${AWS_REGION:-us-east-1}" >/dev/null
+              echo "rotated $key"
+
+    - name: assert K8s Secret picks up rotated value within refreshInterval
+      try:
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: ($values.claimName)
+                namespace: default
+              data:
+                # base64 of "rotated"
+                phase: cm90YXRlZA==

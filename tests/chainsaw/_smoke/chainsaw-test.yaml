@@ -1,0 +1,52 @@
+# Smoke scenario — proves the chainsaw harness itself works end-to-end
+# (kind up, chainsaw CLI on PATH, cluster reachable) WITHOUT depending on
+# any XRD / Composition. If this fails, the harness is broken, not the
+# Crossplane code under test.
+#
+# Stays deliberately minimal: apply a ConfigMap, assert it exists, delete
+# it, assert it's gone. ~5 seconds end-to-end.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: smoke-harness-works
+spec:
+  steps:
+    - name: apply a ConfigMap
+      try:
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: chainsaw-smoke
+                namespace: default
+              data:
+                marker: "harness-is-alive"
+    - name: assert the ConfigMap is present
+      try:
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: chainsaw-smoke
+                namespace: default
+              data:
+                marker: "harness-is-alive"
+    - name: delete the ConfigMap
+      try:
+        - delete:
+            ref:
+              apiVersion: v1
+              kind: ConfigMap
+              name: chainsaw-smoke
+              namespace: default
+    - name: assert the ConfigMap is gone
+      try:
+        - error:
+            resource:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: chainsaw-smoke
+                namespace: default

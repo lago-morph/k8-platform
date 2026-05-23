@@ -1,0 +1,23 @@
+# Kind cluster config for the Chainsaw harness.
+#
+# - 1 control-plane node only — chainsaw scenarios are small and don't
+#   need worker isolation.
+# - Node image pinned to a SHA256 digest in tests/chainsaw/versions.env;
+#   the image: field below is overridden by run.sh from that env var so
+#   the digest only lives in one place.
+# - extraPortMappings reserved for future ingress assertions; none today.
+#
+# Bumping the node image: edit KINDEST_NODE_IMAGE in versions.env and
+# tests/unit/test_chainsaw_kind_config.sh will assert the new value.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: k8-platform-chainsaw
+nodes:
+  - role: control-plane
+    # image is injected by run.sh from $KINDEST_NODE_IMAGE
+networking:
+  apiServerAddress: "127.0.0.1"
+  # Pick a non-default port so a developer's stray local kind cluster
+  # on 6443 doesn't collide. Chainsaw / kubectl use $KUBECONFIG, so the
+  # actual port is auto-discovered.
+  apiServerPort: 36443

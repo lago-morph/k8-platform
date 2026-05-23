@@ -1,0 +1,61 @@
+# App-of-apps bootstrap Application.
+#
+# This single Application is kubectl-applied ONCE by Terraform after
+# ArgoCD installs (terraform/management/helm.tf → terraform_data
+# .argocd_bootstrap). From that point on, every other AppProject and
+# Application in argocd/ is GitOps-managed by THIS bootstrap App.
+#
+# Why a separate file (not under argocd/apps/):
+#   - argocd/apps/ is what the bootstrap syncs. Putting the bootstrap
+#     here too creates a self-referential loop (Argo tries to "manage"
+#     its own management Application).
+#   - Lives at argocd/bootstrap.yaml so it's the only file Terraform
+#     needs to reference by literal path.
+#
+# Why project: default (not k8-platform):
+#   - The k8-platform AppProject is created BY this bootstrap App, so
+#     it doesn't exist yet at first apply. Default project always
+#     exists and is the conventional home for bootstrap Applications.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: bootstrap
+  namespace: argocd
+  # Lower wave than any child Application — guarantees the AppProject
+  # lands before any child references it.
+  annotations:
+    argocd.argoproj.io/sync-wave: "-100"
+  # Don't delete this Application on bootstrap cleanup — Terraform owns it.
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/lago-morph/k8-platform.git
+    targetRevision: main
+    path: argocd
+    directory:
+      recurse: true
+      # Sync everything under argocd/ EXCEPT this bootstrap file
+      # itself — Terraform owns it.
+      exclude: '{bootstrap.yaml}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      # The AppProject needs to be created before any Application that
+      # references it; Argo's sync-wave annotation on each child
+      # Application + the SyncWaves option enforces that.
+      - SyncWaves=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m

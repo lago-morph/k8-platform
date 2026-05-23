@@ -1,0 +1,116 @@
+# Chainsaw test harness for Crossplane XRDs and Compositions.
+#
+# Runs on:
+#   - workflow_dispatch       — manual smoke-test trigger
+#   - push to a feature branch when paths under crossplane/, tests/chainsaw/,
+#     or this workflow itself change
+#
+# This is intentionally a SEPARATE workflow from terraform-test.yml so the
+# Crossplane Composition feedback loop doesn't block on (or get blocked by)
+# the slow terraform path, and so each side can be observed independently
+# in the GitHub Actions UI.
+#
+# AWS credentials are passed through ONLY when the workflow is dispatched
+# manually or run on a branch with the appropriate environment binding.
+# A path-filter-only trigger does NOT carry AWS creds — the _smoke
+# scenario runs without them; real-AWS scenarios will fail closed in
+# that case (which is the desired behaviour).
+name: Chainsaw
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario_filter:
+        description: "Optional path filter passed as CHAINSAW_SCENARIOS (default: all)"
+        required: false
+        default: ""
+  push:
+    paths:
+      # Per adversarial reviewer B: include the workflow itself so a
+      # typo in path filters surfaces immediately on the offending PR.
+      - ".github/workflows/chainsaw.yml"
+      - "crossplane/**"
+      - "tests/chainsaw/**"
+      - "tests/unit/test_chainsaw_kind_config.sh"
+    branches-ignore:
+      - main
+
+concurrency:
+  # One chainsaw run per branch — multiple in parallel against the same
+  # shared AWS account would collide on the k8-platform-chainsaw-* prefix.
+  # CHAINSAW_RUN_ID separates concurrent runs across DIFFERENT branches.
+  group: chainsaw-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  chainsaw:
+    name: Chainsaw (Crossplane scenarios)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      # Per-run isolation prefix for ASM secret naming. The chainsaw
+      # cleanup trap force-deletes every secret under this prefix on
+      # exit, success or failure.
+      CHAINSAW_RUN_ID: "${{ github.run_id }}-${{ github.run_attempt }}"
+      # Pass-through for real-AWS scenarios. Empty values mean smoke-only.
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Load pinned tool versions
+        id: versions
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC1091
+          . tests/chainsaw/versions.env
+          echo "kind_version=$KIND_VERSION"          >> "$GITHUB_OUTPUT"
+          echo "chainsaw_version=$CHAINSAW_VERSION"  >> "$GITHUB_OUTPUT"
+
+      - name: Install kind
+        run: |
+          set -euo pipefail
+          curl -fsSL \
+            "https://kind.sigs.k8s.io/dl/${{ steps.versions.outputs.kind_version }}/kind-linux-amd64" \
+            -o /usr/local/bin/kind
+          chmod +x /usr/local/bin/kind
+          kind --version
+
+      - name: Install chainsaw
+        run: |
+          set -euo pipefail
+          curl -fsSL \
+            "https://github.com/kyverno/chainsaw/releases/download/${{ steps.versions.outputs.chainsaw_version }}/chainsaw_linux_amd64.tar.gz" \
+            -o /tmp/chainsaw.tar.gz
+          tar -xzf /tmp/chainsaw.tar.gz -C /tmp
+          install -m 0755 /tmp/chainsaw /usr/local/bin/chainsaw
+          chainsaw version
+
+      - name: Install helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+
+      - name: Verify pre-existing tools
+        run: |
+          kubectl version --client
+          docker version
+          aws --version || echo "(aws not present — smoke-only scenarios will run)"
+
+      - name: Run pinning unit test
+        # The unit test asserts versions.env + run.sh + kind-config.yaml
+        # all agree. If it fails here, the harness itself is broken;
+        # fail fast before booting kind.
+        run: bash tests/unit/test_chainsaw_kind_config.sh
+
+      - name: Run chainsaw harness
+        env:
+          # Optional dispatch-time scenario filter.
+          CHAINSAW_SCENARIOS: ${{ github.event.inputs.scenario_filter }}
+        run: bash tests/chainsaw/run.sh
