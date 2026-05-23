@@ -39,11 +39,15 @@ spec:
               kind: CompositeResourceDefinition
               metadata:
                 name: xplatformclusters.platform.k8-platform.io
+              # Condition order matches Crossplane's emitted order
+              # (Offered first, then Established) — chainsaw assert is
+              # positional, not set-membership. PR #51 hit the same bug
+              # class on PlatformSecret's chainsaw.
               status:
                 conditions:
-                  - type: Established
-                    status: "True"
                   - type: Offered
+                    status: "True"
+                  - type: Established
                     status: "True"
 
     - name: assert the CRDs landed in the cluster
