@@ -173,17 +173,40 @@ bundle is required for phase sign-off.
 
 ### 6.4 Adversarial subagent review of test plans
 
-For every new phase (and for any meaningful expansion within a phase),
-after drafting the list of tests you intend to write, **spawn one or
-more subagents with an adversarial-reviewer brief** before authoring
-the tests. Their job is to attack the plan: enumerate contracts the
-plan does not cover, name failure modes the existing layers miss,
-propose specific tests at specific layers that would catch those gaps.
-Then implement their suggestions.
+**Trigger — source-agnostic.** Whenever any new tests are about to be
+drafted, or any existing test is about to be extended with a new
+assertion shape, **spawn one or more subagents with an
+adversarial-reviewer brief** before authoring the tests. The trigger
+does not depend on *who* proposed the tests — the user, the agent,
+an external review comment, a copy-paste from another repo, anyone.
+It is a gate on the *act* of drafting tests, not on the source.
+
+This applies to:
+
+- New phases (everything in `tests/**` and `policies/audit/**` for
+  that phase).
+- New components within an existing phase (a new `helm_release`, a
+  new IRSA role, a new XRD, a new ingress).
+- Standalone test additions in an otherwise-stable phase — e.g. a
+  PR that exists only to add coverage.
+- Extensions to existing tests that introduce a new assertion shape
+  (a new yq path, a new resource kind, a new failure path).
+
+It does NOT apply to:
+
+- Pure refactors of existing tests that don't change what's asserted.
+- Test file moves / renames.
+- Fixture updates that don't change assertion semantics.
+
+The job of the adversarial reviewer is to attack the plan: enumerate
+contracts the plan does not cover, name failure modes the existing
+layers miss, propose specific tests at specific layers that would
+catch those gaps. Then implement their suggestions.
 
 Default subagent type: `general-purpose`. Run two or more in parallel
-for high-value phases — they reach independent conclusions because
-they don't see each other's reports.
+for substantial additions (new phase, new component) — they reach
+independent conclusions because they don't see each other's reports.
+A single subagent is acceptable for small standalone additions.
 
 The brief MUST include:
 
