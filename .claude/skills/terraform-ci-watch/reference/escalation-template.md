@@ -27,9 +27,10 @@ refresh credentials and re-trigger">.
 
 ## Filling it in
 
-- **Job/step names** — `gh run view $RUN_ID --json jobs --jq '.jobs[] |
-  select(.conclusion=="failure") | {name, steps: [.steps[] |
-  select(.conclusion=="failure") | .name]}'`
+- **Job/step names** — call `LIST_FAILED_JOBS(run_id)` (per the active
+  capability profile from `reference/capabilities.md` §2); from the
+  response, surface each entry's `name` plus the failing entries from
+  `steps[]`.
 - **Log excerpt** — last 30 lines of the failed step. If the actual error
   is earlier, include the first `Error:` line plus 10 lines of context.
 - **Attempts** — paste the literal `git log --oneline -3` for the fix
