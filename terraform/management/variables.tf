@@ -95,3 +95,9 @@ variable "ingress_nginx_version" {
   type        = string
   default     = "4.10.0"
 }
+
+variable "external_dns_version" {
+  description = "ExternalDNS (bitnami) Helm chart version"
+  type        = string
+  default     = "6.31.0"
+}

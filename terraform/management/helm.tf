@@ -46,6 +46,51 @@ resource "helm_release" "ingress_nginx" {
   depends_on = [module.eks]
 }
 
+# ---- ExternalDNS ----
+# Watches Ingress/Service objects with external-dns annotations and reconciles
+# the corresponding Route53 records. The sandbox's pre-created hosted zone is
+# discovered automatically by the zone-type/domain filters.
+
+resource "helm_release" "external_dns" {
+  name             = "external-dns"
+  repository       = "https://charts.bitnami.com/bitnami"
+  chart            = "external-dns"
+  version          = var.external_dns_version
+  namespace        = "external-dns"
+  create_namespace = true
+
+  set {
+    name  = "provider"
+    value = "aws"
+  }
+  set {
+    name  = "aws.region"
+    value = var.aws_region
+  }
+  set {
+    name  = "policy"
+    value = "upsert-only"
+  }
+  set {
+    name  = "domainFilters[0]"
+    value = var.domain
+  }
+  set {
+    name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
+    value = module.irsa_external_dns.iam_role_arn
+  }
+  set {
+    name  = "sources[0]"
+    value = "ingress"
+  }
+  set {
+    name  = "sources[1]"
+    value = "service"
+  }
+
+  depends_on = [helm_release.ingress_nginx]
+}
+
 # ---- External Secrets Operator ----
 
 resource "helm_release" "eso" {
