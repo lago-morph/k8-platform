@@ -44,7 +44,10 @@ chore/<short-description>   # maintenance (deps, docs, refactor)
 ```
 
 The Terraform CI workflow (`terraform-test.yml`) is `workflow_dispatch`-only.
-The agent invokes it directly via the GitHub API; humans invoke it from the
+The agent invokes it from the sandbox via the **`ext-github`** skill
+(`.claude/skills/ext-github/`), which routes through the jentic MCP server —
+there is no `gh` CLI in this sandbox, no `gh api`, and direct egress to
+`api.github.com` is blocked. Humans invoke the same workflow from the
 Actions UI.
 
 ---
@@ -101,6 +104,12 @@ After every `git push` to a non-main branch, invoke the **`terraform-ci-watch`**
 skill (see `.claude/skills/terraform-ci-watch/`) before reporting back. It
 handles run discovery, polling, log fetching, autonomous fixes, and 3-strike
 escalation.
+
+Because `terraform-test.yml` is `workflow_dispatch`-only, `git push` alone
+does not trigger CI. After pushing, `terraform-ci-watch` calls `ext-github`
+`workflow_dispatch` with the intended `(phase, action)`, then polls and
+reads logs through the same skill. `terraform-ci-watch` is the outer
+envelope; `ext-github` is the underlying GitHub-API call.
 
 After applying a Crossplane Claim, XRD, or Composition (whether via `kubectl`,
 ArgoCD sync, or CI), invoke the **`crossplane-claim-verify`** skill (see

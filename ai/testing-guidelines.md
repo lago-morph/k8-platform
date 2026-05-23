@@ -95,6 +95,17 @@ When the user says **"work on phase N"** / **"let's do phase N"** /
 **"/work-on N"** / equivalent, the agent runs this procedure end-to-end
 **without further prompting**.
 
+**Dispatch mechanism.** Every reference to `workflow_dispatch (...)` below
+is a call to the `ext-github` skill
+(`.claude/skills/ext-github/`) `workflow_dispatch` operation, with the
+matching `(phase, action)` as `inputs`. There is no `gh` CLI in the
+sandbox; this is the only path to the Actions API. Polling and log reads
+in the inner loop likewise go through `ext-github` (`list_workflow_runs`,
+`list_jobs_for_workflow_run`, `download_job_logs`) — wrapped by the
+`terraform-ci-watch` skill, which owns the polling loop and the 3-strike
+escalation envelope. On any `ext-github` connectivity failure, see §9
+(Jentic outage handoff fallback).
+
 ### Phase 1: orient
 
 1. Read `ai/handoff.md` → Current Sandbox Session block.

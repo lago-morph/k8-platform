@@ -1,69 +1,89 @@
 # Log Fetching
 
-No GitHub MCP tool exposes raw workflow run logs. Fall back through this
-chain — each option is one fallback for when the previous one isn't
-available.
+Inside the Claude Code web sandbox there is no `gh` CLI, no `gh api`, and
+direct egress to `api.github.com` is blocked. The GitHub MCP server attached
+to the sandbox covers PRs / issues / content / branches / releases — it does
+**not** expose the Actions API. The only working path to workflow logs is the
+`ext-github` skill, which routes through the jentic MCP server.
 
-## 1. `gh` CLI (preferred when authenticated)
+## Primary path: `ext-github`
 
-```sh
-gh run view "$RUN_ID" --log-failed | tail -200
-```
+GitHub's run-wide logs endpoint (`/actions/runs/{run_id}/logs`) returns a 302
+to a signed zip URL. Jentic does not follow that redirect, so the run-wide
+call comes back as a 500. `ext-github` documents the workaround: list the
+jobs in the run, then fetch logs per job (plain text, no zip, no redirect).
 
-`--log-failed` filters to the failed steps only; default `--log` returns
-everything (often megabytes).
+Two calls:
 
-For a specific job:
+1. **List jobs in the run** — `ext-github` operation
+   `list_jobs_for_workflow_run` (resource:
+   `.claude/skills/ext-github/resources/list_jobs_for_workflow_run.json`).
+   Inputs: `owner`, `repo`, `run_id`. Returns `jobs[]` with each job's `id`,
+   `name`, `status`, `conclusion`, and `steps[]`.
 
-```sh
-gh run view "$RUN_ID" --log --job "$JOB_ID"
-```
+2. **Download each job's logs** — `ext-github` operation
+   `download_job_logs` (resource:
+   `.claude/skills/ext-github/resources/download_job_logs.json`).
+   Inputs: `owner`, `repo`, `job_id`. Returns plain-text logs as the
+   response body. Concatenate bodies if multiple jobs failed.
 
-## 2. `gh api` direct download
+For `terraform-test.yml`'s current shape there is one job per run, so the
+sequence is one list + one download.
 
-When you need the raw zip (e.g., to grep the full log offline):
+### Identifying the failing job(s) without reading every log
 
-```sh
-gh api -H "Accept: application/vnd.github+json" \
-  "repos/$OWNER_REPO/actions/runs/$RUN_ID/logs" \
-  > /tmp/logs-$RUN_ID.zip
-unzip -p /tmp/logs-$RUN_ID.zip | tail -300
-```
+After `list_jobs_for_workflow_run`, filter the returned `jobs[]` on
+`conclusion == "failure"`. Each job entry already carries `steps[]`, so the
+failed step name is available without fetching logs — useful for routing
+classification (e.g. is the failure in `terraform plan` versus
+`state-bootstrap`?).
 
-The `/logs` endpoint redirects to a presigned S3 URL; `gh api` follows the
-redirect. Plain `curl` against the API directly will return the redirect —
-add `-L`.
+Pull logs only for jobs whose `conclusion` is `failure` or `cancelled`. Skip
+successful jobs unless the failure cause is suspected to be a cross-job
+ordering issue.
 
-## 3. Per-job inspection
+### What to keep from the log body
 
-If logs aren't yet uploaded (race after a recent failure):
+`ext-github` returns the full per-job log. For diagnosis, keep the last
+200 lines plus the first occurrence of `Error:` / `error:` with 10 lines of
+preceding context. This is enough to feed into the failure taxonomy without
+flooding context.
 
-```sh
-gh api "repos/$OWNER_REPO/actions/runs/$RUN_ID/jobs" \
-  --jq '.jobs[] | select(.conclusion == "failure")
-        | {name, html_url, steps: [.steps[] | select(.conclusion == "failure") | {name, number}]}'
-```
+## Why `gh` paths are not listed
 
-This returns the failed job and step names without needing the log
-contents — useful for routing (e.g., is the failure in `terraform plan`
-versus `state-bootstrap`?).
+Previous versions of this document listed `gh run view --log-failed`,
+`gh api .../runs/{id}/logs`, `gh api .../jobs`, and MCP check-run
+annotations as a fallback chain. None of those work inside the sandbox:
 
-## 4. Check-run annotations (last resort)
+- `gh` and `gh api` — binary not present, egress blocked.
+- MCP `get_commit` `check_runs[].output` — annotations are not populated by
+  this project's workflow; the `post-comment.py` summary lives in PR/commit
+  comments, not check-run output.
 
-If even `/jobs` is unavailable, check-runs may carry summary annotations:
+If a future contributor uses `terraform-ci-watch` from a workstation that
+*does* have `gh` authenticated, they can read `gh run view "$RUN_ID"
+--log-failed` directly — but that path is out of scope for this skill as
+invoked from the sandbox.
 
-```sh
-mcp__github__get_commit  # use the SHA
-```
+## Concurrency precondition before re-dispatching
 
-The returned `check_runs[].output` often has the first error line. Less
-detail than logs, but enough to classify common failures.
+Before re-dispatching after a fix (Phase 4 in `SKILL.md`), `ext-github`'s
+own concurrency gate (`workflow_dispatch` precondition) lists queued /
+in-progress runs for the same `(ref, phase)` and refuses if more than two
+are already queued. The terraform-ci-watch loop relies on that gate; it
+does not need to duplicate the check.
 
 ## Common pitfalls
 
-- **Empty output from `--log-failed`** — the step may have been cancelled
-  rather than failed. Re-fetch with full `--log`.
-- **Truncation** — `gh run view` truncates very long lines. For Terraform
-  plan output use `--log` and grep for `Plan:` to find the summary line.
-- **Stale logs** — GitHub buffers logs; if a run just finished, retry
-  after 5–10 seconds.
+- **Stale logs** — GitHub buffers logs; if a run just finished, the per-job
+  download may return an empty body. Wait 5–10 s and retry. `ext-github`
+  itself is one-shot, so the retry is at the terraform-ci-watch level.
+- **Job still running** — `download_job_logs` only returns logs for
+  completed jobs. If `list_jobs_for_workflow_run` shows `status: in_progress`
+  for the job you care about, return to Phase 2 polling instead.
+- **Truncation** — plain-text per-job logs are not truncated by jentic, but
+  context-window cost can be significant for long Terraform plans. Trim to
+  the relevant section before pasting into context (last 200 lines + first
+  `Error:` block).
+- **Multiple failed jobs** — concatenate bodies in job order; tag each block
+  with the job name so the taxonomy step can route correctly.
