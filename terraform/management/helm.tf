@@ -220,7 +220,7 @@ resource "helm_release" "argocd" {
     value = "argocd.management.${var.domain}"
   }
   set {
-    name  = "server.ingress.hosts[0]"
+    name  = "server.ingress.hostname"
     value = "argocd.management.${var.domain}"
   }
 
