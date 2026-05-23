@@ -1,0 +1,41 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: external-dns-service-hostname-pattern
+  annotations:
+    policies.kyverno.io/title: LB Services with external-dns hostname must stay under our domain
+    policies.kyverno.io/category: DNS
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      ExternalDNS will gladly create a record at any hostname listed in
+      the external-dns.alpha.kubernetes.io/hostname annotation, including
+      domains we don't own. Restrict to our cluster's domain to catch
+      copy-paste mistakes across environments before they become DNS
+      records pointing at the wrong NLB.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: service-hostname-must-match-domain
+      match:
+        any:
+          - resources:
+              kinds: [Service, Ingress]
+      preconditions:
+        any:
+          - key: "{{ request.object.metadata.annotations.\"external-dns.alpha.kubernetes.io/hostname\" || '' }}"
+            operator: NotEquals
+            value: ""
+      validate:
+        message: >-
+          {{ request.object.kind }} {{ request.object.metadata.namespace }}/{{ request.object.metadata.name }}
+          has an external-dns hostname annotation outside the cluster's
+          managed domain. ExternalDNS will create a record, but it likely
+          points at the wrong cluster's load balancer.
+        pattern:
+          metadata:
+            annotations:
+              # Match anything ending in .management.*  — the management
+              # cluster's subdomain. Other clusters should use their own
+              # equivalent policy.
+              external-dns.alpha.kubernetes.io/hostname: "*.management.*"

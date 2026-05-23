@@ -1,0 +1,39 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: ingress-needs-externaldns-annotation
+  annotations:
+    policies.kyverno.io/title: Ingress in *.management.* must carry an external-dns hostname annotation
+    policies.kyverno.io/category: DNS
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      ExternalDNS reconciles ingress objects based on the
+      external-dns.alpha.kubernetes.io/hostname annotation, NOT the host
+      field of spec.rules. An Ingress hosted under our domain but missing
+      the annotation will not produce a Route53 record. Bug #7 of the
+      phase-1 bring-up was exactly this — argocd-server ingress carried
+      the annotation but rules[0].host was still argocd.example.com.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: hostname-annotation-required-for-managed-hosts
+      match:
+        any:
+          - resources:
+              kinds: [Ingress]
+      preconditions:
+        any:
+          - key: "{{ request.object.spec.rules[].host || `` | to_string(@) }}"
+            operator: AnyIn
+            value: ["*management.*"]
+      validate:
+        message: >-
+          Ingress {{ request.object.metadata.namespace }}/{{ request.object.metadata.name }}
+          has a *.management.* host but no
+          external-dns.alpha.kubernetes.io/hostname annotation. ExternalDNS
+          will not create a Route53 record for this Ingress.
+        pattern:
+          metadata:
+            annotations:
+              external-dns.alpha.kubernetes.io/hostname: "?*"

@@ -101,3 +101,9 @@ variable "external_dns_version" {
   type        = string
   default     = "1.15.0"
 }
+
+variable "kyverno_version" {
+  description = "Kyverno Helm chart version (audit-mode policy engine)"
+  type        = string
+  default     = "3.2.6"
+}
