@@ -1,11 +1,16 @@
-# ArgoCD Application — syncs crossplane/ (XRDs, Compositions, example
-# claims) from this Git repo to the management cluster.
+# ArgoCD Application — syncs crossplane/ (XRDs, Compositions, and
+# CRD-dependent Kyverno ClusterPolicies) from this Git repo to the
+# management cluster.
 #
-# Sync ordering note: this Application lands XRDs and Compositions.
-# The ClusterSecretStore (in management-cluster-config) MUST be Ready
-# BEFORE any PlatformSecret claim renders an ExternalSecret that
-# references it. The `sync-wave` annotations on each Application enforce
-# the order: ESO config = wave -10, crossplane resources = wave 0.
+# Sync ordering note: this Application lands XRDs, Compositions, AND
+# the policies under crossplane/policies/ (Kyverno ClusterPolicies that
+# reference platform.k8-platform.io kinds and so must wait for the
+# XRDs to install before they admit). Per-resource sync-wave
+# annotations enforce: XRDs+Compositions at wave 0 (default), policies
+# at wave 1. The ClusterSecretStore (in management-cluster-config) MUST
+# be Ready BEFORE any PlatformSecret claim renders an ExternalSecret
+# that references it; the parent app sync-wave on management-cluster-
+# config (-10) vs this app (0) enforces that.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -21,7 +26,7 @@ spec:
     path: crossplane
     directory:
       recurse: true
-      include: '{xrds/*.yaml,compositions/*.yaml}'
+      include: '{xrds/*.yaml,compositions/*.yaml,policies/*.yaml}'
       # claims/ deliberately excluded — those are example manifests,
       # not platform resources. Users apply them by hand.
   destination:
