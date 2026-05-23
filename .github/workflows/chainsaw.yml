@@ -17,23 +17,28 @@
 # that case (which is the desired behaviour).
 name: Chainsaw
 
+# workflow_dispatch ONLY. Per AGENTS.md §6.7 manual-verify-then-PR
+# pattern: the agent dispatches this workflow against a specific commit
+# SHA before opening the PR, then opens the PR knowing the run is
+# already green. The push-triggered `Chainsaw verify` workflow checks
+# for the green run and gates the PR check; it does NOT re-run scenarios.
+#
+# Rationale: the chainsaw harness is heavy (~5 min: kind boot + Crossplane
+# install + function install + ESO + ClusterSecretStore + scenarios). Running
+# it on every push burns runner minutes and produces noisy red checks while
+# the agent iterates. The dispatch-and-verify pattern means PR CI is always
+# green by construction.
 on:
   workflow_dispatch:
     inputs:
+      commit_sha:
+        description: "Commit SHA the dispatch is verifying. The verifier workflow looks for this SHA in the run's head_sha."
+        required: false
+        default: ""
       scenario_filter:
         description: "Optional path filter passed as CHAINSAW_SCENARIOS (default: all)"
         required: false
         default: ""
-  push:
-    paths:
-      # Per adversarial reviewer B: include the workflow itself so a
-      # typo in path filters surfaces immediately on the offending PR.
-      - ".github/workflows/chainsaw.yml"
-      - "crossplane/**"
-      - "tests/chainsaw/**"
-      - "tests/unit/test_chainsaw_kind_config.sh"
-    branches-ignore:
-      - main
 
 concurrency:
   # One chainsaw run per branch — multiple in parallel against the same
@@ -76,10 +81,13 @@ jobs:
       - name: Install kind
         run: |
           set -euo pipefail
-          curl -fsSL \
+          # /usr/local/bin/ on ubuntu-24.04 GH-hosted runners is root-owned;
+          # both curl-to and chmod need sudo. Without it the install step
+          # fails with "Operation not permitted" (see run 26343739179).
+          sudo curl -fsSL \
             "https://kind.sigs.k8s.io/dl/${{ steps.versions.outputs.kind_version }}/kind-linux-amd64" \
             -o /usr/local/bin/kind
-          chmod +x /usr/local/bin/kind
+          sudo chmod +x /usr/local/bin/kind
           kind --version
 
       - name: Install chainsaw
@@ -89,7 +97,7 @@ jobs:
             "https://github.com/kyverno/chainsaw/releases/download/${{ steps.versions.outputs.chainsaw_version }}/chainsaw_linux_amd64.tar.gz" \
             -o /tmp/chainsaw.tar.gz
           tar -xzf /tmp/chainsaw.tar.gz -C /tmp
-          install -m 0755 /tmp/chainsaw /usr/local/bin/chainsaw
+          sudo install -m 0755 /tmp/chainsaw /usr/local/bin/chainsaw
           chainsaw version
 
       - name: Install helm

@@ -1,0 +1,107 @@
+# Chainsaw verifier.
+#
+# Per AGENTS.md §6.7 manual-verify-then-PR pattern: instead of running
+# the heavy chainsaw harness on every push, this lightweight workflow
+# verifies that the agent has ALREADY dispatched a green chainsaw run
+# against this commit SHA before opening the PR.
+#
+# Lifecycle:
+#   1. Agent pushes a commit
+#   2. Agent dispatches `chainsaw.yml` with the commit SHA
+#   3. Agent waits for the chainsaw run to land green
+#   4. Agent opens the PR
+#   5. This workflow fires on the PR's push and looks for a
+#      green chainsaw run whose head_sha matches HEAD
+#   6. If found → ✅; PR CI is green.
+#      If not found → ❌ with a clear message telling the agent
+#      (or reviewer) to dispatch chainsaw first.
+#
+# This workflow is < 5 seconds — it just queries the GitHub Actions
+# API. No kind, no Crossplane, no docker.
+name: Chainsaw verify
+
+on:
+  push:
+    branches-ignore:
+      - main
+    paths:
+      # Mirror the chainsaw workflow's path filter — the verifier only
+      # runs when the chainsaw harness would have run, so PRs that don't
+      # touch crossplane/chainsaw paths get no verifier check at all.
+      - ".github/workflows/chainsaw.yml"
+      - ".github/workflows/chainsaw-verify.yml"
+      - "crossplane/**"
+      - "tests/chainsaw/**"
+      - "tests/unit/test_chainsaw_kind_config.sh"
+  workflow_dispatch:
+
+concurrency:
+  group: chainsaw-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  verify:
+    name: Verify chainsaw ran green on this commit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Look for a green Chainsaw run on this SHA
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          echo "Looking for a successful Chainsaw run for head_sha=$HEAD_SHA"
+
+          # The chainsaw workflow's name in the Actions UI.
+          CHAINSAW_WORKFLOW=".github/workflows/chainsaw.yml"
+
+          # Query the Actions REST API for runs of chainsaw.yml whose
+          # head_sha matches this commit and whose conclusion is success.
+          response=$(curl -fsSL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/chainsaw.yml/runs?head_sha=$HEAD_SHA&per_page=20")
+
+          count=$(echo "$response" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("total_count", 0))')
+          echo "found $count runs of chainsaw.yml on $HEAD_SHA"
+
+          # Filter to successful conclusions.
+          green=$(echo "$response" | python3 -c '
+          import json, sys
+          d = json.load(sys.stdin)
+          for r in d.get("workflow_runs", []):
+              if r.get("conclusion") == "success":
+                  print(r["html_url"])
+                  break
+          ')
+
+          if [ -n "$green" ]; then
+            echo ""
+            echo "✅ Found green chainsaw run for this commit:"
+            echo "   $green"
+            exit 0
+          fi
+
+          echo ""
+          echo "❌ No green Chainsaw run found for commit $HEAD_SHA"
+          echo ""
+          echo "Per AGENTS.md §6.7 the agent must dispatch the Chainsaw"
+          echo "workflow against this commit SHA and confirm green BEFORE"
+          echo "opening the PR. To resolve:"
+          echo ""
+          echo "  1. Push your changes to this branch (if not already)."
+          echo "  2. Dispatch the Chainsaw workflow with this commit's SHA:"
+          echo "       gh workflow run chainsaw.yml \\"
+          echo "         --ref ${{ github.ref_name }} \\"
+          echo "         -f commit_sha=$HEAD_SHA"
+          echo "     (or via the GitHub Actions UI)"
+          echo "  3. Wait for the run to complete green."
+          echo "  4. Re-trigger this verifier (push an empty commit, or"
+          echo "     re-run this job in the Actions UI)."
+          exit 1

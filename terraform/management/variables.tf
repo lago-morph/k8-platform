@@ -84,6 +84,29 @@ variable "crossplane_provider_family_aws_version" {
   default     = "v1.12.0"
 }
 
+variable "crossplane_provider_aws_secretsmanager_version" {
+  description = <<-EOT
+    Upbound provider-aws-secretsmanager package version. The family-aws
+    package above is a meta-package; each AWS service has its own child
+    provider. PlatformSecret claims need the secretsmanager child to
+    reconcile the ASM Secret managed resource.
+  EOT
+  type        = string
+  default     = "v1.12.0"
+}
+
+variable "crossplane_function_patch_and_transform_version" {
+  description = <<-EOT
+    crossplane-contrib/function-patch-and-transform package version.
+    Required by every v2 Pipeline Composition that uses the legacy
+    resources/patches input shape. Crossplane v2 removed
+    `spec.resources` from the v1 Composition schema, so every
+    Composition the platform ships goes through this function.
+  EOT
+  type        = string
+  default     = "v0.8.2"
+}
+
 variable "eso_version" {
   description = "External Secrets Operator Helm chart version"
   type        = string

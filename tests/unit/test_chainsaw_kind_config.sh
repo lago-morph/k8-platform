@@ -122,6 +122,29 @@ else
     "chainsaw=$PROVIDER_FAMILY_AWS_VERSION management=$MGMT_PROVIDER — bump both together"
 fi
 
+# ---- 9b. function-patch-and-transform version matches management module --
+#
+# Defends contract: chainsaw and management cluster must install the
+# same function version. The Composition's input schema
+# (`pt.fn.crossplane.io/v1beta1`) is tied to specific function versions;
+# drift here means a Composition can render in chainsaw and fail in
+# management, exactly the bug class this cross-check exists to catch.
+MGMT_FN=$(awk '/variable "crossplane_function_patch_and_transform_version"/,/^}/' "$TF_VARIABLES" \
+  | awk -F'"' '/default/ {print $2}')
+case "${FUNCTION_PATCH_AND_TRANSFORM_VERSION:-}" in
+  latest|"") _fail "function_patch_and_transform_version_pinned" "empty or 'latest'" ;;
+  v*)        _pass "function_patch_and_transform_version_pinned" ;;
+  *)         _fail "function_patch_and_transform_version_pinned" "expected v-prefix, got '$FUNCTION_PATCH_AND_TRANSFORM_VERSION'" ;;
+esac
+if [ -z "$MGMT_FN" ]; then
+  _fail "mgmt_function_version_extracted" "could not parse default from $TF_VARIABLES"
+elif [ "$MGMT_FN" = "$FUNCTION_PATCH_AND_TRANSFORM_VERSION" ]; then
+  _pass "chainsaw_function_matches_management"
+else
+  _fail "chainsaw_function_matches_management" \
+    "chainsaw=$FUNCTION_PATCH_AND_TRANSFORM_VERSION management=$MGMT_FN — bump both together"
+fi
+
 # ---- 10. kind config has exactly one control-plane node ------------------
 ROLES=$(yq -r '.nodes[].role' "$KIND_CONFIG" 2>/dev/null | sort -u | tr '\n' ' ')
 case "$ROLES" in

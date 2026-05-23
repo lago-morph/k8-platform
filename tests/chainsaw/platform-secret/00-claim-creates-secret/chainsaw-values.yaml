@@ -1,5 +1,0 @@
-# Per-run isolation values for scenario 00.
-# CHAINSAW_RUN_ID is injected by tests/chainsaw/run.sh (defaults to
-# $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT in CI).
-claimName: ("scenario00-" + (env('CHAINSAW_RUN_ID') || 'local'))
-region: (env('AWS_REGION') || 'us-east-1')

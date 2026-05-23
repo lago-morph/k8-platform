@@ -23,11 +23,11 @@ spec:
               apiVersion: platform.k8-platform.io/v1alpha1
               kind: PlatformSecret
               metadata:
-                name: ($values.claimName)
+                name: scenario02
                 namespace: default
               spec:
                 refreshInterval: 10s
-                region: ($values.region)
+                region: us-east-1
                 description: "chainsaw scenario 02 — rotation"
 
     - name: wait for claim Ready
@@ -37,7 +37,7 @@ spec:
               apiVersion: platform.k8-platform.io/v1alpha1
               kind: PlatformSecret
               metadata:
-                name: ($values.claimName)
+                name: scenario02
                 namespace: default
               status:
                 conditions:
@@ -60,7 +60,7 @@ spec:
               echo "wrote initial value to $key"
             env:
               - name: CLAIM_NAME
-                value: ($values.claimName)
+                value: scenario02
 
     - name: wait for ESO to materialize the K8s Secret with the initial value
       try:
@@ -69,7 +69,7 @@ spec:
               apiVersion: v1
               kind: Secret
               metadata:
-                name: ($values.claimName)
+                name: scenario02
                 namespace: default
               data:
                 # base64 of "initial"
@@ -94,7 +94,7 @@ spec:
               apiVersion: v1
               kind: Secret
               metadata:
-                name: ($values.claimName)
+                name: scenario02
                 namespace: default
               data:
                 # base64 of "rotated"

@@ -155,6 +155,124 @@ MANIFEST
 # grep can verify the gate exists.
 kubectl wait --for=condition=Healthy provider.pkg.crossplane.io/provider-family-aws --timeout=300s
 
+# ---------- install provider-aws-secretsmanager ---------------------------
+# Upbound's family-aws is a meta-package; child providers (one per AWS
+# service) install separately. PlatformSecret needs the secretsmanager
+# child to reconcile its ASM Secret managed resource.
+echo ""
+echo "── installing provider-aws-secretsmanager ────────────────────"
+kubectl apply -f - <<MANIFEST
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-aws-secretsmanager
+spec:
+  package: "xpkg.upbound.io/upbound/provider-aws-secretsmanager:${PROVIDER_AWS_SECRETSMANAGER_VERSION}"
+MANIFEST
+kubectl wait --for=condition=Healthy provider.pkg.crossplane.io/provider-aws-secretsmanager --timeout=300s
+
+# ---------- install function-patch-and-transform ---------------------------
+# Crossplane v2 Pipeline compositions need a function to apply patches;
+# function-patch-and-transform implements the legacy `resources` shape.
+echo ""
+echo "── installing function-patch-and-transform ────────────────────"
+kubectl apply -f - <<MANIFEST
+apiVersion: pkg.crossplane.io/v1beta1
+kind: Function
+metadata:
+  name: function-patch-and-transform
+spec:
+  package: "xpkg.upbound.io/crossplane-contrib/function-patch-and-transform:${FUNCTION_PATCH_AND_TRANSFORM_VERSION}"
+MANIFEST
+kubectl wait --for=condition=Healthy function.pkg.crossplane.io/function-patch-and-transform --timeout=300s
+
+# ---------- install ESO + AWS ProviderConfig + ClusterSecretStore -----------
+#
+# These were previously inside `tests/chainsaw/platform-secret/_setup/`
+# but chainsaw runs scenarios in non-deterministic order with parallel=1
+# (run 26343813170 saw setup execute third, after claim-creates-secret
+# which depended on it). Setup that must precede every scenario belongs
+# in the orchestrator, not inside chainsaw — chainsaw scenarios should
+# express the *test*, not the world they assume.
+if [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+  echo ""
+  echo "── installing ESO + AWS ProviderConfig + ClusterSecretStore ──"
+
+  helm repo add external-secrets https://charts.external-secrets.io >/dev/null 2>&1 || true
+  helm repo update external-secrets >/dev/null
+  helm install external-secrets external-secrets/external-secrets \
+    --namespace external-secrets --create-namespace \
+    --version 0.10.4 \
+    --set installCRDs=true \
+    --wait --timeout 5m
+
+  # AWS creds Secret for the Crossplane AWS provider in kind (no IRSA).
+  kubectl create namespace crossplane-system --dry-run=client -o yaml | kubectl apply -f -
+  kubectl create secret generic aws-creds \
+    --namespace crossplane-system \
+    --from-literal=creds="[default]
+aws_access_key_id=${AWS_ACCESS_KEY_ID}
+aws_secret_access_key=${AWS_SECRET_ACCESS_KEY}
+" --dry-run=client -o yaml | kubectl apply -f -
+  kubectl apply -f - <<MANIFEST
+apiVersion: aws.upbound.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: default
+spec:
+  credentials:
+    source: Secret
+    secretRef:
+      namespace: crossplane-system
+      name: aws-creds
+      key: creds
+MANIFEST
+
+  # AWS creds Secret for ESO + the ClusterSecretStore (in kind we replace
+  # IRSA auth with static-cred auth via accessKeyIDSecretRef).
+  kubectl create secret generic eso-aws-creds \
+    --namespace external-secrets \
+    --from-literal=access-key-id="${AWS_ACCESS_KEY_ID}" \
+    --from-literal=secret-access-key="${AWS_SECRET_ACCESS_KEY}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  kubectl apply -f - <<MANIFEST
+apiVersion: external-secrets.io/v1beta1
+kind: ClusterSecretStore
+metadata:
+  name: aws-secrets-manager
+spec:
+  provider:
+    aws:
+      service: SecretsManager
+      region: ${AWS_REGION:-us-east-1}
+      auth:
+        secretRef:
+          accessKeyIDSecretRef:
+            name: eso-aws-creds
+            namespace: external-secrets
+            key: access-key-id
+          secretAccessKeySecretRef:
+            name: eso-aws-creds
+            namespace: external-secrets
+            key: secret-access-key
+MANIFEST
+
+  # Apply the XRD and Composition under test. These need to be Established
+  # BEFORE any scenario tries to create a PlatformSecret claim.
+  if [ -f ../../crossplane/xrds/platform-secret.yaml ]; then
+    kubectl apply -f ../../crossplane/xrds/platform-secret.yaml
+    kubectl apply -f ../../crossplane/compositions/platform-secret.yaml
+    kubectl wait --for=condition=Established --timeout=120s \
+      crd/platformsecrets.platform.k8-platform.io
+  else
+    echo "  (no PlatformSecret XRD on disk — skipping XRD apply)"
+  fi
+else
+  echo ""
+  echo "── AWS creds absent — skipping ESO/ProviderConfig/ClusterSecretStore setup"
+  echo "   (smoke scenarios will run; platform-secret scenarios will fail closed)"
+fi
+
 # ---------- run chainsaw scenarios ------------------------------------------
 echo ""
 echo "── running chainsaw ───────────────────────────────────────────"
