@@ -324,6 +324,83 @@ When the prompt is not compound (single action, short, unambiguous),
 proceed without a repeat-back. The discipline is filtering, not
 ceremony.
 
+### 6.6 Throughput-without-attention mode
+
+The user may explicitly grant a mode in which the §6.5 repeat-back gate is
+suspended, the agent makes its own defensible assumptions instead of
+asking, and large work is split across stacked PRs so the user can review
+asynchronously. This section codifies that mode so it can be reached
+without re-explaining each session.
+
+**Trigger.** Any of these phrases (or close paraphrases) flips the mode
+ON for the remainder of the session, unless the user later countermands:
+
+- "go go go" / "just go" / "ship it" / "keep working"
+- "don't stop for me" / "I'll be away" / "I want throughput without attention"
+- "make assumptions and continue" / "you decide" / "use your judgement"
+- "stack PRs" / "use PR stacking" / "divide it up how you think best"
+
+The trigger is the *intent*, not exact wording. Once flipped, the mode
+persists until the user explicitly reverts ("stop", "wait", "ask me first",
+"check with me before X").
+
+**While in the mode, the agent:**
+
+1. **Makes assumptions and proceeds.** Where the prompt is ambiguous,
+   pick a defensible default — preferring (in order) the relevant spec
+   under `ai/specs/`, an ADR in `docs/decisions/`, the handoff Immediate
+   Next Step, then the closest existing pattern in the repo. State the
+   assumption inline in the commit or PR description ("Assumed X because
+   Y; happy to change in review"). Do not pause to ask. If the user
+   disagrees they will edit the PR.
+
+2. **Splits large work into stacked PRs by default.** Any work that
+   exceeds one PR's worth of cohesive scope — multiple distinct
+   deliverables, multi-component features, anything touching more than
+   ~5 directories — gets divided across a stacked sequence per §3
+   Stacked PRs. Rules:
+
+   - PR n+1 branches off PR n (`base = <parent branch>`, not `main`).
+   - Each PR ships ONE coherent thing — a bug fix, a feature increment,
+     one infra layer. The PR title names that one thing.
+   - Open every PR as **draft only if** the work is genuinely incomplete
+     in this session; otherwise mark ready for review so the user can
+     merge asynchronously.
+   - Each child PR's body states its dependency on the parent and what
+     it adds.
+
+3. **Keeps the next thing dispatched.** While a long-running CI run /
+   apply / build is in flight, the agent's job is to author the next
+   deliverable, not to babysit the run. PR webhook events arrive
+   asynchronously; the agent reacts when they land. Do not idle.
+
+4. **Does NOT waive any other discipline.** Throughput-without-attention
+   suspends §6.5 only. It does not suspend:
+   - §6.1 / §6.2 — TDD discipline on bug fixes and feature tests.
+   - §6.3 — full test bundle after every fresh `apply-and-verify`.
+   - §6.4 — adversarial subagents at every test-drafting point. Spawn
+     them in parallel and continue authoring while they run; adopt
+     suggestions when they return.
+   - §9 — commit standards.
+   - Branch policy (§3) — no commits to `main`.
+
+**Stop conditions — halt and ask even in throughput mode:**
+
+- A destructive operation outside the user's stated scope is required
+  (a teardown they did not request; deleting state; force-pushing `main`).
+- An account constraint specified in `ai/testing-guidelines.md §1` is
+  missing entirely — the user wants to know about silently-removed
+  limits before the agent provisions anything.
+- The work reaches a fork where each branch would invalidate the other
+  (e.g., choosing between two incompatible XRD schemas) AND neither
+  branch is favored by an existing spec / ADR / handoff entry.
+- The user countermands the mode in chat.
+
+**When forced to halt:** state the question concisely (one paragraph,
+one specific question), then continue any orthogonal work that does not
+depend on the answer. Idle waiting is never the right choice in this
+mode.
+
 ---
 
 ## 7. Testing loops — companion skills
