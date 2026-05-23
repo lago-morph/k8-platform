@@ -432,8 +432,18 @@ jobs:
 
           # NLB terminates TLS; ArgoCD serves HTTP behind it.  Accept any 2xx or 3xx.
           HTTP=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 15 "$ARGOCD_URL" || true)
-          [ "${HTTP}" -ge 200 ] && [ "${HTTP}" -lt 500 ] \
-            || { echo "FAIL: ArgoCD UI returned HTTP $HTTP at $ARGOCD_URL"; exit 1; }
+          if ! { [ "${HTTP}" -ge 200 ] && [ "${HTTP}" -lt 500 ]; }; then
+            echo "FAIL: ArgoCD UI returned HTTP $HTTP at $ARGOCD_URL"
+            echo "---- argocd ingress rules ----"
+            kubectl get ingress argocd-server -n argocd -o yaml | sed -n '1,80p' || true
+            echo "---- ingress-nginx service ----"
+            kubectl get svc -n ingress-nginx -o wide || true
+            echo "---- ingress-nginx controller logs (tail) ----"
+            kubectl logs -n ingress-nginx -l app.kubernetes.io/component=controller --tail=60 || true
+            echo "---- argocd-server pod logs (tail) ----"
+            kubectl logs -n argocd -l app.kubernetes.io/name=argocd-server --tail=40 || true
+            exit 1
+          fi
           echo "OK: ArgoCD UI reachable at $ARGOCD_URL (HTTP $HTTP)"
 
       # ──────────────────────────────────────────────────────────────────────
