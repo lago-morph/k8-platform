@@ -93,6 +93,36 @@ clarification**.
 2. **After every state change (apply, verify, destroy), update the
    Environment State block at the top of `ai/handoff.md` and commit.**
 
+### 5.1 "Tear down phase X" — precise definition
+
+When the user says "tear down phase X" (or "destroy phase X",
+"remove phase X", or equivalent), the scope is **exactly** these
+three steps, in order:
+
+1. **Delete every Claim** that was created from XRDs introduced in
+   phase X. Wait for Crossplane to deprovision the underlying cloud
+   resources (`kubectl wait --for=delete claim/<name>`), with a
+   per-claim timeout suitable for the resource type (5 min for S3,
+   20 min for EKS).
+2. **Delete the XRDs / Compositions / supporting manifests** that
+   phase X introduced from the cluster (`kubectl delete -f crossplane/...`
+   for the files touched by phase X).
+3. **Run `terraform destroy`** for any Terraform module the phase X
+   PR added or substantially modified, in reverse dependency order.
+
+The scope **does NOT include**:
+
+- Tearing down phase X-1 or anything lower (re-asserts §5 invariant 1).
+- Touching the management cluster's bootstrap stack (ingress-nginx,
+  ArgoCD, ESO, Crossplane core, ExternalDNS, Kyverno) — those are
+  phase 1 infrastructure and outlive every higher phase.
+- Deleting Terraform state files for phases not being torn down.
+- Removing IRSA roles or IAM policies that other phases depend on.
+
+If the user wants a broader teardown they will say so explicitly
+("tear down everything", "tear down phase 0 and 1", etc.). When
+in doubt, ask before destroying.
+
 ---
 
 ## 6. Test discipline (load-bearing — read this twice)
@@ -170,6 +200,129 @@ gone and a regression-catching test exists.
 `.github/workflows/terraform-test.yml`'s `[management] e2e-verify` is the
 *minimum* verification — it does not exhaust the test bundle. The full
 bundle is required for phase sign-off.
+
+### 6.4 Adversarial subagent review of test plans
+
+**Trigger — source-agnostic.** Whenever any new tests are about to be
+drafted, or any existing test is about to be extended with a new
+assertion shape, **spawn one or more subagents with an
+adversarial-reviewer brief** before authoring the tests. The trigger
+does not depend on *who* proposed the tests — the user, the agent,
+an external review comment, a copy-paste from another repo, anyone.
+It is a gate on the *act* of drafting tests, not on the source.
+
+This applies to:
+
+- New phases (everything in `tests/**` and `policies/audit/**` for
+  that phase).
+- New components within an existing phase (a new `helm_release`, a
+  new IRSA role, a new XRD, a new ingress).
+- Standalone test additions in an otherwise-stable phase — e.g. a
+  PR that exists only to add coverage.
+- Extensions to existing tests that introduce a new assertion shape
+  (a new yq path, a new resource kind, a new failure path).
+
+It does NOT apply to:
+
+- Pure refactors of existing tests that don't change what's asserted.
+- Test file moves / renames.
+- Fixture updates that don't change assertion semantics.
+
+The job of the adversarial reviewer is to attack the plan: enumerate
+contracts the plan does not cover, name failure modes the existing
+layers miss, propose specific tests at specific layers that would
+catch those gaps. Then implement their suggestions.
+
+Default subagent type: `general-purpose`. Run two or more in parallel
+for substantial additions (new phase, new component) — they reach
+independent conclusions because they don't see each other's reports.
+A single subagent is acceptable for small standalone additions.
+
+The brief MUST include:
+
+1. **What the phase ships** — bullet list of new files / resources /
+   contracts. No prose; just facts.
+2. **The current test plan** — the list of tests the lead agent is
+   planning to write, with the layer (unit / kyverno / integration /
+   chainsaw) and the assertion shape for each.
+3. **The known bug history** — for new phases, paste the bug-to-test
+   traceability matrix from `ai/TESTING-PLAN.md`. For phase expansions,
+   paste any recent retros' bug-class findings.
+4. **The job** — verbatim: *"Tear this test plan apart. For each
+   contract not covered or under-covered, propose a specific test:
+   layer + file path + assertion. Be ruthless about what would
+   silently pass with the bug present. Aim for ten or more concrete
+   additions; restate which contracts each one defends."*
+5. **What to skip** — declared non-goals (e.g. "we are not testing
+   AWS API rate-limiting behaviour"). Without this the reviewer
+   wastes effort on out-of-scope material.
+
+Adopt every adversarial-reviewer suggestion **unless** you can write a
+one-line explanation in the PR description for why it's out of scope.
+The cost of writing more tests is small; the cost of missed coverage
+is paid every time the phase fails in CI.
+
+The default heuristic is **lots of tests, but useful ones**. "Useful"
+means: each test defends an identifiable contract, fails for a
+specific reason in language that points at the cause, and would not
+trivially pass against a regression. Tests that overlap on the same
+contract across different layers (unit + Kyverno + integration) are
+not redundant — they fire in different environments and catch the
+contract at different lifecycle moments.
+
+### 6.5 Confirm before acting on compound prompts
+
+**Default — repeat back before acting.** For any user message that
+contains three or more distinct actions, bundles a feature request
+with a meta-instruction, crosses more than one PR scope, or runs
+longer than ~200 words, the agent's **first** response is a
+structured repeat-back. **No tool calls before the repeat-back
+is sent.**
+
+The repeat-back contains four parts:
+
+1. **Numbered actions in execution order.** Each action gets one
+   bullet, in the order the agent intends to perform them. Use
+   real branch names, file paths, and PR numbers from context — no
+   "your branch" or "the file" placeholders.
+2. **Explicit stopping points.** Mark every point at which the agent
+   will pause for confirmation or for an external event (CI run,
+   PR merge, manual review, etc.).
+3. **Flagged ambiguities.** Under each step, list any phrase or
+   intent in the prompt the agent had to interpret. State the
+   chosen interpretation; the user can correct each independently.
+4. **Implicit assumptions.** Anything the agent inferred from
+   context that the prompt did not state explicitly (default tools,
+   target branches, file naming, etc.).
+
+End with: "OK to proceed once you give the green light?"
+
+**Opt-out.** The repeat-back is skipped **only** when the user's
+prompt itself contains an explicit signal: "do this without
+confirming", "just do it", "skip the recap", "no need to repeat
+back", "go ahead", or equivalent. Do not infer opt-out from tone
+or brevity.
+
+**Action-is-not-confirmation.** If after sending the repeat-back the
+user does not reply in chat but instead takes a system action —
+merges a PR, leaves a review comment, dispatches a workflow, edits
+a file — **do not interpret that as approval**. The user is often
+reviewing and approving pull requests in parallel with agents doing
+work, and may take those actions without even realizing the agent
+has asked for approval for something. Approval comes from chat,
+explicitly, with words. Continue waiting for that chat reply.
+
+If the wait is unproductive, the agent's options are:
+- Continue any orthogonal work that is unaffected by the pending
+  question (e.g. drafting documentation for a different concern).
+- Send a follow-up chat message reminding the user the question is
+  open, naming the specific question.
+- Do not proceed on the question itself until the user replies in
+  chat with explicit approval, correction, or redirection.
+
+When the prompt is not compound (single action, short, unambiguous),
+proceed without a repeat-back. The discipline is filtering, not
+ceremony.
 
 ---
 
