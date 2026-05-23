@@ -10,19 +10,67 @@ and writes back to it after every workflow run. See
 
 ---
 
+## NEW SESSION QUICKSTART (read this first)
+
+You are starting against a **brand-new AWS account** that has had no
+prior `terraform apply` from this repo. The previous session's cluster
+(account `975050256915`) no longer exists. The credentials in GitHub
+Secrets point at a different account, and the new account may have
+**no pre-existing public Route53 hosted zone**.
+
+**Required first steps:**
+
+1. Confirm credentials work and the account has a Route53 zone:
+   ```sh
+   scripts/aws-creds-check.sh
+   ```
+   If no zone exists, **stop and escalate to the user** — there is no
+   code change that fixes a missing hosted zone. The user will either
+   provision one in the account or rotate creds to an account that
+   has one.
+2. Once preflight passes, you are starting at **phase 0 from scratch**.
+   All phase states reset to `code-only` because the cluster from the
+   previous session is gone. Dispatch:
+   - `workflow_dispatch phase=base action=apply-and-verify`
+   - then (after green) `workflow_dispatch phase=management action=apply-and-verify`
+3. After each green apply-and-verify, run the full test bundle per
+   `AGENTS.md §6.3`: `tests/unit/run.sh`, `phase=test action=test-e2e`,
+   `tests/integration/run.sh`, then `scripts/kyverno-policies.sh` /
+   `scripts/kyverno-violations.sh`.
+4. **Read all of `AGENTS.md`** before starting. Pay particular attention to:
+   - §5.1 — exact scope of "tear down phase X"
+   - §6.2 — TDD discipline on every bug, no exceptions
+   - §6.3 — full test bundle after every fresh `apply-and-verify`
+   - §6.4 — spawn adversarial subagents whenever drafting new tests
+   - §6.5 — repeat back compound prompts before acting
+5. Then proceed into **phase 2** (Crossplane foundations: XRDs +
+   Compositions + Claims for `PlatformSecret` and `PlatformCluster`).
+   Phase 2 begins with Chainsaw infrastructure per `ai/TESTING-PLAN.md`
+   §"Layer 4 (planned)".
+
+**Stacked-PR state at session start:**
+
+By the time this is read, three PRs from the previous session should
+have been merged: PR #36 (AGENTS.md §§5.1/6.4/6.5 additions), the
+handoff/plan PR (this file's updates), and the retrospective PR.
+After they merge their branches are deleted; you start from `main`.
+
+---
+
 ## Environment State
 
 | Field | Value |
 |---|---|
-| Active phase | (none — phase 1 verified, ready to start phase 2) |
-| Last update | 2026-05-23 |
+| Active phase | (none — fresh account, restart from phase 0) |
+| Last update | 2026-05-23 (handoff for new session) |
+| AWS account | (will be whatever credentials are in GitHub Secrets — confirm via `scripts/aws-creds-check.sh`) |
 
 ### Phase states
 
 | Phase | State | Last action | Run URL |
 |---|---|---|---|
-| 0 base | verified | 2026-05-23T03:24Z apply-and-verify ✅ | https://github.com/lago-morph/k8-platform/actions/runs/26322143492 |
-| 1 management | verified | 2026-05-23T04:36Z apply-and-verify ✅ (all checks incl. ArgoCD URL HTTP 200) | https://github.com/lago-morph/k8-platform/actions/runs/26323358841 |
+| 0 base | code-only | (previous session's cluster is gone; restart from scratch) | — |
+| 1 management | code-only | (previous session's cluster is gone; restart from scratch) | — |
 | 2 xrds | not-coded | — | — |
 | 3 platform | not-coded | — | — |
 | 4 observability | not-coded | — | — |
@@ -222,20 +270,49 @@ or generated at runtime.
 
 ## Immediate Next Step
 
-**Phase 2: Crossplane foundations.** Authorial order:
+The previous AWS account is gone. The first thing this session does is
+follow **NEW SESSION QUICKSTART** at the top of this file:
 
-1. Author `tests/chainsaw/` infrastructure first (kind config, run.sh,
-   per-XRD Test fixtures). See `ai/TESTING-PLAN.md` §"Layer 4 (planned)".
-2. Author `crossplane/xrds/platform-secret.yaml` + composition; verify
-   green via Chainsaw before any AWS apply.
-3. Author `crossplane/xrds/platform-cluster.yaml` + composition; verify
-   green via Chainsaw.
-4. Re-apply management module to register both XRDs in the live cluster
-   (terraform_data already in place would re-fire if XRDs added there;
-   for phase 2 they ship as ArgoCD-managed instead — wire an ArgoCD
-   Application pointing at `crossplane/`).
-5. Run `tests/integration/05_crossplane_managed_resource.sh` and
-   `06_crossplane_xrd_claim.sh` to confirm round-trip against real AWS.
+1. `scripts/aws-creds-check.sh` — confirm the new account is usable.
+2. Bring phase 0 and phase 1 back up from scratch
+   (`apply-and-verify` for each, then full test bundle per §6.3).
+3. **Only after phase 1 is green end-to-end**, start phase 2.
+
+### Phase 2 — Crossplane foundations (start once phase 1 verified)
+
+Authorial order, with §6.4 adversarial review at each test-drafting
+point:
+
+1. **Author `tests/chainsaw/` infrastructure first** (kind config,
+   run.sh, per-XRD Test fixtures). See `ai/TESTING-PLAN.md` §"Layer 4
+   (planned)". Before authoring the chainsaw scenarios themselves,
+   draft the test list and invoke §6.4 (adversarial subagent review).
+2. **Author `crossplane/xrds/platform-secret.yaml` + composition**;
+   verify green via Chainsaw before any AWS apply. The test list for
+   PlatformSecret also goes through §6.4 review.
+3. **Author `crossplane/xrds/platform-cluster.yaml` + composition**;
+   verify green via Chainsaw. Same §6.4 review.
+4. **Re-apply management module** to register both XRDs in the live
+   cluster (terraform_data already in place would re-fire if XRDs
+   added there; for phase 2 they ship as ArgoCD-managed instead —
+   wire an ArgoCD Application pointing at `crossplane/`).
+5. **Run integration tests** —
+   `tests/integration/05_crossplane_managed_resource.sh` and
+   `06_crossplane_xrd_claim.sh` — to confirm round-trip against real
+   AWS. Any failure goes through §6.2 (TDD on bug fix).
+
+### Stacked-PR pattern for phase 2
+
+Per `AGENTS.md §3`:
+
+1. Phase 2 implementation + tests → one PR off `main`.
+2. Phase 2 live-run + bug-fix work → stacked PR off (1).
+3. Once phase 2 tests pass against the live cluster, dispatch
+   `destroy` scoped to phase 2 only (per `AGENTS.md §5.1`: delete
+   Claims → wait for cloud cleanup → delete XRDs/Compositions; leave
+   phase 1 management cluster alone). Re-apply phase 2 from scratch
+   and run the full test bundle again — the clean re-run is the
+   actual quality signal.
 
 ---
 

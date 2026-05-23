@@ -100,12 +100,29 @@ infrastructure:
 
 ---
 
-## Bug-to-test traceability
+## Bug-class registry (the traceability matrix)
 
-For every bug encountered during phase 1, the table below shows which
-test would catch it on the next iteration.
+For every bug class encountered, the table below records the failure,
+the test layer that catches it, and any diagnostic improvements made
+in response. This table is **normative input** to the `AGENTS.md §6.4`
+adversarial-reviewer brief — paste it into the brief verbatim when
+asking subagents to attack a new test plan.
 
-| Bug | Catches it | Faster diagnostic added |
+### Maintenance discipline
+
+- Add a row **whenever a new bug class is discovered**, before the PR
+  that fixes it is marked ready. "New bug class" = a failure not yet
+  represented in this table.
+- One row per class, not per occurrence. If the same root cause shows
+  up twice, append a `(N×)` count to the row rather than duplicating.
+- Per `AGENTS.md §6.2`, fixing a bug requires writing a test that
+  catches it. The "Catches it" column points at that test.
+- When a row's catching test moves files or is renamed, update the
+  row in the same commit so future readers can follow the link.
+
+### Registry
+
+| Bug class | Catches it | Faster diagnostic added |
 |---|---|---|
 | EKS v20 `enable_cluster_creator_admin_permissions` default | `tests/unit/test_eks_module_defaults.sh` | n/a — terraform error is immediate |
 | RBAC race on first helm release | (none — race condition; fixed by retry semantics) | retry built into the loop |
@@ -114,3 +131,4 @@ test would catch it on the next iteration.
 | bitnami external-dns chart stuck | `tests/unit/test_helm_render.sh` (chart-specific helm template would fail) | n/a |
 | external-dns IRSA missing ListHostedZones | `tests/unit/test_iam_required_actions.sh` | `scripts/diag-component.sh external-dns` dumps the AccessDenied logs |
 | argocd ingress.hosts vs ingress.hostname | `tests/unit/test_helm_render.sh`; `policies/audit/03-ingress-managed-by-external-dns.yaml` | DNS-failure diagnostic in workflow now dumps ingress YAML |
+| AWS account rotated; no Route53 zone in new account | `scripts/aws-creds-check.sh` (preflight before any apply-and-verify dispatch) | n/a |
