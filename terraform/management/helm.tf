@@ -274,3 +274,36 @@ resource "helm_release" "argocd" {
 
   depends_on = [helm_release.ingress_nginx]
 }
+
+# ---- ArgoCD bootstrap (app-of-apps) ----
+#
+# Applies a single Application — `argocd/bootstrap.yaml` — that itself
+# manages every other Application and AppProject under argocd/. From this
+# point on, the only Argo resource Terraform owns is `bootstrap` itself;
+# everything else is GitOps-managed via the bootstrap App.
+#
+# Why local-exec kubectl (not the kubernetes provider): same reason as
+# the other terraform_data resources in this file — keeps Terraform's
+# plan-time graph free of the kubernetes provider, which can't be
+# initialised until the EKS cluster exists.
+#
+# triggers_replace hashes bootstrap.yaml — a change in the file content
+# causes a re-apply on the next terraform run.
+resource "terraform_data" "argocd_bootstrap" {
+  triggers_replace = [
+    filesha1("${path.module}/../../argocd/bootstrap.yaml"),
+  ]
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      aws eks update-kubeconfig \
+        --name ${module.eks.cluster_name} \
+        --region ${var.aws_region} \
+        --kubeconfig /tmp/k8-platform-kubeconfig
+      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl wait --for=condition=Available --timeout=300s -n argocd deploy/argocd-server
+      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl apply -f ${path.module}/../../argocd/bootstrap.yaml
+    EOT
+  }
+
+  depends_on = [helm_release.argocd]
+}
