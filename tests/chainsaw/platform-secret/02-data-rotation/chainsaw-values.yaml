@@ -1,2 +1,2 @@
-claimName: ("scenario02-" + (env('CHAINSAW_RUN_ID') || 'local'))
-region: (env('AWS_REGION') || 'us-east-1')
+claimName: scenario02
+region: us-east-1
