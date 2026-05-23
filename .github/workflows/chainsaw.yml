@@ -76,10 +76,13 @@ jobs:
       - name: Install kind
         run: |
           set -euo pipefail
-          curl -fsSL \
+          # /usr/local/bin/ on ubuntu-24.04 GH-hosted runners is root-owned;
+          # both curl-to and chmod need sudo. Without it the install step
+          # fails with "Operation not permitted" (see run 26343739179).
+          sudo curl -fsSL \
             "https://kind.sigs.k8s.io/dl/${{ steps.versions.outputs.kind_version }}/kind-linux-amd64" \
             -o /usr/local/bin/kind
-          chmod +x /usr/local/bin/kind
+          sudo chmod +x /usr/local/bin/kind
           kind --version
 
       - name: Install chainsaw
@@ -89,7 +92,7 @@ jobs:
             "https://github.com/kyverno/chainsaw/releases/download/${{ steps.versions.outputs.chainsaw_version }}/chainsaw_linux_amd64.tar.gz" \
             -o /tmp/chainsaw.tar.gz
           tar -xzf /tmp/chainsaw.tar.gz -C /tmp
-          install -m 0755 /tmp/chainsaw /usr/local/bin/chainsaw
+          sudo install -m 0755 /tmp/chainsaw /usr/local/bin/chainsaw
           chainsaw version
 
       - name: Install helm
