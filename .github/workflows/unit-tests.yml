@@ -1,0 +1,143 @@
+# Run the unit-test suite on every push to a non-main branch.
+#
+# `terraform-test.yml` is workflow_dispatch-only — the unit tests live
+# under it and historically only ran when the operator explicitly
+# dispatched a job. That means a broken `tests/unit/*.sh` could sit on
+# main between dispatches without anyone noticing (and historically
+# did — see scripts/diag-component.sh $SELECTOR bug fixed in PR #46).
+#
+# This workflow auto-runs on every push to a feature branch so unit-
+# test regressions surface immediately on the offending PR.
+#
+# Per-test steps (rather than one `run.sh` step) so each failure is
+# diagnosable from the GitHub Actions UI without scrolling through
+# the full run, and so known-broken tests can be tolerated explicitly
+# until they're fixed.
+name: Unit tests
+
+on:
+  push:
+    branches-ignore:
+      - main
+  # Also runnable manually for cases where someone wants to confirm
+  # a green local run matches CI.
+  workflow_dispatch:
+
+concurrency:
+  group: unit-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Install yq (Mike Farah's Go implementation) — every existing
+      # unit test that touches YAML uses this.
+      - name: Install yq
+        run: |
+          set -euo pipefail
+          sudo curl -fsSL \
+            "https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64" \
+            -o /usr/local/bin/yq
+          sudo chmod +x /usr/local/bin/yq
+          yq --version
+
+      # helm is required by test_helm_render.sh; the others are pure
+      # bash/yq.
+      - name: Install helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+
+      - name: Verify python3 (test_post_comment.sh subprocesses use it)
+        run: python3 --version
+
+      - name: test_compute_gates
+        run: bash tests/unit/test_compute_gates.sh
+
+      - name: test_irsa_helm_linkage
+        run: bash tests/unit/test_irsa_helm_linkage.sh
+
+      - name: test_iam_required_actions
+        run: bash tests/unit/test_iam_required_actions.sh
+
+      - name: test_eks_module_defaults
+        run: bash tests/unit/test_eks_module_defaults.sh
+
+      # KNOWN-BROKEN on main: 4 argocd Ingress assertions fail because
+      # the yq selectors don't match the rendered chart shape. Tolerated
+      # here so the workflow surfaces real regressions in the rest of
+      # the suite; remove `continue-on-error` once the assertions are
+      # fixed (likely needs to switch from name-based to label-based
+      # selectors). Tracked alongside the rest of the phase-1 polish
+      # work.
+      - name: test_helm_render (continue-on-error — pre-existing argocd assertions broken)
+        run: bash tests/unit/test_helm_render.sh
+        continue-on-error: true
+
+      - name: test_post_comment
+        run: bash tests/unit/test_post_comment.sh
+
+      - name: test_kyverno_policy_lint
+        run: bash tests/unit/test_kyverno_policy_lint.sh
+
+      # The diag-component test was added in PR #46. Skipped gracefully
+      # by `bash -c` returning 0 if the file doesn't exist on a branch
+      # that predates #46.
+      - name: test_diag_component
+        run: |
+          if [ -f tests/unit/test_diag_component.sh ]; then
+            bash tests/unit/test_diag_component.sh
+          else
+            echo "(test_diag_component.sh not on this branch — skipped)"
+          fi
+
+      # Phase-2a unit tests — skip gracefully on branches that predate
+      # them. Once the phase-2a stack merges, these become required.
+      - name: test_chainsaw_kind_config
+        run: |
+          if [ -f tests/unit/test_chainsaw_kind_config.sh ]; then
+            bash tests/unit/test_chainsaw_kind_config.sh
+          else
+            echo "(test_chainsaw_kind_config.sh not on this branch — skipped)"
+          fi
+
+      - name: test_platform_secret_xrd
+        run: |
+          if [ -f tests/unit/test_platform_secret_xrd.sh ]; then
+            bash tests/unit/test_platform_secret_xrd.sh
+          else
+            echo "(test_platform_secret_xrd.sh not on this branch — skipped)"
+          fi
+
+      - name: test_platform_secret_composition
+        run: |
+          if [ -f tests/unit/test_platform_secret_composition.sh ]; then
+            bash tests/unit/test_platform_secret_composition.sh
+          else
+            echo "(test_platform_secret_composition.sh not on this branch — skipped)"
+          fi
+
+      - name: test_argocd_app_revision_pinned
+        run: |
+          if [ -f tests/unit/test_argocd_app_revision_pinned.sh ]; then
+            bash tests/unit/test_argocd_app_revision_pinned.sh
+          else
+            echo "(test_argocd_app_revision_pinned.sh not on this branch — skipped)"
+          fi
+
+      - name: test_argocd_bootstrap
+        run: |
+          if [ -f tests/unit/test_argocd_bootstrap.sh ]; then
+            bash tests/unit/test_argocd_bootstrap.sh
+          else
+            echo "(test_argocd_bootstrap.sh not on this branch — skipped)"
+          fi
