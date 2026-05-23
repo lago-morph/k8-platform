@@ -15,9 +15,9 @@ drives those updates.
 
 | Field | Value |
 |---|---|
-| Sandbox started | _(none — no live sandbox)_ |
-| Estimated expiry | _(none)_ |
-| Active phase | _(none)_ |
+| Sandbox started | 2026-05-23T03:20Z |
+| Estimated expiry | 2026-05-23T07:20Z |
+| Active phase | 1 (management) — cumulative bring-up of phase 0 first |
 
 ### Phase states (this session)
 
