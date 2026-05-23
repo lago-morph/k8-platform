@@ -12,48 +12,93 @@ and writes back to it after every workflow run. See
 
 ## NEW SESSION QUICKSTART (read this first)
 
-The cluster on account `309191981509` is **live and verified through phase 1**. Phase 2a (Crossplane foundations — XRDs + Compositions + ArgoCD bootstrap) is **landing as a stack of PRs** (#41 → #42 → #43 → #44, plus this handoff PR). Some/all may have merged by the time you read this.
+You are picking up a session whose predecessor brought the platform from a fresh AWS account (`309191981509`) through phases 0 and 1, shipped two bug fixes (PRs #39, #40 — both merged), and produced a phase-2a Crossplane foundations stack (PRs #41-#45) plus three independent CI/diagnostics PRs (#46, #47, #48). By the time you read this most or all of those PRs should have merged. **Verify the state below before changing anything.**
 
-**Required first steps:**
+### Step 1 — confirm the cluster is alive and which account you're in
 
-1. **Confirm cluster still alive.**
-   ```sh
-   scripts/aws-creds-check.sh
-   aws eks update-kubeconfig --name k8-platform-mgmt --region us-east-1
-   kubectl get nodes
-   ```
-   If the account differs or the cluster is gone, restart from phase 0 per the old quickstart (preserved below for that case).
+```sh
+scripts/aws-creds-check.sh
+aws eks update-kubeconfig --name k8-platform-mgmt --region us-east-1
+kubectl get nodes
+kubectl get pods -A | grep -E '(crossplane|external-secrets|external-dns|argocd|ingress-nginx|kyverno)'
+```
 
-2. **Check the phase-2a stack landed.** Each merge of #41 / #42 / #43 needs to be followed by a fresh `workflow_dispatch phase=management action=apply-and-verify` (or just `verify` if no Terraform changed) so the cluster picks up the new `terraform_data.argocd_bootstrap` from #43 and the ArgoCD bootstrap discovers `argocd/apps/` from Git.
+Expect:
+- AWS account ID `309191981509`
+- Route53 zone `309191981509.realhandsonlabs.net.` (ID `Z0426781193AJAT8UDLZO`)
+- EKS cluster `k8-platform-mgmt` with 2 nodes Ready
+- 5 helm releases healthy: argocd, crossplane-system, external-secrets, external-dns, ingress-nginx (+ kyverno)
+- ArgoCD UI reachable at `https://argocd.management.309191981509.realhandsonlabs.net` (HTTP 200)
 
-3. **Verify the GitOps loop.** After the bootstrap App applies:
-   ```sh
-   kubectl get applications -n argocd
-   kubectl get clustersecretstore aws-secrets-manager
-   kubectl get crd platformsecrets.platform.k8-platform.io
-   ```
-   Then run `tests/integration/11_platform_secret_e2e.sh` to validate REQ-XP-01 / REQ-XP-04 end-to-end on the live cluster.
+If any of those don't match, treat this as a fresh-account session and follow the fallback at the bottom of this section.
 
-4. **Read all of `AGENTS.md`** before starting. Pay particular attention to:
-   - §5.1 — exact scope of "tear down phase X"
-   - §6.2 — TDD discipline on every bug, no exceptions
-   - §6.3 — full test bundle after every fresh `apply-and-verify`
-   - §6.4 — spawn adversarial subagents whenever drafting new tests
-   - §6.5 — repeat back compound prompts before acting
-   - §6.6 — throughput-without-attention mode (stacked PRs by default,
-     make defensible assumptions, keep working)
+### Step 2 — confirm phase 2a actually landed on the cluster
 
-5. **Next deliverable: PlatformCluster.** Phase 2a covers `PlatformSecret` only. `PlatformCluster` (full EKS via Crossplane AWS provider) is the next major piece per REQ-PLAT-01 / DESIGN.md §3. Substantial — likely its own session given EKS-via-Crossplane validation time.
+Phase 2a code is in PRs #41-#45. **Merging the stack is not enough** — the management module added one new `terraform_data.argocd_bootstrap` resource in PR #43 that needs an actual `terraform apply` to take effect. Without it, ArgoCD never knows about the bootstrap App and `argocd/` stays unsynced.
 
-### If the cluster is gone (fresh-account branch)
+```sh
+# A. Has the management cluster been re-applied since #43 merged?
+#    Check by looking for the bootstrap Application in argocd:
+kubectl get applications -n argocd bootstrap
 
-If `scripts/aws-creds-check.sh` shows a different account, or the EKS cluster doesn't exist, you're starting from scratch:
+# B. Has the bootstrap App synced the rest of argocd/?
+kubectl get applications -n argocd
+# Expect at least: bootstrap, crossplane-resources, management-cluster-config
 
-1. Confirm there's a Route53 public hosted zone; if not, **stop and escalate**.
-2. `workflow_dispatch phase=base action=apply-and-verify`
-3. After green: `workflow_dispatch phase=management action=apply-and-verify`
+# C. Did the ClusterSecretStore become Ready?
+kubectl get clustersecretstore aws-secrets-manager
+kubectl get clustersecretstore aws-secrets-manager \
+  -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+
+# D. Are the XRDs registered?
+kubectl get crd platformsecrets.platform.k8-platform.io
+```
+
+If A is empty: dispatch `phase=management action=apply-and-verify`. The new `terraform_data.argocd_bootstrap` will run its local-exec and `kubectl apply -f argocd/bootstrap.yaml`. From that moment on ArgoCD self-manages `argocd/`.
+
+If B shows the bootstrap App but not the children: check `kubectl describe app bootstrap -n argocd` for sync errors. Most likely cause: stale `targetRevision: main` pointing at a different commit than your local main.
+
+If C is False or D is missing: the bootstrap synced but ESO config + crossplane resources haven't applied yet. Wait 30s for the sync-wave ordering (-10 then 0) to land.
+
+### Step 3 — end-to-end verify PlatformSecret on the live cluster
+
+```sh
+tests/integration/11_platform_secret_e2e.sh
+```
+
+This applies a `PlatformSecret` claim with a 10s refreshInterval, asserts Ready, writes a value to ASM, asserts the K8s Secret materializes, rotates the value, asserts ESO refreshes within the interval, deletes the claim, asserts ASM + ExternalSecret + K8s Secret are all gone. It `skip`s cleanly if the XRD CRD is not on the cluster (step 2 not yet complete).
+
+That test passing is **the** completion criterion for REQ-XP-01 and REQ-XP-04. Mark phase 2 `verified` in the Environment State block below once it lands green.
+
+### Step 4 — pick the next deliverable
+
+In rough priority order (see "Pending follow-ups" later in this file for full list):
+
+1. **PlatformCluster XRD** (phase 2b) — the second of the two phase-2 XRDs per DESIGN.md §3 / REQ-XP-02. Full EKS provisioned via Crossplane. Substantial — likely its own session given EKS-via-Crossplane validation time (~15 min per Composition iteration). Pattern follows phase 2a: chainsaw scenarios first, then live integration.
+2. **Fix `tests/unit/test_helm_render.sh`** — 4 ArgoCD Ingress assertions fail on main (4 pre-existing failures noted in PR #39's body, tolerated in #47's CI workflow via `continue-on-error: true`). The yq selectors look for `metadata.name=="argocd-server"` but the rendered chart doesn't produce an Ingress with that exact name; likely a chart-version artifact. **Requires `helm` available locally to verify**, which the previous session didn't have. Likely fix: switch from name-based to label-based selectors (`app.kubernetes.io/component=server`).
+3. **Cross-region smoke chainsaw scenario** (adversarial-reviewer B finding J.15) — once a real consumer claims a non-`us-east-1` region, build a smoke scenario.
+4. **Long-running token-expiry chainsaw scenario** (adversarial-reviewer B finding F.10) — nightly only; not per-PR.
+
+### Step 5 — read AGENTS.md before starting
+
+Required reading. Pay particular attention to:
+- §3 — branch policy + stacked PR procedure
+- §5.1 — exact scope of "tear down phase X"
+- §6.2 — TDD discipline on every bug, no exceptions
+- §6.3 — full test bundle after every fresh `apply-and-verify`
+- §6.4 — spawn adversarial subagents whenever drafting new tests
+- §6.5 — repeat back compound prompts before acting
+- §6.6 — **throughput-without-attention mode** (the previous session ran in this mode; the user's default expectation is stacked PRs, defensible assumptions, no idle waiting)
+
+### Fallback: if the cluster is gone
+
+If step 1 shows a different account ID or no `k8-platform-mgmt` cluster, you're starting from scratch:
+
+1. Confirm `scripts/aws-creds-check.sh` finds a Route53 public hosted zone in the account. If not, **stop and escalate** — no code change provisions one.
+2. `workflow_dispatch phase=base action=apply-and-verify` (waits for the base bootstrap script in CI to create the state bucket + lock table).
+3. After green: `workflow_dispatch phase=management action=apply-and-verify` (~15 min).
 4. Run the full test bundle per `AGENTS.md §6.3`.
-5. Then resume at step 2 above to pick up phase 2a.
+5. Resume at step 2 of the normal path above to pick up phase 2a.
 
 ---
 
@@ -61,27 +106,100 @@ If `scripts/aws-creds-check.sh` shows a different account, or the EKS cluster do
 
 | Field | Value |
 |---|---|
-| Active phase | 2a (PlatformSecret landed via stacked PRs #41-#44) |
-| Last update | 2026-05-23 (phase 2a code merged; live verification pending merge + `apply-and-verify`) |
-| AWS account | `309191981509` — Route53 zone `309191981509.realhandsonlabs.net` (Z0426781193AJAT8UDLZO) |
+| Active phase | 2a (PlatformSecret) — code in git; live cluster activation pending `phase=management apply-and-verify` after #43 lands |
+| Last update | 2026-05-23 — end of session that brought up phases 0+1 and authored phase 2a stack |
+| AWS account | `309191981509` |
+| Route53 zone | `309191981509.realhandsonlabs.net.` (id `Z0426781193AJAT8UDLZO`) |
+| EKS cluster | `k8-platform-mgmt` in `us-east-1` |
+| Cluster URL | `https://argocd.management.309191981509.realhandsonlabs.net` (HTTP 200 as of phase 1 verify) |
+| State backend | s3 `k8-platform-tfstate-309191981509`, lock table `k8-platform-tfstate-lock` (both auto-bootstrapped by terraform-test.yml) |
 
 ### Phase states
 
 | Phase | State | Last action | Run URL |
 |---|---|---|---|
-| 0 base | verified | 2026-05-23 apply-and-verify ✅ (25 resources, ACM ISSUED, Cognito ready) | https://github.com/lago-morph/k8-platform/actions/runs/26340162917 |
-| 1 management | verified | 2026-05-23 apply-and-verify ✅ (EKS active, 2 nodes Ready, 5 helm releases, ArgoCD reachable at https://argocd.management.309191981509.realhandsonlabs.net) | https://github.com/lago-morph/k8-platform/actions/runs/26340615326 |
-| 2 xrds | code-only (PlatformSecret) | PRs #41 chainsaw-infra, #42 PlatformSecret XRD+Composition+ESO, #43 ArgoCD bootstrap, #44 extended tests | (no apply-and-verify yet — needs management re-apply after #43 merges) |
+| 0 base | verified | 2026-05-23 apply-and-verify ✅ — 25 resources (VPC, IGW, NAT pair, subnets, route tables, ACM ISSUED, Cognito pool + test user) | https://github.com/lago-morph/k8-platform/actions/runs/26340162917 |
+| 1 management | verified | 2026-05-23 apply-and-verify ✅ — EKS active, 2 nodes Ready, all 5 helm releases healthy, Kyverno policies applied, ArgoCD ingress + Route53 record live | https://github.com/lago-morph/k8-platform/actions/runs/26340615326 |
+| 2 xrds | code-only → applied (after #41-#45 merge + `apply-and-verify`) | PRs #41 chainsaw-infra, #42 PlatformSecret XRD+Composition+ESO, #43 ArgoCD bootstrap, #44 extended tests, #45 handoff | — |
 | 3 platform | not-coded | — | — |
 | 4 observability | not-coded | — | — |
-| 5 auth | not-coded | — | — |
+| 5 auth | not-coded (spec done in 2026-05-10) | — | — |
 | 6 workload | not-coded | — | — |
+
+### Live AWS resources you can `kubectl get` against right now
+
+```
+EKS cluster:        k8-platform-mgmt
+Cluster endpoint:   https://F96592A65D3316DE1EA73CD4C1BC8AF0.gr7.us-east-1.eks.amazonaws.com
+OIDC provider ARN:  arn:aws:iam::309191981509:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/F96592A65D3316DE1EA73CD4C1BC8AF0
+
+IRSA roles:
+  arn:aws:iam::309191981509:role/k8-platform-mgmt-argocd
+  arn:aws:iam::309191981509:role/k8-platform-mgmt-crossplane
+  arn:aws:iam::309191981509:role/k8-platform-mgmt-eso
+  arn:aws:iam::309191981509:role/k8-platform-mgmt-external-dns
+
+ACM cert (issued):  arn:aws:acm:us-east-1:309191981509:certificate/592bdcfa-dbfe-4afe-ba28-aa509c908095
+Cognito user pool:  us-east-1_LOymmhYEF
+Cognito client:     7imdshi763a01upp5fi88k9b4d (Keycloak SSO client)
+Cognito test user:  ci-test@309191981509.realhandsonlabs.net
+```
 
 State values: `not-coded`, `code-only`, `plan-green`, `applied`, `verified`,
 `broken`.
 
 The agent updates this block after each `workflow_dispatch` completes.
 If the state is stale or contradicts a recent CI run, refresh it first.
+
+---
+
+## PR landscape from the 2026-05-23 session
+
+The previous session ended with **all 8 PRs from the session merged or expected to merge as a single batch**. Cross-reference against `git log main --oneline` to confirm what actually landed:
+
+| PR | Title | Base | Merged? | What it ships |
+|----|-------|------|---------|---------------|
+| #39 | fix: post-comment KeyError + kyverno JMESPath; bring up phases 0 and 1 on fresh account | main | ✅ | The two pre-2a bug fixes + handoff/registry updates |
+| #40 | docs(agents): add §6.6 throughput-without-attention mode | main | ✅ | AGENTS.md §6.6 |
+| #41 | feat(chainsaw): add Crossplane test harness infrastructure (phase 2a-1) | main | ?? | `tests/chainsaw/` skeleton + kind + run.sh + `.github/workflows/chainsaw.yml` |
+| #42 | feat(crossplane): add PlatformSecret XRD + Composition + ESO wiring (phase 2a-2) | #41 | ?? | XRD, Composition, ClusterSecretStore, ArgoCD AppProject+Apps, Kyverno policy, chainsaw scenarios 00/01, unit tests |
+| #43 | feat(argocd): app-of-apps bootstrap from Terraform (phase 2a-3) | #42 | ?? | `argocd/bootstrap.yaml` + `terraform_data.argocd_bootstrap` in management module |
+| #44 | test(platform-secret): live integration + rotation chainsaw scenario (phase 2a-4) | #43 | ?? | `tests/integration/11_platform_secret_e2e.sh` + chainsaw 02-data-rotation |
+| #45 | chore(handoff): phase 2a stack progress + new-session quickstart | #44 | ?? | Earlier handoff update (this file's predecessor) |
+| #46 | fix(scripts): diag-component $SELECTOR typo + add platform-secret diagnostics | main | ✅ | Latent `$SELECTOR` bug fix + `platform-secret` component in diag-component.sh + 15-assertion unit test |
+| #47 | feat(ci): unit tests on every push | main | ✅ | `.github/workflows/unit-tests.yml` |
+| #48 | feat(ci): terraform fmt + validate on every push | main | ✅ | `.github/workflows/terraform-validate.yml` |
+
+(This PR itself — `chore/session-wrap` — adds this very block.)
+
+**Critical activation step:** PR #43 added `terraform_data.argocd_bootstrap` to `terraform/management/helm.tf`. That resource only takes effect on the live cluster when `phase=management action=apply-and-verify` runs. **You cannot skip this step.** Without it, the ArgoCD bootstrap App is never `kubectl apply`ed, ArgoCD doesn't discover `argocd/apps/`, and the PlatformSecret CRD never installs.
+
+---
+
+## Pending follow-ups (clearly out of scope for the previous session)
+
+In rough priority order.
+
+1. **PlatformCluster XRD (phase 2b).** REQ-XP-02, DESIGN.md §3. Pattern mirrors phase 2a:
+   - Author the XRD + Composition + claim example.
+   - Chainsaw `setup-assert` + happy-path + deletion scenarios first (kind has no IRSA; chainsaw scenarios bring their own static-cred ProviderConfig).
+   - Live integration test against the management cluster — but heads-up: Crossplane provisioning an EKS via the AWS provider takes ~15 minutes per Composition iteration. Plan the session accordingly.
+   - Unit tests at every layer.
+   - Update bug-class registry as new bug classes surface.
+
+2. **Fix `tests/unit/test_helm_render.sh`.** 4 ArgoCD Ingress assertions fail (the yq selectors look for `metadata.name=="argocd-server"` but chart 6.7.3 with release name `argo-cd` likely renders `argo-cd-server`). Currently tolerated by `continue-on-error: true` in `.github/workflows/unit-tests.yml`. **Requires `helm` locally to verify the fix**, which the previous session sandbox didn't have. Recommended approach: switch selectors from `metadata.name` to label `app.kubernetes.io/component=server` for chart-version robustness. Remove the `continue-on-error` once green.
+
+3. **`scripts/argocd-apps.sh` extension for PlatformSecret claims.** The existing script dumps ArgoCD Application status; extend to show PlatformSecret claim status across all namespaces (similar to `diag-component.sh platform-secret`). Small.
+
+4. **Cross-region smoke chainsaw scenario.** Adversarial-reviewer B finding J.15. Wait until a real consumer claims a non-`us-east-1` region.
+
+5. **Long-running token-expiry chainsaw scenario.** Adversarial-reviewer B finding F.10. Nightly only — add a separate `workflow_dispatch` input on `chainsaw.yml` rather than running per-PR.
+
+6. **Compositions strict-schema rejection scenario.** Adversarial-reviewer A finding 14. The PlatformSecret XRD's openAPIV3Schema is implicitly strict (no `x-kubernetes-preserve-unknown-fields: true`); a live cluster scenario that proves it (apply a claim with `spec.foo: bar`, assert kubectl-apply non-zero) would belong with phase 2b's Chainsaw work.
+
+7. **Iteration 5 prerequisite.** Per the older 2026-05-10 entry below: base module needs Cognito groups (`k8s-admins`, `k8s-viewers`) before Keycloak realm work. Not yet authored.
+
+---
 
 ---
 
