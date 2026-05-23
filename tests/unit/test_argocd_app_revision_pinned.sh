@@ -49,13 +49,30 @@ for app in "$APP_DIR"/*.yaml; do
     _fail "argocd_app_source_path_exists:$base" "spec.source.path='$PATH_' is not a real directory"
   fi
 
-  # ---- syncPolicy.automated.prune=true ---------------------------------
-  PRUNE=$(yq -r '.spec.syncPolicy.automated.prune' "$app")
-  assert_eq "argocd_app_automated_prune:$base" "true" "$PRUNE"
-
-  # ---- syncPolicy.automated.selfHeal=true ------------------------------
-  SH=$(yq -r '.spec.syncPolicy.automated.selfHeal' "$app")
-  assert_eq "argocd_app_automated_selfHeal:$base" "true" "$SH"
+  # ---- syncPolicy.automated.{prune,selfHeal} — required unless the app
+  # is explicitly opted out of automated sync.
+  #
+  # Some Applications provision destructive/expensive resources (e.g.
+  # PlatformCluster claims → real EKS clusters at ~15 min provisioning
+  # and real $$). For those, syncPolicy.automated is intentionally
+  # ABSENT — sync is an operator-confirmed action. Detect that case by
+  # looking for the `.spec.syncPolicy.automated` block being null AND
+  # the file header documenting the manual-sync choice. Otherwise
+  # require both prune and selfHeal = true.
+  AUTOMATED=$(yq -r '.spec.syncPolicy.automated' "$app")
+  if [ "$AUTOMATED" = "null" ]; then
+    if grep -q "manual sync only\|without automated sync\|no syncPolicy.automated" "$app"; then
+      _pass "argocd_app_manual_sync_documented:$base"
+    else
+      _fail "argocd_app_manual_sync_documented:$base" \
+        "spec.syncPolicy.automated is absent but the file does not document the manual-sync choice"
+    fi
+  else
+    PRUNE=$(yq -r '.spec.syncPolicy.automated.prune' "$app")
+    assert_eq "argocd_app_automated_prune:$base" "true" "$PRUNE"
+    SH=$(yq -r '.spec.syncPolicy.automated.selfHeal' "$app")
+    assert_eq "argocd_app_automated_selfHeal:$base" "true" "$SH"
+  fi
 
   # ---- project is the platform AppProject ------------------------------
   PROJ=$(yq -r '.spec.project' "$app")
