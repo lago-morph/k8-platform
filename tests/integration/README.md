@@ -9,7 +9,7 @@ a per-run suffix (`$RUN_ID`).
 These are deliberately **separate** from `tests/unit/` (no AWS, no
 cluster) and from `tests/e2e/` (read-only sanity assertions). Integration
 tests **mutate cluster state** and **may create AWS resources**, so they
-require a live sandbox session and explicit invocation.
+require a live cluster and explicit invocation.
 
 ## Bug coverage map
 
@@ -65,5 +65,5 @@ Environment variables consumed by all scripts:
 Crossplane-managed resources persist after pod deletion. (05) and (06)
 both explicitly delete the Crossplane object and wait for the cloud
 resource to disappear before declaring success. If a test aborts mid-flight
-you may need to clean up manually — `scripts/sandbox-creds-check.sh`
+you may need to clean up manually — `scripts/aws-creds-check.sh`
 will at least confirm what's still around.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Verify AWS creds reach STS and that the Pluralsight sandbox prerequisites
-# are present (one Route53 zone, etc.). Run this first when a new session
-# starts; if it fails, no other script will work.
+# Verify AWS creds reach STS and that the account prerequisites are present
+# (Route53 zone, etc.). Run this first when picking up a new session; if it
+# fails, no other script in this directory will work.
 
 set -uo pipefail
 
@@ -14,7 +14,7 @@ if ! aws sts get-caller-identity 2>&1 | sed 's/^/  /'; then
   echo ""
   echo "STS call failed. Likely causes:"
   echo "  - AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY not set"
-  echo "  - Sandbox session has expired (4-hour cap)"
+  echo "  - Credentials revoked or rotated"
   exit 1
 fi
 
@@ -32,7 +32,7 @@ COUNT=$(echo "$ZONES" | jq 'length')
 echo "  found $COUNT hosted zone(s)"
 echo "$ZONES" | jq -r '.[] | "  - \(.Name)  (\(.Id))"'
 if [ "$COUNT" -ne 1 ]; then
-  echo "  WARN: expected exactly 1 zone in a fresh sandbox. CI auto-picks the first."
+  echo "  WARN: expected exactly 1 zone. CI auto-picks the first."
 fi
 
 echo ""

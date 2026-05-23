@@ -1,25 +1,23 @@
 # Session Handoff — k8-platform
 
-This file is updated at the end of every AI session. It captures what was done,
-the current state of the codebase, and the next concrete steps.
+This file is the first thing a new session reads. It captures what was
+done last, the current state of the cluster, and the next concrete steps.
 
-The **Current Sandbox Session** block immediately below tracks per-session
-state — what's currently live in AWS, which phase is being worked on, when
-the sandbox expires. The agent reads it first and writes back to it after
-every workflow run. See `ai/testing-guidelines.md` for the procedure that
-drives those updates.
+The **Environment State** block immediately below tracks what's currently
+live in AWS and which phase is being worked on. The agent reads it first
+and writes back to it after every workflow run. See
+`ai/testing-guidelines.md` for the procedure that drives those updates.
 
 ---
 
-## Current Sandbox Session
+## Environment State
 
 | Field | Value |
 |---|---|
-| Sandbox started | 2026-05-23T03:20Z |
-| Estimated expiry | 2026-05-23T07:20Z |
-| Active phase | 1 (management) — cumulative bring-up of phase 0 first |
+| Active phase | (none — phase 1 verified, ready to start phase 2) |
+| Last update | 2026-05-23 |
 
-### Phase states (this session)
+### Phase states
 
 | Phase | State | Last action | Run URL |
 |---|---|---|---|
@@ -32,11 +30,10 @@ drives those updates.
 | 6 workload | not-coded | — | — |
 
 State values: `not-coded`, `code-only`, `plan-green`, `applied`, `verified`,
-`broken`, `not-applied-this-session` (code exists and has been verified in
-a *prior* session; needs re-apply in the current sandbox).
+`broken`.
 
-The agent updates this block after each `workflow_dispatch` completes. If
-the sandbox is expired or unknown, ask the user once and then refresh.
+The agent updates this block after each `workflow_dispatch` completes.
+If the state is stale or contradicts a recent CI run, refresh it first.
 
 ---
 
@@ -57,7 +54,7 @@ the sandbox is expired or unknown, ask the user once and then refresh.
 ### What "plan passes" means
 
 The GitHub Actions CI workflow runs `terraform plan` on every push. Both modules
-now plan cleanly against a real sandbox AWS account — base and management init+plan
+now plan cleanly against the target AWS account — base and management init+plan
 both succeed regardless of whether base has been applied first.
 
 ---
@@ -177,8 +174,8 @@ the plan).
 
 | Secret | Value |
 |--------|-------|
-| `AWS_ACCESS_KEY_ID` | From Pluralsight sandbox |
-| `AWS_SECRET_ACCESS_KEY` | From Pluralsight sandbox |
+| `AWS_ACCESS_KEY_ID` | AWS credential for the target account |
+| `AWS_SECRET_ACCESS_KEY` | AWS credential for the target account |
 | `AWS_REGION` | e.g. `us-east-1` |
 
 Everything else (domain, state bucket, Cognito test user) is auto-discovered
@@ -188,7 +185,7 @@ or generated at runtime.
 
 ## What Was Done — 2026-05-23 (Phase 1 verified + test scaffolding)
 
-1. **Phase 1 verified end-to-end** in the Pluralsight sandbox. PR #34
+1. **Phase 1 verified end-to-end** in AWS. PR #34
    contains the seven fixes that took us from cold management apply to a
    live ArgoCD UI reachable over HTTPS through the NLB. See
    `ai/TESTING-PLAN.md` for the bug-to-test traceability matrix.
@@ -213,7 +210,7 @@ or generated at runtime.
 
 3. **Helper scripts** under `scripts/`: `k8s-status.sh`, `k8s-logs.sh`,
    `diag-component.sh`, `kyverno-policies.sh`, `kyverno-violations.sh`,
-   `argocd-apps.sh`, `route53-records.sh`, `sandbox-creds-check.sh`.
+   `argocd-apps.sh`, `route53-records.sh`, `aws-creds-check.sh`.
    All read-only, all deterministic, source-pinned at top with usage.
 
 4. **Workflow diagnostics improved**: the management argocd-url verify
@@ -240,58 +237,6 @@ or generated at runtime.
 5. Run `tests/integration/05_crossplane_managed_resource.sh` and
    `06_crossplane_xrd_claim.sh` to confirm round-trip against real AWS.
 
-**Skipped from previous plan:** the standalone "apply-and-destroy" cycle
-is no longer the milestone — phase 1's `apply-and-verify` is already
-fully green and the seven canonical fixes are committed on
-`claude/busy-tesla-pe3Ey` (PR #34).
-
-1. Start a fresh Pluralsight AWS sandbox session
-2. Copy the three AWS credentials into GitHub repository secrets
-3. Go to **Actions → Terraform Test → Run workflow**
-4. Select `main`, mode `apply-and-destroy`
-5. Use the `terraform-ci-watch` skill to follow the run
-
-After apply succeeds (before destroy runs), verify intent — not just
-"no Terraform errors":
-- ACM cert status: `ISSUED`
-- EKS cluster status: `ACTIVE`, 2 nodes `Ready`
-- ArgoCD pods running with IRSA annotation
-- ESO and Crossplane installed in their namespaces
-- ArgoCD UI reachable at `argocd.management.<domain>` over HTTPS
-
-**Known risks:**
-- Crossplane `DeploymentRuntimeConfig` (v1beta1) CRD must be registered
-  before `terraform_data` applies the Provider — `depends_on` handles this
-  but watch for timing issues.
-- ArgoCD ingress via Helm `server.ingress.*` — confirm ExternalDNS creates
-  the DNS CNAME correctly.
-
-Expected duration: ~25 minutes (ACM cert validation 1–3 min, EKS cluster
-creation ~15 min, ArgoCD Helm install ~3 min, destroy ~10 min).
-
-If the apply fails, the `terraform-ci-watch` skill drives the diagnose-
-and-fix loop (3-strike escalation).
-
----
-
-## After a Successful Apply-and-Destroy
-
-Once the full cycle passes, move to **Iteration 2: Crossplane foundations**.
-
-Key deliverables for Iteration 2:
-- `PlatformSecret` XRD and Composition (syncs AWS Secrets Manager → k8s Secret
-  in any cluster via ESO)
-- `PlatformCluster` XRD and Composition (provisions an EKS cluster via Crossplane
-  AWS provider)
-- Test the XRDs by creating a Claim from the management cluster
-
-Files to create:
-- `crossplane/xrds/platform-secret.yaml`
-- `crossplane/compositions/platform-secret.yaml`
-- `crossplane/xrds/platform-cluster.yaml`
-- `crossplane/compositions/platform-cluster.yaml`
-- ArgoCD Application pointing at the `crossplane/` directory
-
 ---
 
 ## Key Design Decisions (summary)
@@ -303,7 +248,7 @@ Full rationale is in `ai/DESIGN.md`. Short version:
 | Multi-cluster pattern | Hub-spoke via ArgoCD | Management cluster manages all others |
 | Cluster provisioning | Crossplane XRDs | Self-service via Claims, no Terraform per-cluster |
 | Secret distribution | ESO + AWS Secrets Manager | Single source of truth, no k8s Secret replication |
-| TLS (sandbox) | ACM wildcard + NLB termination | Sandbox domain can't use public ACME |
+| TLS (this account) | ACM wildcard + NLB termination | Pre-existing zone has no public-ACME challenge path |
 | TLS (production) | cert-manager + Let's Encrypt | Per-service certs, fully automated |
 | State backend | S3 + DynamoDB | Standard; bootstrapped automatically by CI |
-| Instance sizing | `t3.medium` × 2 | Fits within Pluralsight 9-instance limit |
+| Instance sizing | `t3.medium` × 2 | Fits within the 9-instance EC2 quota |

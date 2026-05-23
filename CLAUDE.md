@@ -59,14 +59,14 @@ Set these in repository Settings → Secrets and variables → Actions.
 
 | Secret | Purpose | Required? |
 |--------|---------|-----------|
-| `AWS_ACCESS_KEY_ID` | Sandbox session credential | **Yes** |
-| `AWS_SECRET_ACCESS_KEY` | Sandbox session credential | **Yes** |
+| `AWS_ACCESS_KEY_ID` | AWS credential for the target account | **Yes** |
+| `AWS_SECRET_ACCESS_KEY` | AWS credential for the target account | **Yes** |
 | `AWS_REGION` | e.g. `us-east-1` | **Yes** |
 
 Everything else (state bucket, DynamoDB lock table, root domain, Cognito test
 credentials) is auto-computed at runtime by `.github/workflows/terraform-test.yml`
-— no other GitHub secrets are needed. Sandbox resource limits are documented
-in `ai/testing-guidelines.md`.
+— no other GitHub secrets are needed. AWS account constraints (instance types,
+quota, hosted-zone discovery) are documented in `ai/testing-guidelines.md`.
 
 ---
 
@@ -84,20 +84,18 @@ That procedure handles:
 - The inner debug loop (`destroy` + `apply` + `verify` cycles) for phase N
   itself
 
-### Three invariants (apply regardless of what the user appears to ask for)
+### Two invariants (apply regardless of what the user appears to ask for)
 
 1. **Never destroy a phase numerically lower than the one being worked on.**
    The whole point of the granular workflow is to stop burning down phases
-   0..N-1 every time phase N breaks.
-2. **Never run `destroy` at end of session.** The Pluralsight sandbox expires
-   after 4 hours and reclaims everything automatically. Use that.
-3. **After every state change (apply, verify, destroy), update the Current
-   Sandbox Session block at the top of `ai/handoff.md` and commit.** That
-   block is how the next session — or the next prompt — knows what's live.
+   0..N-1 every time phase N breaks. Explicit `destroy` runs are deliberate
+   and scoped to a single phase.
+2. **After every state change (apply, verify, destroy), update the
+   environment state block at the top of `ai/handoff.md` and commit.** That
+   block is how the next prompt — or a new session — knows what's live.
 
-Full procedure, debug loop, session-budget arithmetic, and the
-`phase × action` workflow-input reference all live in
-`ai/testing-guidelines.md`.
+Full procedure, debug loop, and the `phase × action` workflow-input
+reference all live in `ai/testing-guidelines.md`.
 
 ## Testing Loops — Required After Pushes and Crossplane Applies
 
@@ -119,8 +117,8 @@ ArgoCD sync, or CI), invoke the **`crossplane-claim-verify`** skill (see
 `.claude/skills/crossplane-claim-verify/`) to wait for `Synced`/`Ready` and
 verify the underlying cloud resource is actually healthy.
 
-Sandbox-specific constraints (Pluralsight 4-hour session, 9-instance cap,
-allowed instance types) live in `ai/testing-guidelines.md`.
+AWS account constraints (instance-type whitelist, EC2 quota,
+hosted-zone discovery) live in `ai/testing-guidelines.md`.
 
 ---
 

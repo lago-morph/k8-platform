@@ -48,7 +48,7 @@ resource "helm_release" "ingress_nginx" {
 
 # ---- ExternalDNS ----
 # Watches Ingress/Service objects with external-dns annotations and reconciles
-# the corresponding Route53 records. The sandbox's pre-created hosted zone is
+# the corresponding Route53 records. The account's pre-existing hosted zone is
 # discovered automatically by the zone-type/domain filters.
 
 resource "helm_release" "external_dns" {

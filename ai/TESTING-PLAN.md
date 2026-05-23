@@ -7,7 +7,7 @@ different environment and catches a different class of bug.
 |---|---|---|---|---|
 | Unit | `tests/unit/` | Local shell — no AWS, no cluster | Helm chart value contracts, IRSA wiring, IAM-policy completeness, EKS module tripwires | <30s |
 | Kyverno (audit) | `policies/audit/` | Continuously, in-cluster | Drift from any source — chart bump, hand edit, Argo sync, new namespace | continuous |
-| Integration | `tests/integration/` | Live management cluster + sandbox AWS | Real end-to-end flows — IRSA STS, ExternalDNS → Route53, Crossplane → S3, Argo selfHeal | ~10–15 min for all 10 |
+| Integration | `tests/integration/` | Live management cluster + AWS | Real end-to-end flows — IRSA STS, ExternalDNS → Route53, Crossplane → S3, Argo selfHeal | ~10–15 min for all 10 |
 | Chainsaw (planned) | `tests/chainsaw/` | `kind` cluster ± LocalStack | XRD / Composition / Claim logic before any AWS apply | <2 min per scenario |
 
 The matrix is intentionally non-overlapping. Unit tests catch authoring-time
@@ -77,7 +77,7 @@ infrastructure:
 ### What it does NOT replace
 
 - The existing integration tests (05, 06) still run against the real
-  sandbox to catch issues a kind + stub setup can't see: real IRSA,
+  account to catch issues a kind + stub setup can't see: real IRSA,
   real AWS API rate limits, real-provider package install behaviour,
   Route53 propagation. Chainsaw lives upstream of those — it catches
   the Composition-logic bugs before they reach the 15-minute apply.
@@ -88,7 +88,7 @@ infrastructure:
 ### Open design questions for the phase-2 author
 
 - Real AWS or LocalStack for the provider's calls? Real AWS gives
-  high-fidelity test, costs us sandbox quota; LocalStack is free but
+  high-fidelity test, costs us account quota; LocalStack is free but
   the Crossplane AWS provider doesn't always like its responses.
   Default plan: **real AWS, scoped to a single test bucket prefix**.
 - Crossplane v2 in kind needs ~2 GB RAM. CI runner needs to be sized

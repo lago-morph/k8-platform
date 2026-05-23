@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# List record sets in the sandbox's hosted zone (discovered the same way CI
-# discovers it). Useful for confirming ExternalDNS is reconciling and
+# List record sets in the account's hosted zone (discovered the same way
+# CI discovers it). Useful for confirming ExternalDNS is reconciling and
 # spotting stale records.
 # Usage: scripts/route53-records.sh
 

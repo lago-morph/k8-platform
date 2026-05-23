@@ -35,7 +35,7 @@ require_kube() {
 
 require_aws() {
   if ! aws sts get-caller-identity >/dev/null 2>&1; then
-    echo "FAIL: AWS creds not working. Run scripts/sandbox-creds-check.sh."
+    echo "FAIL: AWS creds not working. Run scripts/aws-creds-check.sh."
     exit 2
   fi
 }

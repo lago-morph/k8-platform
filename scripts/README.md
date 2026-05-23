@@ -24,7 +24,7 @@ All scripts:
 | `kyverno-violations.sh` | Current PolicyReport violations across all namespaces. |
 | `argocd-apps.sh` | ArgoCD Application/AppProject status. |
 | `route53-records.sh` | List record sets in the discovered hosted zone. |
-| `sandbox-creds-check.sh` | STS round-trip + Route53 zone discovery (no cluster needed). |
+| `aws-creds-check.sh` | STS round-trip + Route53 zone discovery (no cluster needed). |
 
 ## Conventions
 
