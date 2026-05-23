@@ -27,12 +27,10 @@ refresh credentials and re-trigger">.
 
 ## Filling it in
 
-- **Job/step names** — call `ext-github` `list_jobs_for_workflow_run`
-  (inputs: `owner`, `repo`, `run_id`); from the response, take entries
-  where `conclusion == "failure"` and surface each one's `name` plus the
-  failing entries from `steps[]`. (`gh run view --json jobs --jq ...` is
-  not available in the sandbox — no `gh` binary, egress to api.github.com
-  blocked.)
+- **Job/step names** — call `LIST_FAILED_JOBS(run_id)` (per the active
+  capability profile from `reference/capabilities.md` §2); from the
+  response, surface each entry's `name` plus the failing entries from
+  `steps[]`.
 - **Log excerpt** — last 30 lines of the failed step. If the actual error
   is earlier, include the first `Error:` line plus 10 lines of context.
 - **Attempts** — paste the literal `git log --oneline -3` for the fix

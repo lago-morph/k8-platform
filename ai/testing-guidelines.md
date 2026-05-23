@@ -96,15 +96,17 @@ When the user says **"work on phase N"** / **"let's do phase N"** /
 **without further prompting**.
 
 **Dispatch mechanism.** Every reference to `workflow_dispatch (...)` below
-is a call to the `ext-github` skill
-(`.claude/skills/ext-github/`) `workflow_dispatch` operation, with the
-matching `(phase, action)` as `inputs`. There is no `gh` CLI in the
-sandbox; this is the only path to the Actions API. Polling and log reads
-in the inner loop likewise go through `ext-github` (`list_workflow_runs`,
-`list_jobs_for_workflow_run`, `download_job_logs`) — wrapped by the
-`terraform-ci-watch` skill, which owns the polling loop and the 3-strike
-escalation envelope. On any `ext-github` connectivity failure, see §9
-(Jentic outage handoff fallback).
+resolves to a DISPATCH operation under the active capability profile —
+`gh` CLI, GitHub MCP server with Actions coverage, or `ext-github` via
+jentic, in that preference order. Detection and the per-profile
+implementation of DISPATCH (and the read operations used in polling and
+log fetching) live in
+`.claude/skills/terraform-ci-watch/reference/capabilities.md`. The
+`terraform-ci-watch` skill performs detection once per invocation and
+owns the polling loop and the 3-strike escalation envelope. If the active
+profile fails for connectivity reasons mid-loop, the skill re-detects per
+`capabilities.md` §3; if degradation lands on `ext-github` and jentic
+itself is unreachable, see §9 below for the handoff fallback.
 
 ### Phase 1: orient
 
@@ -351,20 +353,36 @@ test before the fix.
 
 ---
 
-## 9. Jentic Outage — Handoff Fallback
+## 9. Last-Profile Outage — Handoff Fallback
 
-The `ext-github` skill (`.claude/skills/ext-github/`) is the sole path
-from the sandbox to GitHub's Actions API: direct egress is blocked and
-the GitHub MCP server does not expose `workflow_dispatch` or
-run/job/log reads. When a call from `ext-github` fails for
-connectivity reasons — jentic 5xx, jentic rate-limited or unreachable,
-or the upstream PAT in jentic expired/got revoked — the agent does
-not retry inside the skill (one-shot policy per
-`ai/specs/ext-github-design.md` §4). Instead, write the intended next
-action — `workflow_id`, `ref`, full `inputs` map, and the reason for
-falling back — into the Current Sandbox Session block at the top of
-`ai/handoff.md`, commit, and stop. A human resumes by dispatching the
-recorded action manually via the GitHub Actions UI (Actions →
-terraform-test → "Run workflow") and updates handoff with the
-resulting run URL. The session does not attempt to recover
-automatically; jentic outages are rare and the manual path is fast.
+The agent reaches GitHub's Actions API via one of three capability
+profiles, in preference order: `gh` CLI, GitHub MCP server with Actions
+coverage, then `ext-github` via jentic
+(`.claude/skills/ext-github/`). Detection and the per-profile dispatch
+table live in
+`.claude/skills/terraform-ci-watch/reference/capabilities.md`. In many
+sandboxes (including the current Claude Code on the Web configuration)
+only `ext-github` is available, so it functions as both first and last
+resort.
+
+When a call on the **active** profile fails for connectivity reasons —
+e.g. jentic 5xx, jentic rate-limited or unreachable, the upstream PAT
+expired/got revoked, the MCP server returns "tool unavailable",
+`gh` authentication lapsed — the agent re-runs detection per
+`capabilities.md` §3. If detection produces a different profile, retry
+the same operation on it. If detection produces "none" — every profile
+has failed — fall back to the handoff path:
+
+Write the intended next action — `workflow_id`, `ref`, full `inputs`
+map, and the reason for falling back — into the Current Sandbox Session
+block at the top of `ai/handoff.md`, commit, and stop. A human resumes
+by dispatching the recorded action manually via the GitHub Actions UI
+(Actions → terraform-test → "Run workflow") and updates handoff with
+the resulting run URL. The session does not attempt to recover
+automatically; all-profile outages are rare and the manual path is
+fast.
+
+The `ext-github` skill itself is one-shot per call (no in-skill retries
+— see `ai/specs/ext-github-design.md` §4); the re-detection-and-retry
+above happens at the `terraform-ci-watch` outer layer, not inside any
+individual profile.

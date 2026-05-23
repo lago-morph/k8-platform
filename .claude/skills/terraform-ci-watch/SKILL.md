@@ -27,17 +27,19 @@ GitHub Actions: locate the triggered run, poll until it terminates, fetch
 logs on failure, apply a targeted fix, re-push, and escalate after three
 failed fix attempts.
 
-## Execution environment
+## Capability profile
 
-Inside the Claude Code web sandbox there is no `gh` CLI, no `gh api`, and
-direct egress to `api.github.com` is blocked. All Actions-API operations
-(`workflow_dispatch`, list runs, list jobs, download per-job logs) go
-through the **`ext-github`** skill, which routes via the jentic MCP server.
-Phases 1, 2, and 4 below name the specific `ext-github` operations to call.
+This skill routes its GitHub Actions API calls through whichever path is
+available in the current environment. Three profiles are supported,
+ranked by preference: **`gh`** CLI, **`github-mcp`** server with Actions
+coverage, **`ext-github`** via jentic. Detection and the per-profile
+implementation of each abstract operation (LOCATE_RUN, POLL_RUN,
+LIST_FAILED_JOBS, FETCH_JOB_LOG, DISPATCH) live in
+`reference/capabilities.md`.
 
-If running outside the sandbox (e.g. a workstation with `gh` authenticated),
-the same logical phases apply — substitute equivalent `gh` commands. The
-phase structure does not change.
+The phases below reference operations abstractly. Read
+`reference/capabilities.md` once at the start, pick the active profile,
+and resolve each operation through §2 of that file.
 
 ## When to invoke
 
@@ -52,12 +54,20 @@ Verify in one step before starting Phase 1:
 
 - The repo has at least one workflow under `.github/workflows/` that runs
   `terraform`. If not, this skill does not apply.
-- The `ext-github` skill is present at `.claude/skills/ext-github/` and its
-  recordings under `resources/` are dated as `verified` (see that skill's
-  §2 table). If `ext-github` is missing for this repo, escalate — the
-  sandbox cannot reach the Actions API any other way.
 - Read the project's `CLAUDE.md` first — it may define branch conventions,
   required secrets, or sandbox constraints that shape diagnosis.
+
+## Detect capability profile
+
+Before Phase 1, run the detection sequence in `reference/capabilities.md`
+§1. Capture the active profile (`gh` / `github-mcp` / `ext-github`).
+
+If detection returns "none," escalate per `capabilities.md` §1 Step 4 —
+no further phases run.
+
+All operation references below (LOCATE_RUN, POLL_RUN, LIST_FAILED_JOBS,
+FETCH_JOB_LOG, DISPATCH) resolve via `capabilities.md` §2 under the
+active profile.
 
 ## Phase 1 — Locate the run
 
@@ -68,36 +78,29 @@ SHA=$(git rev-parse HEAD)
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 ```
 
-Owner / repo come from the project (e.g. `lago-morph/k8-platform`); the
-sandbox does not have `gh repo view`.
+Call **LOCATE_RUN**(`workflow_id`, `BRANCH`) and take the entry whose
+`head_sha` matches `$SHA`. If no entry matches, the run may have been
+triggered by an earlier commit, or the workflow does not auto-trigger
+on push — wait 10 s and retry up to 3 times before treating as "no run
+triggered."
 
-Call `ext-github` `list_workflow_runs` (resource:
-`.claude/skills/ext-github/resources/list_workflow_runs.json`). Inputs:
-`owner`, `repo`, `workflow_id` (the workflow filename, e.g.
-`terraform-test.yml`), `branch=$BRANCH`, `per_page=1`. From the response
-take the first entry of `workflow_runs[]`.
-
-Confirm the returned `head_sha` matches `$SHA`. If not, the run was
-triggered by an earlier commit — wait 10 s and retry up to 3 times before
-treating as "no run triggered". For this repo specifically,
-`terraform-test.yml` is `workflow_dispatch`-only, so a fresh `git push` does
-**not** trigger a run on its own. The agent dispatches it explicitly via
-`ext-github` `workflow_dispatch` (see `ext-github` §2 and the project's
-`ai/testing-guidelines.md` §3 / §4).
+For workflows that are `workflow_dispatch`-only (this repo's
+`terraform-test.yml` is), a fresh `git push` does **not** trigger a run.
+The agent must DISPATCH explicitly. The project's
+`ai/testing-guidelines.md` §3 / §4 says which `(phase, action)` to
+dispatch for the current intent.
 
 Capture: `run_id`, `html_url`, `status`, `conclusion`. Reset attempt
 counter to 0 if this is a fresh start; otherwise carry it forward.
 
 ## Phase 2 — Poll until terminal
 
-Re-call `list_workflow_runs` (same inputs, plus filter for the captured
-`run_id` in the returned list — see `ext-github` §3.1 on the single-run-GET
-substitute). Read `status` and `conclusion` off the matching entry.
+Call **POLL_RUN**(`run_id`, `workflow_id`, `BRANCH`) every 30 s. Read
+`status` and `conclusion` off the response.
 
-Wait 30 s between polls. Terminal when `status == "completed"` (any
-conclusion) or `conclusion in {failure, cancelled, timed_out}`. Hard cap:
-30 polls (15 minutes). If still not terminal, escalate as "stuck
-queued/running".
+Terminal when `status == "completed"` (any conclusion) or `conclusion in
+{failure, cancelled, timed_out}`. Hard cap: 30 polls (15 minutes). If
+still not terminal, escalate as "stuck queued/running".
 
 ## Phase 3 — On success
 
@@ -109,28 +112,30 @@ Report:
 
 **How this repo posts CI results:** `post-comment.py` posts a Markdown
 summary as a **PR comment** if an open PR exists, or as a **commit
-comment** if there is no PR. Check runs / commit statuses do NOT carry the
-result body — you must read the comment.
+comment** if there is no PR. Check runs / commit statuses do NOT carry
+the result body — you must read the comment.
 
-To read the comment via GitHub MCP tools (available in the sandbox):
+These are PR/commit reads (not Actions API), so they don't go through
+the capability profile. Use whichever path the environment provides:
 
 - If a PR exists for the branch:
-  - `mcp__github__list_pull_requests` (filter `state=open`, `head=<branch>`)
-  - `mcp__github__pull_request_read` with `method=get_comments` on the PR
-    number.
-- If no PR (commit comment): `mcp__github__get_commit` for the SHA — the
-  response includes the commit's comments URL. The GitHub MCP server in
-  the sandbox does not expose a direct "list commit comments" tool, so if
-  the comment isn't reachable that way, fall back to the workflow run's
-  summary (visible at `html_url` in a browser) or escalate.
+  - `gh pr view <number> --comments` (when `gh` is available); else
+  - `mcp__github__list_pull_requests` + `mcp__github__pull_request_read`
+    with `method=get_comments`.
+- If no PR (commit comment):
+  - `gh api "repos/$OWNER_REPO/commits/$SHA/comments"` (when `gh`); else
+  - `mcp__github__get_commit` for the SHA — the response includes a
+    comments URL. If the MCP server in this sandbox doesn't expose a
+    direct commit-comments tool, fall back to the workflow run's summary
+    at `html_url` or escalate.
 
 Stop. Do not push further commits.
 
 ## Phase 4 — On failure
 
-1. **Fetch logs** — see `reference/log-fetching.md`. The working path in the
-   sandbox is `ext-github` `list_jobs_for_workflow_run` + `download_job_logs`
-   per failed job. (Run-wide logs returns 500 from jentic — do not call it.)
+1. **Fetch logs** — call **LIST_FAILED_JOBS**(`run_id`), then
+   **FETCH_JOB_LOG**(`job_id`) for each failed job. See
+   `reference/log-fetching.md` for the trimming/processing guidance.
 2. **Classify the failure** — see `reference/failure-taxonomy.md`. Match
    the log against known patterns; pick the most specific category.
 3. **Apply the fix** — only edit the file the taxonomy entry says to edit.
@@ -139,12 +144,12 @@ Stop. Do not push further commits.
    ```
    fix(ci): <category> — <one-line cause>
    ```
-5. `git push`. If `terraform-test.yml` is `workflow_dispatch`-only (this
-   repo is), the push alone does not trigger a run — re-dispatch via
-   `ext-github` `workflow_dispatch` with the same `(phase, action)` as the
-   failing run. The skill's concurrency precondition refuses if more than
-   two runs are already queued for the same `(ref, phase)`; on refusal,
-   escalate. Increment attempt counter. Return to Phase 1.
+5. `git push`. If the workflow is `workflow_dispatch`-only, the push
+   alone does not trigger a run — call **DISPATCH**(`workflow_id`, `ref`,
+   `inputs`) with the same `(phase, action)` as the failing run. The
+   concurrency precondition in `capabilities.md` §4 applies: if >2 runs
+   are already queued for the same `(ref, phase)`, refuse and escalate.
+   Increment attempt counter. Return to Phase 1.
 
 If the taxonomy entry is marked "no — escalate" (e.g., missing-secret,
 provider-bug), do not attempt a fix — go straight to Phase 5.
@@ -155,14 +160,14 @@ After 3 consecutive failed fix attempts (or any "no — escalate" hit), STOP
 and use `reference/escalation-template.md` to report. Do not push a 4th
 attempt.
 
-## Jentic outage
+## Connectivity failures and profile degradation
 
-If any `ext-github` call fails for connectivity reasons (jentic 5xx,
-rate-limited, or PAT expired), `ext-github` is one-shot — it does not
-retry. Per `ai/testing-guidelines.md` §9, write the intended next action
-(`workflow_id`, `ref`, full `inputs` map, reason) into the Current Sandbox
-Session block at the top of `ai/handoff.md`, commit, and stop. A human
-resumes via the GitHub Actions UI.
+If any operation call fails for a connectivity reason (not an
+application-level error from GitHub), follow the mid-loop degradation
+procedure in `capabilities.md` §3. If degradation lands on `ext-github`
+and a subsequent `ext-github` call also fails for connectivity, write
+the intended next action into the Current Sandbox Session block in
+`ai/handoff.md` per `ai/testing-guidelines.md` §9, commit, and stop.
 
 ## Companion skill
 

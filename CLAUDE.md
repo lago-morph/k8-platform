@@ -44,11 +44,12 @@ chore/<short-description>   # maintenance (deps, docs, refactor)
 ```
 
 The Terraform CI workflow (`terraform-test.yml`) is `workflow_dispatch`-only.
-The agent invokes it from the sandbox via the **`ext-github`** skill
-(`.claude/skills/ext-github/`), which routes through the jentic MCP server —
-there is no `gh` CLI in this sandbox, no `gh api`, and direct egress to
-`api.github.com` is blocked. Humans invoke the same workflow from the
-Actions UI.
+The agent invokes it via whichever **capability profile** the current
+environment supports, in preference order: `gh` CLI → GitHub MCP server
+with Actions coverage → `ext-github` via jentic. Detection logic and the
+per-profile operation table live in
+`.claude/skills/terraform-ci-watch/reference/capabilities.md`. Humans
+invoke the same workflow from the Actions UI.
 
 ---
 
@@ -106,10 +107,12 @@ handles run discovery, polling, log fetching, autonomous fixes, and 3-strike
 escalation.
 
 Because `terraform-test.yml` is `workflow_dispatch`-only, `git push` alone
-does not trigger CI. After pushing, `terraform-ci-watch` calls `ext-github`
-`workflow_dispatch` with the intended `(phase, action)`, then polls and
-reads logs through the same skill. `terraform-ci-watch` is the outer
-envelope; `ext-github` is the underlying GitHub-API call.
+does not trigger CI. `terraform-ci-watch` detects the active capability
+profile (`gh` / `github-mcp` / `ext-github`) once at start, then performs
+DISPATCH, LOCATE_RUN, POLL_RUN, LIST_FAILED_JOBS, and FETCH_JOB_LOG via
+that profile — see `.claude/skills/terraform-ci-watch/reference/capabilities.md`.
+`ext-github` is the last-resort profile used when neither `gh` nor a
+sufficiently capable GitHub MCP server is present.
 
 After applying a Crossplane Claim, XRD, or Composition (whether via `kubectl`,
 ArgoCD sync, or CI), invoke the **`crossplane-claim-verify`** skill (see
