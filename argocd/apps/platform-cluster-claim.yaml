@@ -1,0 +1,46 @@
+# ArgoCD Application — syncs clusters/platform/platform-cluster-claim.yaml.
+#
+# Phase 3 entry point. This Application is intentionally configured
+# WITHOUT automated sync:
+#
+#   - syncPolicy is empty (no `automated:` block).
+#   - selfHeal is off.
+#   - prune is off.
+#
+# Why: a PlatformCluster claim provisions a real EKS cluster + node
+# group, which takes ~15 minutes and costs real money. Auto-sync would
+# mean any git push to the claim file (e.g. a typo fix) starts a new
+# cluster provision. Sync is an operator-confirmed action via the
+# ArgoCD UI or `argocd app sync platform-cluster-claim`.
+#
+# The Application is created by the app-of-apps bootstrap; once
+# created, no further automation touches the claim until an operator
+# clicks Sync. Subsequent phase-3 PRs that add components on the
+# provisioned cluster (ingress-nginx, ExternalDNS, cert-manager) are
+# free to use automated sync — only the cluster-creation claim is
+# manual.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-cluster-claim
+  namespace: argocd
+  annotations:
+    # Wave 10 — well after wave 0 (crossplane XRDs/Compositions). The
+    # XRD must be Established before this Application's resources can
+    # render.
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  project: k8-platform
+  source:
+    repoURL: https://github.com/lago-morph/k8-platform.git
+    targetRevision: main
+    path: clusters/platform
+    directory:
+      include: 'platform-cluster-claim.yaml'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  # No syncPolicy.automated — manual sync only. See header.
+  syncPolicy:
+    syncOptions:
+      - ServerSideApply=true
