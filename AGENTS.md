@@ -270,6 +270,53 @@ contract across different layers (unit + Kyverno + integration) are
 not redundant — they fire in different environments and catch the
 contract at different lifecycle moments.
 
+### 6.5 Confirm before acting on compound prompts
+
+**Default — repeat back before acting.** For any user message that
+contains three or more distinct actions, bundles a feature request
+with a meta-instruction, crosses more than one PR scope, or runs
+longer than ~200 words, the agent's **first** response is a
+structured repeat-back. **No tool calls before the repeat-back
+is sent.**
+
+The repeat-back contains four parts:
+
+1. **Numbered actions in execution order.** Each action gets one
+   bullet, in the order the agent intends to perform them. Use
+   real branch names, file paths, and PR numbers from context — no
+   "your branch" or "the file" placeholders.
+2. **Explicit stopping points.** Mark every point at which the agent
+   will pause for confirmation or for an external event (CI run,
+   PR merge, manual review, etc.).
+3. **Flagged ambiguities.** Under each step, list any phrase or
+   intent in the prompt the agent had to interpret. State the
+   chosen interpretation; the user can correct each independently.
+4. **Implicit assumptions.** Anything the agent inferred from
+   context that the prompt did not state explicitly (default tools,
+   target branches, file naming, etc.).
+
+End with: "OK to proceed once you give the green light?"
+
+**Opt-out.** The repeat-back is skipped **only** when the user's
+prompt itself contains an explicit signal: "do this without
+confirming", "just do it", "skip the recap", "no need to repeat
+back", "go ahead", or equivalent. Do not infer opt-out from tone
+or brevity.
+
+**Action-as-confirmation.** If after sending the repeat-back the
+user does not reply in chat but instead takes a system action that
+plausibly answers the question — merges the in-flight PR, leaves
+a review comment on the PR, edits a file the agent is mid-work on,
+dispatches a workflow themselves — treat that action as implicit
+approval and proceed on the drafted plan. **The agent's very next
+chat message must name the inference explicitly**: "I'm reading
+<action> as approval of <step-N> of my repeat-back; correct me if
+not." The user can then redirect cheaply if the inference was wrong.
+
+When the prompt is not compound (single action, short, unambiguous),
+proceed without a repeat-back. The discipline is filtering, not
+ceremony.
+
 ---
 
 ## 7. Testing loops — companion skills
