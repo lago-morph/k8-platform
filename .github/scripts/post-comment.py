@@ -57,6 +57,8 @@ STEP_LABELS = {
     "e2e_mgmt":        "Management — E2E Verify",
     "e2e_argocd_url":  "Management — ArgoCD URL",
     "destroy_mgmt":    "Management — Destroy",
+    "test_unit":       "Test — Unit",
+    "test_e2e":        "Test — E2E",
 }
 
 
