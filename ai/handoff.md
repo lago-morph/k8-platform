@@ -24,7 +24,7 @@ drives those updates.
 | Phase | State | Last action | Run URL |
 |---|---|---|---|
 | 0 base | verified | 2026-05-23T03:24Z apply-and-verify ✅ | https://github.com/lago-morph/k8-platform/actions/runs/26322143492 |
-| 1 management | broken (escalated) | 2026-05-23T03:50Z apply ✅, e2e-verify ✅, argocd-url ❌ (DNS) | https://github.com/lago-morph/k8-platform/actions/runs/26322619069 |
+| 1 management | verified | 2026-05-23T04:36Z apply-and-verify ✅ (all checks incl. ArgoCD URL HTTP 200) | https://github.com/lago-morph/k8-platform/actions/runs/26323358841 |
 | 2 xrds | not-coded | — | — |
 | 3 platform | not-coded | — | — |
 | 4 observability | not-coded | — | — |
@@ -47,7 +47,7 @@ the sandbox is expired or unknown, ask the user once and then refresh.
 | Iteration | Description | Status |
 |-----------|-------------|--------|
 | 0 | Base environment (VPC, Route53, Cognito, ACM) | Code complete, **plan ✅ apply-tested ✅** (apply+destroy confirmed 2026-05-04) |
-| 1 | Management cluster (EKS, ArgoCD, Crossplane, ESO, ExternalDNS) | Code complete, **plan ✅** — apply not yet tested (blocked by EKS+Crossplane bugs, now fixed) |
+| 1 | Management cluster (EKS, ArgoCD, Crossplane, ESO, ExternalDNS) | Code complete, **apply-and-verify ✅** end-to-end (2026-05-23) |
 | 2 | Crossplane foundations (PlatformSecret XRD) | Not started |
 | 3 | Platform services cluster | Not started |
 | 4 | Observability (Grafana, Prometheus) | Not started |
