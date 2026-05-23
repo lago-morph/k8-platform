@@ -26,10 +26,15 @@ on:
           - test-unit
           - test-e2e
 
-# One run per branch+phase at a time; cancel in-flight dispatches on the same ref.
+# One run per branch+phase at a time; follow-up dispatches queue rather than
+# cancelling the running one. See ai/specs/ext-github-design.md §4 (Concurrency)
+# and §Cross-cutting policies: the agent-driven dispatcher cannot reliably
+# distinguish "slow apply" from "stalled" and a cancel mid-apply leaves a held
+# state lock and half-applied resources. ext-github also refuses to dispatch
+# when >2 runs are already queued for the same (ref, phase).
 concurrency:
   group: terraform-${{ github.ref }}-${{ inputs.phase }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   TF_IN_AUTOMATION: "true"
