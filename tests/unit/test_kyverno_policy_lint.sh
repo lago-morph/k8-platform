@@ -20,7 +20,7 @@ cd "$(dirname "$0")/../.."   # repo root
 # shellcheck disable=SC1091
 . tests/lib/assert.sh
 
-POLICY_DIR="policies/audit"
+POLICY_DIRS=("policies/audit" "crossplane/policies")
 
 # ---- 1. No empty-backtick JMESPath literals in any audit policy ---------
 #
@@ -39,7 +39,7 @@ POLICY_DIR="policies/audit"
 python3 - <<'PY'
 import pathlib, re, json, sys
 
-policy_dir = pathlib.Path("policies/audit")
+policy_dirs = [pathlib.Path("policies/audit"), pathlib.Path("crossplane/policies")]
 bad = []  # (file, lineno, snippet)
 
 # Match {{ ... }} substitution blocks (greedy on inner). Then within,
@@ -47,7 +47,10 @@ bad = []  # (file, lineno, snippet)
 mustache_re = re.compile(r"\{\{(.*?)\}\}")
 backtick_re = re.compile(r"`([^`]*)`")
 
-for yaml_path in sorted(policy_dir.glob("*.yaml")):
+for policy_dir in policy_dirs:
+  if not policy_dir.exists():
+    continue
+  for yaml_path in sorted(policy_dir.glob("*.yaml")):
     text = yaml_path.read_text()
     for lineno, line in enumerate(text.splitlines(), start=1):
         for m in mustache_re.finditer(line):
@@ -81,16 +84,20 @@ fi
 # Defends contract: ClusterPolicy without a name is rejected by
 # Kubernetes. Catches accidental delete/rename mishaps that would
 # look like a "policy applied" but in fact nothing landed.
-for yaml_path in "$POLICY_DIR"/*.yaml; do
-  kind=$(yq -r '.kind' "$yaml_path" 2>/dev/null)
-  [ "$kind" = "ClusterPolicy" ] || continue
-  name=$(yq -r '.metadata.name' "$yaml_path" 2>/dev/null)
-  base=$(basename "$yaml_path")
-  if [ -n "$name" ] && [ "$name" != "null" ]; then
-    _pass "policy_has_name:$base"
-  else
-    _fail "policy_has_name:$base" "no .metadata.name on the ClusterPolicy doc"
-  fi
+for dir in "${POLICY_DIRS[@]}"; do
+  [ -d "$dir" ] || continue
+  for yaml_path in "$dir"/*.yaml; do
+    [ -f "$yaml_path" ] || continue
+    kind=$(yq -r '.kind' "$yaml_path" 2>/dev/null)
+    [ "$kind" = "ClusterPolicy" ] || continue
+    name=$(yq -r '.metadata.name' "$yaml_path" 2>/dev/null)
+    base=$(basename "$yaml_path")
+    if [ -n "$name" ] && [ "$name" != "null" ]; then
+      _pass "policy_has_name:$base"
+    else
+      _fail "policy_has_name:$base" "no .metadata.name on the ClusterPolicy doc"
+    fi
+  done
 done
 
 # ---- 3. Every policy declares an explicit validationFailureAction -------
@@ -100,16 +107,20 @@ done
 # missing field defaults differently across Kyverno versions and a
 # policy author who forgets it might accidentally start blocking
 # admission. Pins it explicitly per policy.
-for yaml_path in "$POLICY_DIR"/*.yaml; do
-  kind=$(yq -r '.kind' "$yaml_path" 2>/dev/null)
-  [ "$kind" = "ClusterPolicy" ] || continue
-  action=$(yq -r '.spec.validationFailureAction' "$yaml_path" 2>/dev/null)
-  base=$(basename "$yaml_path")
-  if [ "$action" = "Audit" ]; then
-    _pass "policy_action_audit:$base"
-  else
-    _fail "policy_action_audit:$base" "validationFailureAction=$action (expected: Audit)"
-  fi
+for dir in "${POLICY_DIRS[@]}"; do
+  [ -d "$dir" ] || continue
+  for yaml_path in "$dir"/*.yaml; do
+    [ -f "$yaml_path" ] || continue
+    kind=$(yq -r '.kind' "$yaml_path" 2>/dev/null)
+    [ "$kind" = "ClusterPolicy" ] || continue
+    action=$(yq -r '.spec.validationFailureAction' "$yaml_path" 2>/dev/null)
+    base=$(basename "$yaml_path")
+    if [ "$action" = "Audit" ]; then
+      _pass "policy_action_audit:$base"
+    else
+      _fail "policy_action_audit:$base" "validationFailureAction=$action (expected: Audit)"
+    fi
+  done
 done
 
 assert_summary
