@@ -1,0 +1,37 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: no-default-sa-with-workload
+  annotations:
+    policies.kyverno.io/title: Deployments must not use the default ServiceAccount
+    policies.kyverno.io/category: SecurityHygiene
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Workloads that rely on the namespace's default ServiceAccount cannot
+      receive IRSA, cannot be RBAC-scoped meaningfully, and are invisible
+      to per-workload audit tooling. Force explicit SA selection.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: explicit-sa-required
+      match:
+        any:
+          - resources:
+              kinds: [Deployment, StatefulSet, DaemonSet]
+      exclude:
+        any:
+          # System namespaces own their default-SA usage.
+          - resources:
+              namespaces: [kube-system, kube-public, kube-node-lease]
+      validate:
+        message: >-
+          {{ request.object.kind }} {{ request.object.metadata.namespace }}/{{ request.object.metadata.name }}
+          must set spec.template.spec.serviceAccountName explicitly — using the
+          namespace's "default" SA hides intent and disables IRSA.
+        deny:
+          conditions:
+            any:
+              - key: "{{ request.object.spec.template.spec.serviceAccountName || 'default' }}"
+                operator: Equals
+                value: "default"

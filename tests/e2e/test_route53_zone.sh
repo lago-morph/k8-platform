@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# E2E: confirm the sandbox account has a pre-created public Route53
-# hosted zone (the workflow's Discover Route53 zone step depends on this).
+# E2E: confirm the account has a pre-existing public Route53 hosted zone
+# (the workflow's Discover Route53 zone step depends on this).
 
 set -uo pipefail
 cd "$(dirname "$0")/../.."

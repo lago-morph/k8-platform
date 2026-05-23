@@ -17,7 +17,7 @@ from common failures. It assumes no memory of prior sessions.
 
 ### Accounts / Access
 - **GitHub repository access** — to push branches and trigger Actions
-- **Pluralsight AWS sandbox** — for testing (see below)
+- **AWS account credentials** — written to GitHub Secrets (see below)
 
 ---
 
@@ -42,26 +42,22 @@ status. See `ai/DESIGN.md` for full architecture.
 
 ## Running Tests (CI)
 
-All testing happens via **GitHub Actions** in a disposable Pluralsight AWS sandbox.
+All testing happens via **GitHub Actions** against the target AWS account.
 
-### Step 1 — Start a sandbox session
-
-1. Log into Pluralsight and start a new AWS Cloud Sandbox
-2. Copy the three credentials it provides
-
-### Step 2 — Set GitHub secrets
+### Step 1 — Set GitHub secrets
 
 Go to **GitHub → repo → Settings → Secrets and variables → Actions** and set:
 
 | Secret name | Value |
 |-------------|-------|
-| `AWS_ACCESS_KEY_ID` | From Pluralsight |
-| `AWS_SECRET_ACCESS_KEY` | From Pluralsight |
-| `AWS_REGION` | Region shown by Pluralsight (usually `us-east-1`) |
+| `AWS_ACCESS_KEY_ID` | AWS credential for the target account |
+| `AWS_SECRET_ACCESS_KEY` | AWS credential for the target account |
+| `AWS_REGION` | e.g. `us-east-1` |
 
 These are the **only** secrets needed. Everything else is auto-discovered.
+Rotate them if the credentials change.
 
-### Step 3 — Trigger the workflow
+### Step 2 — Trigger the workflow
 
 All Terraform CI runs are manual: Actions → Terraform Test → Run workflow.
 Pick the `phase` (`base` | `management` | `test`) and `action` (`plan` |
@@ -73,10 +69,9 @@ and dispatch.
 
 **Apply and verify a phase (creates real AWS resources):**
 - Actions → Terraform Test → Run workflow → phase: `base` (or `management`) → action: `apply-and-verify`
-- Duration: ~3 min (base) / ~15 min (management)
-- The sandbox session must have enough time remaining (see `ai/testing-guidelines.md` §5)
+- Duration: ~3 min (base) / ~15 min (management). See `ai/testing-guidelines.md` §5 for the full action wall-clock table.
 
-### Step 4 — Read the results
+### Step 3 — Read the results
 
 After the workflow finishes, it posts a comment on the PR (or the commit if
 no PR is open) with:
@@ -88,27 +83,27 @@ If a step failed, expand its section to see the Terraform error.
 ### What the workflow does
 
 1. Creates S3 bucket + DynamoDB table for Terraform state (idempotent)
-2. Discovers the sandbox Route53 zone and sets `TF_VAR_domain` automatically
+2. Discovers the account's Route53 zone and sets `TF_VAR_domain` automatically
 3. Generates a Cognito test user email + password for this run
 4. Runs `terraform init` + `plan` for `terraform/base/`
 5. Runs `terraform init` + `plan` for `terraform/management/`
    (this step is expected to warn on plan-only — it needs base state to exist)
-6. On `apply-and-destroy`: applies base, then applies management, then destroys
-   management, then destroys base
+6. On `apply-and-verify`: applies the requested phase, then runs the
+   `[phase] e2e-verify` step. Destroy is a separate, scoped action.
 
 ---
 
 ## Deploying Manually (outside CI)
 
-You can run Terraform locally against a sandbox account.
+You can run Terraform locally against the AWS account.
 
 ```bash
-# Export sandbox credentials
+# Export AWS credentials
 export AWS_ACCESS_KEY_ID=...
 export AWS_SECRET_ACCESS_KEY=...
 export AWS_DEFAULT_REGION=us-east-1
 
-# Discover the sandbox domain
+# Discover the account's hosted zone domain
 ZONE=$(aws route53 list-hosted-zones \
   --query 'HostedZones[?Config.PrivateZone==`false`] | [0]' \
   --output json)
@@ -188,13 +183,14 @@ aws s3 mb "s3://${TF_VAR_tf_state_bucket}" --region "${AWS_DEFAULT_REGION}"
 ```
 
 ### Plan fails: "Error: No public hosted zone found"
-The sandbox account doesn't have a Route53 zone yet, or credentials are wrong.
-Check that `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` are from the current
-(active) sandbox session — sandbox credentials expire when the session ends.
+The account has no public Route53 zone, or credentials are wrong. Confirm
+`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` are valid for the account
+that owns the zone — run `scripts/aws-creds-check.sh`.
 
 ### Management init fails with "Backend configuration changed"
-The state bucket changed (new sandbox session = new account ID = new bucket name).
-Run `terraform init -reconfigure` or delete the `.terraform` directory.
+The state bucket name is derived from the AWS account ID. If credentials
+were rotated to a different account, the bucket changes too. Run
+`terraform init -reconfigure` or delete the `.terraform` directory.
 
 ### Apply fails: "InvalidInstanceType"
 An instance type outside `t2/t3/t3a/t4g micro/small/medium` was used. See
@@ -202,8 +198,8 @@ An instance type outside `t2/t3/t3a/t4g micro/small/medium` was used. See
 `t3.medium` or smaller.
 
 ### Apply fails: "VcpuLimitExceeded" or instance count errors
-Too many instances. The Pluralsight sandbox allows **maximum 9 concurrent
-instances** (including stopped). Check `node_desired_size` in
+Too many instances. The account allows **maximum 9 concurrent instances**
+(including stopped). Check `node_desired_size` in
 `terraform/management/variables.tf` — reduce to `1` if needed.
 
 ### ArgoCD UI not reachable after apply
@@ -223,21 +219,19 @@ instances** (including stopped). Check `node_desired_size` in
 
 ---
 
-## Sandbox Session Checklist
+## Pre-Apply Checklist
 
 Before triggering `apply-and-verify`:
 
-- [ ] Fresh sandbox session started (credentials not expired)
-- [ ] GitHub secrets updated with new credentials
-- [ ] At least 30 minutes remaining in the session
+- [ ] GitHub secrets present and current (run `scripts/aws-creds-check.sh`)
 - [ ] `node_desired_size` ≤ 2, `node_instance_type` = `t3.medium` or smaller
 - [ ] Only 2 AZs configured (to stay within NAT gateway and instance limits)
 
 After the run:
 - [ ] Check the PR/commit comment for ✅ overall status
 - [ ] If ❌, read the failing step's output section for the error
-- [ ] Sandbox destroys itself at session end — no manual cleanup needed unless
-      `apply-and-destroy` failed mid-way (check the destroy steps ran)
+- [ ] The environment persists between runs — destroy is a deliberate,
+      scoped action, not an automatic cleanup
 
 ---
 
@@ -247,7 +241,7 @@ After the run:
 |----------|--------------|
 | What iteration are we on? | `ai/handoff.md` |
 | Why was X designed this way? | `ai/DESIGN.md` (ADR sections) |
-| What are the AWS sandbox limits? | `ai/testing-guidelines.md` |
+| What are the AWS account constraints? | `ai/testing-guidelines.md` |
 | How does CI work in detail? | `ai/testing-overview.md` |
 | What are the full requirements? | `ai/REQUIREMENTS.md` |
 | What secrets does CI need? | `CLAUDE.md` → Required Secrets table |

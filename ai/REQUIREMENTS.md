@@ -182,7 +182,7 @@ REQ-NF-06: **Iteration completeness.** Each iteration must end in a fully workin
 
 ## 6. Constraints
 
-- AWS account is ephemeral (Pluralsight or similar); full rebuild from scratch must be feasible
+- Full rebuild from scratch must be feasible — no manual bootstrap state
 - Single operator (the author); no team coordination requirements
 - Terraform is used only for the base environment and management cluster; all other provisioning is Crossplane + ArgoCD
 - Vault is explicitly out of scope as a secrets backend; AWS Secrets Manager is used instead

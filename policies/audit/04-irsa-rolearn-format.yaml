@@ -1,0 +1,36 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: irsa-rolearn-format
+  annotations:
+    policies.kyverno.io/title: IRSA role-arn annotation must be a real IAM role ARN
+    policies.kyverno.io/category: IRSA
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      When a ServiceAccount carries eks.amazonaws.com/role-arn, the value
+      must match arn:aws:iam::ACCOUNT:role/NAME. Empty strings, templating
+      leftovers ("${var.foo}") and account-id typos all silently break
+      IRSA without log-level noise.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: irsa-arn-must-be-valid
+      match:
+        any:
+          - resources:
+              kinds: [ServiceAccount]
+      preconditions:
+        any:
+          - key: "{{ request.object.metadata.annotations.\"eks.amazonaws.com/role-arn\" || '' }}"
+            operator: NotEquals
+            value: ""
+      validate:
+        message: >-
+          ServiceAccount {{ request.object.metadata.namespace }}/{{ request.object.metadata.name }}
+          has an eks.amazonaws.com/role-arn annotation that does not look
+          like a real IAM role ARN. Expected: arn:aws:iam::<12-digit-account>:role/<name>.
+        pattern:
+          metadata:
+            annotations:
+              eks.amazonaws.com/role-arn: "arn:aws:iam::?????????????:role/?*"

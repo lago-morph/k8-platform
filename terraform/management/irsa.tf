@@ -170,8 +170,12 @@ resource "aws_iam_policy" "route53_editor" {
         Resource = "arn:aws:route53:::hostedzone/${local.zone_id}"
       },
       {
-        Effect   = "Allow"
-        Action   = ["route53:ListHostedZonesByName"]
+        Effect = "Allow"
+        Action = [
+          "route53:ListHostedZones",
+          "route53:ListHostedZonesByName",
+          "route53:ListTagsForResource",
+        ]
         Resource = "*"
       },
     ]

@@ -31,9 +31,9 @@ variable "route53_zone_id" {
   description = <<-EOT
     ID of a pre-existing Route53 public hosted zone for var.domain.
     When set, Terraform uses the existing zone instead of creating one.
-    Pluralsight sandboxes always provide a pre-created zone — set this to
-    that zone ID. Leave empty for real deployments where Terraform creates
-    the zone from scratch.
+    Use this when the account already has a hosted zone you can't manage
+    via Terraform. Leave empty when Terraform should create the zone
+    from scratch and you'll delegate the domain at your registrar.
   EOT
   type        = string
   default     = ""

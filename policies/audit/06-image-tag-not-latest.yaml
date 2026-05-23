@@ -1,0 +1,34 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: image-tag-not-latest
+  annotations:
+    policies.kyverno.io/title: Container images must not use :latest or be untagged
+    policies.kyverno.io/category: SupplyChain
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      :latest and missing tags both resolve at pod-create time, producing
+      version drift that's invisible to git. Pin tags so rollback and
+      audit are deterministic.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: no-latest-tag
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system]
+      validate:
+        message: >-
+          Pod {{ request.object.metadata.namespace }}/{{ request.object.metadata.name }}
+          uses an image with no tag or :latest. Pin to a specific tag or digest.
+        pattern:
+          spec:
+            containers:
+              - name: "*"
+                image: "!*:latest | !*[!:]"

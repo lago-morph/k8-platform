@@ -1,0 +1,39 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: helm-managed-by-label-required
+  annotations:
+    policies.kyverno.io/title: Deployments in platform namespaces must carry app.kubernetes.io/managed-by
+    policies.kyverno.io/category: GitOps
+    policies.kyverno.io/severity: low
+    policies.kyverno.io/description: >-
+      In our managed namespaces (argocd, ingress-nginx, external-dns,
+      external-secrets, crossplane-system, kyverno) every Deployment is
+      either Helm-managed or Argo-managed. Resources without the
+      app.kubernetes.io/managed-by label are likely hand-applied — log
+      them so they can be either adopted or removed.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: managed-by-label-required
+      match:
+        any:
+          - resources:
+              kinds: [Deployment]
+              namespaces:
+                - argocd
+                - crossplane-system
+                - external-dns
+                - external-secrets
+                - ingress-nginx
+                - kyverno
+      validate:
+        message: >-
+          Deployment {{ request.object.metadata.namespace }}/{{ request.object.metadata.name }}
+          is missing the app.kubernetes.io/managed-by label. Platform
+          namespaces only host Helm-managed or Argo-managed workloads.
+        pattern:
+          metadata:
+            labels:
+              app.kubernetes.io/managed-by: "?*"

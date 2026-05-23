@@ -1,0 +1,30 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: ingress-must-have-class
+  annotations:
+    policies.kyverno.io/title: Every Ingress must declare an IngressClassName
+    policies.kyverno.io/category: Networking
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      An Ingress with no ingressClassName matches no controller and is
+      silently unmanaged. Force every Ingress to declare its class so
+      adding a second ingress controller (e.g. internal-only) does not
+      accidentally pick up unrelated objects.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: ingressclassname-required
+      match:
+        any:
+          - resources:
+              kinds: [Ingress]
+      validate:
+        message: >-
+          Ingress {{ request.object.metadata.namespace }}/{{ request.object.metadata.name }}
+          has no spec.ingressClassName. Set it (typically "nginx") or this
+          Ingress will be ignored by every controller in the cluster.
+        pattern:
+          spec:
+            ingressClassName: "?*"

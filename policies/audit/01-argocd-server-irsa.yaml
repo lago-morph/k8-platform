@@ -1,0 +1,35 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: argocd-server-irsa-required
+  annotations:
+    policies.kyverno.io/title: ArgoCD server SA must have IRSA annotation
+    policies.kyverno.io/category: IRSA
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      The argocd-server ServiceAccount in the argocd namespace must carry an
+      eks.amazonaws.com/role-arn annotation pointing at a real IRSA role.
+      A missing or stale annotation means argocd-server falls back to the
+      node's instance profile (or no AWS access at all), which silently
+      breaks any feature that needs AWS API calls.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: argocd-server-must-have-rolearn
+      match:
+        any:
+          - resources:
+              kinds: [ServiceAccount]
+              namespaces: [argocd]
+              names: [argocd-server]
+      validate:
+        message: >-
+          The argocd-server ServiceAccount is missing the
+          eks.amazonaws.com/role-arn annotation. Set it via the argo-cd
+          helm chart's server.serviceAccount.annotations key (not the
+          top-level serviceAccount.annotations — that's a different SA).
+        pattern:
+          metadata:
+            annotations:
+              eks.amazonaws.com/role-arn: "arn:aws:iam::*:role/*"

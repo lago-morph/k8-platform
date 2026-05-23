@@ -46,6 +46,62 @@ resource "helm_release" "ingress_nginx" {
   depends_on = [module.eks]
 }
 
+# ---- ExternalDNS ----
+# Watches Ingress/Service objects with external-dns annotations and reconciles
+# the corresponding Route53 records. The account's pre-existing hosted zone is
+# discovered automatically by the zone-type/domain filters.
+
+resource "helm_release" "external_dns" {
+  name             = "external-dns"
+  repository       = "https://kubernetes-sigs.github.io/external-dns/"
+  chart            = "external-dns"
+  version          = var.external_dns_version
+  namespace        = "external-dns"
+  create_namespace = true
+  timeout          = 600
+  wait             = false
+  replace          = true
+
+  set {
+    name  = "provider.name"
+    value = "aws"
+  }
+  set {
+    name  = "policy"
+    value = "upsert-only"
+  }
+  set {
+    name  = "domainFilters[0]"
+    value = var.domain
+  }
+  set {
+    name  = "txtOwnerId"
+    value = "k8-platform-mgmt"
+  }
+  set {
+    name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
+    value = module.irsa_external_dns.iam_role_arn
+  }
+  set {
+    name  = "sources[0]"
+    value = "ingress"
+  }
+  set {
+    name  = "sources[1]"
+    value = "service"
+  }
+  set {
+    name  = "env[0].name"
+    value = "AWS_REGION"
+  }
+  set {
+    name  = "env[0].value"
+    value = var.aws_region
+  }
+
+  depends_on = [helm_release.ingress_nginx]
+}
+
 # ---- External Secrets Operator ----
 
 resource "helm_release" "eso" {
@@ -124,6 +180,54 @@ resource "terraform_data" "crossplane_aws_provider" {
   depends_on = [helm_release.crossplane]
 }
 
+# ---- Kyverno (audit-mode policy engine) ----
+# Acts as a continuously-running assertion store: policies in policies/audit/
+# declare what "well-configured" looks like, and any drift (chart bump, hand
+# edit, Argo sync) surfaces in PolicyReport CRs and events without blocking
+# anything. See policies/audit/README.md for the full rationale.
+
+resource "helm_release" "kyverno" {
+  name             = "kyverno"
+  repository       = "https://kyverno.github.io/kyverno/"
+  chart            = "kyverno"
+  version          = var.kyverno_version
+  namespace        = "kyverno"
+  create_namespace = true
+  timeout          = 600
+  # Kyverno's admission webhook can race the API server during install on a
+  # cold cluster; wait=false lets terraform return as soon as the helm release
+  # is registered, and the e2e-verify pod check confirms readiness.
+  wait             = false
+
+  depends_on = [module.eks]
+}
+
+# Apply the audit-mode policy bundle from policies/audit/. Re-runs whenever
+# any policy file changes (triggered by a hash over the directory). Uses the
+# same local-exec pattern as the Crossplane provider config to avoid pulling
+# in the kubernetes terraform provider.
+resource "terraform_data" "kyverno_audit_policies" {
+  triggers_replace = [
+    sha1(join("", [for f in fileset("${path.module}/../../policies/audit", "*.yaml") : filesha1("${path.module}/../../policies/audit/${f}")])),
+  ]
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      aws eks update-kubeconfig \
+        --name ${module.eks.cluster_name} \
+        --region ${var.aws_region} \
+        --kubeconfig /tmp/k8-platform-kubeconfig
+      KUBECONFIG=/tmp/k8-platform-kubeconfig \
+        kubectl wait --for=condition=Available --timeout=300s \
+          -n kyverno deploy -l app.kubernetes.io/component=admission-controller
+      KUBECONFIG=/tmp/k8-platform-kubeconfig \
+        kubectl apply -f ${path.module}/../../policies/audit/
+    EOT
+  }
+
+  depends_on = [helm_release.kyverno]
+}
+
 # ---- ArgoCD ----
 
 resource "helm_release" "argocd" {
@@ -143,8 +247,10 @@ resource "helm_release" "argocd" {
     name  = "server.extraArgs[0]"
     value = "--insecure"
   }
+  # argo-cd chart has per-component ServiceAccounts; the server SA is the one
+  # that needs the IRSA role-arn annotation for any AWS API calls argo makes.
   set {
-    name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
+    name  = "server.serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
     value = module.irsa_argocd.iam_role_arn
   }
   # Ingress configured here so no separate kubernetes_ingress_v1 resource is
@@ -162,7 +268,7 @@ resource "helm_release" "argocd" {
     value = "argocd.management.${var.domain}"
   }
   set {
-    name  = "server.ingress.hosts[0]"
+    name  = "server.ingress.hostname"
     value = "argocd.management.${var.domain}"
   }
 

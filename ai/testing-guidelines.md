@@ -1,33 +1,19 @@
 # Testing Guidelines — k8-platform
 
-This document describes (a) the Pluralsight sandbox constraints the project
-operates under, (b) the **phase-by-phase development workflow** the agent is
-expected to follow, and (c) the inner debug loop used to drive a single phase
-to "verified" state. Together they replace the old monolithic
-`apply-and-destroy` story.
+This document describes (a) the AWS account constraints the project operates
+under, (b) the **phase-by-phase development workflow** the agent is expected
+to follow, and (c) the inner debug loop used to drive a single phase to
+"verified" state.
 
 The agent reads this file whenever the user says "work on phase N" or any
 equivalent phrasing. `CLAUDE.md` points here.
 
 ---
 
-## 1. Sandbox Constraints (Pluralsight AWS)
+## 1. AWS Account Constraints
 
-**Source:** https://help.pluralsight.com/hc/en-us/articles/24425443133076-AWS-cloud-sandbox
-(requires Pluralsight authentication). Verify against that page before
-relaxing any limit below.
-
-### Session
-
-| Constraint | Value |
-|---|---|
-| Session duration | **4 hours** — the account and all resources are destroyed automatically |
-| Re-use across sessions | Not possible — each session is a fresh AWS account |
-| End-of-session cleanup | **Automatic**. The agent does **not** run `destroy` to "tidy up" — see §4. |
-
-**Implication:** Terraform state in S3 lives only inside the current sandbox
-session. The CI bootstrap step recreates the state bucket + DynamoDB lock
-table on every new session.
+The target AWS account has the following limits and pre-existing resources.
+Adjust the pre-flight checklist if your account differs.
 
 ### EC2
 
@@ -35,7 +21,7 @@ table on every new session.
 |---|---|
 | Allowed families/sizes | t2 / t3 / t3a / t4g — only `micro`, `small`, `medium` |
 | Max EBS volume | 100 GB per volume |
-| Max concurrent instances | **9** total across all services (counts stopped, excludes terminated) |
+| Max concurrent instances | **9** total across all services |
 
 Management cluster default: `t3.medium × 2` (`desired=2, min=1, max=3`). If
 quota bites, drop `node_desired_size` to 1.
@@ -47,8 +33,8 @@ quota bites, drop `node_desired_size` to 1.
 - 5 Elastic IPs default; 2 used by the NAT GW pair.
 - IAM users **cannot** be created; IAM roles can. Workflow uses the injected
   `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` (AdministratorAccess scope).
-- Route53: **one pre-created public hosted zone** per sandbox; auto-discovered
-  by CI into `TF_VAR_domain` / `TF_VAR_route53_zone_id`.
+- Route53: **one pre-existing public hosted zone**; auto-discovered by CI
+  into `TF_VAR_domain` / `TF_VAR_route53_zone_id`.
 - ACM, Secrets Manager, Cognito, S3, DynamoDB, EKS: all available.
 - Not available: Organizations, Control Tower, SSO/Identity Center, WorkSpaces,
   Connect.
@@ -65,27 +51,25 @@ quota bites, drop `node_desired_size` to 1.
 ## 2. Phase State Model
 
 The project is built up in phases (iterations 0–6, see `ai/handoff.md`). At
-any moment during a sandbox session, each phase is in **exactly one** of
-these states:
+any moment, each phase is in **exactly one** of these states:
 
 | State | Meaning | Next action |
 |---|---|---|
 | `not-coded` | No `.tf` / manifest files exist for the phase | Author the code |
-| `code-only` | Code exists, never planned in CI this session | `plan` |
+| `code-only` | Code exists, never planned in CI | `plan` |
 | `plan-green` | `terraform plan` (or k8s dry-run) passes; not applied | `apply-and-verify` |
 | `applied` | `apply` succeeded; verify not yet run | `verify` |
 | `verified` | `apply` + all E2E verify checks passed | (move to phase N+1) |
 | `broken` | Last `apply` or `verify` failed; debug loop active | §4 inner loop |
 
-The agent learns the current state from the **Current Sandbox Session** block
-at the top of `ai/handoff.md`. That block is the source of truth — if it's
+The agent learns the current state from the **Environment State** block at
+the top of `ai/handoff.md`. That block is the source of truth — if it's
 wrong, fix it before doing anything else.
 
-**The state model is per-sandbox-session, not project-wide.** When a new
-sandbox starts, all phases reset to (at best) `plan-green` because S3 state
-was deleted with the previous account. The cumulative "this phase has *ever*
-been verified" lives in the `Iteration progress` table further down in
-handoff.md.
+State transitions persist across sessions because Terraform state lives in
+S3 and the cluster keeps running. The `Iteration progress` table further
+down in handoff.md records the longer-term "this phase has been verified at
+least once" view.
 
 ---
 
@@ -110,9 +94,9 @@ itself is unreachable, see §9 below for the handoff fallback.
 
 ### Phase 1: orient
 
-1. Read `ai/handoff.md` → Current Sandbox Session block.
-2. If sandbox is expired or unknown, ask the user once: "Is the sandbox live?
-   What's the start time?" Then update handoff and continue.
+1. Read `ai/handoff.md` → Environment State block.
+2. If state is stale or contradicts a recent CI run, refresh it before
+   doing anything else.
 3. Build the work plan from the per-phase states.
 
 ### Phase 2: cumulative bring-up (phases 0..N-1)
@@ -167,19 +151,18 @@ Terraform). If verify passes, mark verified. If verify fails, §4.
 
 #### State = `verified`
 
-Tell the user the phase is already verified in this session and ask what they
-want next.
+Tell the user the phase is already verified and ask what they want next.
 
 ### Phase 4: bookkeeping
 
 On every successful state transition:
-- Update the **Current Sandbox Session** block in `ai/handoff.md`.
+- Update the **Environment State** block in `ai/handoff.md`.
 - Commit (`chore(handoff): phase N → verified` or similar).
 - Push.
 
-At the end of the working session — **do not run any destroy**. Just update
-handoff with what's currently live, commit, and stop. Sandbox expiry will
-handle teardown.
+When wrapping up: do not run `destroy` unless that is itself the work
+being done. The environment persists; leaving phases live is the expected
+state between sessions.
 
 ---
 
@@ -207,20 +190,20 @@ loop:
        reference/escalation-template.md, do not push a 4th attempt.
 ```
 
-### Three invariants
+### Two invariants
 
 1. **Never destroy a phase below N.** If the apparent fix seems to require
    it, the diagnosis is wrong — re-classify, or escalate.
-2. **Never destroy at session end.** Sandbox expiry is the cleanup mechanism.
-3. **Re-running `verify` is free.** Prefer it over re-applying when the
+2. **Re-running `verify` is free.** Prefer it over re-applying when the
    underlying failure was timing-related (DNS propagation, slow image pull,
    IRSA propagation).
 
 ---
 
-## 5. Session Budget Arithmetic
+## 5. Action Wall-Clock Reference
 
-Approximate wall-clock per action (revise as data comes in):
+Approximate per-action duration. Use to estimate how long a sequence of
+dispatches will take and decide whether to do something else in parallel.
 
 | Action | Duration |
 |---|---|
@@ -231,26 +214,9 @@ Approximate wall-clock per action (revise as data comes in):
 | `destroy` management | ~10 min |
 | `destroy` base | ~3 min |
 
-### Worked example: first-ever phase 1 bring-up + debugging
-
-```
-0:00  start sandbox, rotate 3 GitHub secrets
-0:00  apply-and-verify base                              ( 3 min)
-0:03  apply-and-verify management                        (15 min)
-0:18  → failed verify (ArgoCD URL DNS not propagated)
-0:18  verify management (retry, no terraform)            ( 2 min)
-0:20  → still failing; classify → ExternalDNS issue → tf fix
-0:25  push fix, destroy management, apply-and-verify     (10 + 15 = 25 min)
-0:50  → green
-0:50  update handoff, commit, push
-3:00  …time spent on phase 2 code authoring…
-4:00  sandbox expires; no destroy needed
-```
-
-Heuristic: each phase-1 debug iteration costs ~25 minutes (destroy + apply +
-verify). With a 4-hour budget and ~20 min already spent on the first
-bring-up, **expect ~7 debug iterations max per session**. If you're not
-green by the 5th, stop and think rather than burn the remaining budget.
+Each inner-loop debug iteration on phase 1 costs ~25 minutes (destroy +
+apply + verify). If you haven't reached green by the 5th iteration, stop
+and rethink the diagnosis rather than keep cycling.
 
 ---
 
@@ -289,16 +255,15 @@ auto-triggers on `terraform-test.yml`.
 ## 7. What to Update After Each Step
 
 After a state-changing run completes, the agent updates these fields in
-`ai/handoff.md` → Current Sandbox Session block:
+`ai/handoff.md` → Environment State block:
 
 - `Phase states` table: state column for the phase in question
 - `Phase states` table: Last action column with timestamp and brief result
 - `Phase states` table: Run URL column (the GitHub Actions run that produced
   the new state)
 
-If the phase reached `verified` for the first time *ever* (not just this
-session), also bump the `Iteration progress` table further down in
-handoff.md.
+If the phase reached `verified` for the first time, also bump the
+`Iteration progress` table further down in handoff.md.
 
 Commit with `chore(handoff): phase N → <new-state>`.
 
@@ -320,17 +285,17 @@ coverage independent of the AWS-touching paths.
 | `action` | What runs | AWS needed? | Typical duration |
 |---|---|---|---|
 | `test-unit` | `tests/unit/run.sh` — exercises `compute-gates.sh` against `(phase, action)` tuples | No | <10 s |
-| `test-e2e`  | `tests/e2e/run.sh` — read-only assertions against the live sandbox (sts:GetCallerIdentity, Route53, S3 bucket, DynamoDB table) | Yes | <30 s |
+| `test-e2e`  | `tests/e2e/run.sh` — read-only assertions against the live account (sts:GetCallerIdentity, Route53, S3 bucket, DynamoDB table) | Yes | <30 s |
 
 ### When to run them
 
 - **Every PR that touches `.github/scripts/`, `.github/workflows/`,
   or `tests/`** should fire `phase=test, action=test-unit` at least
   once and confirm it passes.
-- **Every fresh sandbox session** should fire `phase=test, action=test-e2e`
-  once after the first `apply-and-verify` on phase 0 — it's the cheapest
-  way to confirm bootstrap actually produced the expected side effects
-  (state bucket + lock table + Cognito test creds).
+- **After each fresh `apply-and-verify` of phase 0**, fire
+  `phase=test, action=test-e2e` once — it's the cheapest way to confirm
+  bootstrap produced the expected side effects (state bucket + lock
+  table + Cognito test creds).
 - The unit suite is also run locally with `tests/unit/run.sh` — no env
   required.
 
@@ -361,7 +326,7 @@ coverage, then `ext-github` via jentic
 (`.claude/skills/ext-github/`). Detection and the per-profile dispatch
 table live in
 `.claude/skills/terraform-ci-watch/reference/capabilities.md`. In many
-sandboxes (including the current Claude Code on the Web configuration)
+environments (including the current Claude Code on the Web configuration)
 only `ext-github` is available, so it functions as both first and last
 resort.
 
@@ -374,7 +339,7 @@ the same operation on it. If detection produces "none" — every profile
 has failed — fall back to the handoff path:
 
 Write the intended next action — `workflow_id`, `ref`, full `inputs`
-map, and the reason for falling back — into the Current Sandbox Session
+map, and the reason for falling back — into the Environment State
 block at the top of `ai/handoff.md`, commit, and stop. A human resumes
 by dispatching the recorded action manually via the GitHub Actions UI
 (Actions → terraform-test → "Run workflow") and updates handoff with

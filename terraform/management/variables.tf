@@ -35,7 +35,7 @@ variable "cluster_version" {
 variable "node_instance_type" {
   description = <<-EOT
     EC2 instance type for management cluster nodes.
-    Pluralsight sandbox restriction: use t3.medium or smaller.
+    Account constraint: t3.medium or smaller (see ai/testing-guidelines.md §1).
     t3.medium (2 vCPU / 4 GiB) is the recommended minimum for running
     ArgoCD + Crossplane + ESO on the same node group.
   EOT
@@ -44,7 +44,7 @@ variable "node_instance_type" {
 }
 
 variable "node_desired_size" {
-  description = "Desired node count. Keep at 2 for management cluster HA; reduce to 1 to stay within sandbox instance limits."
+  description = "Desired node count. Keep at 2 for management cluster HA; reduce to 1 to stay within the 9-instance EC2 quota."
   type        = number
   default     = 2
 }
@@ -55,7 +55,7 @@ variable "node_min_size" {
 }
 
 variable "node_max_size" {
-  description = "Max nodes. Pluralsight sandbox caps total EC2 instances across all services — stay conservative."
+  description = "Max nodes. The account caps total EC2 instances across all services — stay conservative."
   type        = number
   default     = 3
 }
@@ -94,4 +94,16 @@ variable "ingress_nginx_version" {
   description = "ingress-nginx Helm chart version"
   type        = string
   default     = "4.10.0"
+}
+
+variable "external_dns_version" {
+  description = "ExternalDNS Helm chart version (kubernetes-sigs/external-dns)"
+  type        = string
+  default     = "1.15.0"
+}
+
+variable "kyverno_version" {
+  description = "Kyverno Helm chart version (audit-mode policy engine)"
+  type        = string
+  default     = "3.2.6"
 }

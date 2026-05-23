@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # E2E: verify that the workflow's Bootstrap step has created the
-# S3 state bucket and DynamoDB lock table for the current sandbox.
+# S3 state bucket and DynamoDB lock table in the account.
 # These are required for terraform init.
 #
 # Note: this test passes only AFTER `phase=base, action=plan` (or any
-# other action that triggers bootstrap) has run at least once in the
-# current sandbox. Standalone `phase=test, action=test-e2e` runs do
-# NOT trigger bootstrap, so when invoked alone this test will fail
-# unless the bucket already exists. That's intentional — the test is
-# verifying the side-effect we expect bootstrap to produce.
+# other action that triggers bootstrap) has run at least once.
+# Standalone `phase=test, action=test-e2e` runs do NOT trigger
+# bootstrap, so when invoked alone this test will fail unless the
+# bucket already exists. That's intentional — the test is verifying
+# the side-effect we expect bootstrap to produce.
 
 set -uo pipefail
 cd "$(dirname "$0")/../.."

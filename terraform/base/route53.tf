@@ -8,8 +8,8 @@
 #       name servers before DNS validation will work.
 #
 #   "<zone-id>" — Terraform looks up the existing zone and uses it. Use this
-#       for Pluralsight sandboxes (and any other environment where a hosted
-#       zone is pre-provisioned). No delegation step is needed.
+#       for any environment where a hosted zone is pre-provisioned. No
+#       delegation step is needed.
 
 resource "aws_route53_zone" "root" {
   count = var.route53_zone_id == "" ? 1 : 0
