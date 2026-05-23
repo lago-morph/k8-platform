@@ -294,3 +294,13 @@ Not part of PR1 or PR2:
    `workflow_dispatch` endpoint is reachable via jentic.
 3. PR2 lands after the probe and after the user-approved live-fire
    test plan has executed successfully and shapes are recorded.
+
+### Phase E probe result (recorded 2026-05-23)
+
+- `POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches`
+  is present in jentic's catalog as operation `op_2acb005c9f3704ad`
+  (operation_id `actions/create-workflow-dispatch`, github.com API
+  version 1.1.4).
+- Jentic credentials include a `STATIC_BEARER_TOKEN` for
+  `api.github.com` — PR2's live-fire phase is authenticated.
+- PR1 implementation is unblocked.
