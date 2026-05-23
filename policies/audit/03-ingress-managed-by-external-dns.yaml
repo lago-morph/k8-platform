@@ -24,7 +24,7 @@ spec:
               kinds: [Ingress]
       preconditions:
         any:
-          - key: "{{ request.object.spec.rules[].host || `` | to_string(@) }}"
+          - key: "{{ request.object.spec.rules[].host || `[]` | to_string(@) }}"
             operator: AnyIn
             value: ["*management.*"]
       validate:
