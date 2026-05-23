@@ -342,10 +342,11 @@ jobs:
             || { echo "FAIL: no Ready nodes found"; exit 1; }
           echo "OK: $READY node(s) Ready"
 
-          # All four Helm-installed namespaces must have at least one Running pod.
+          # All five Helm-installed namespaces must have at least one Running pod.
           # The Helm provider's default wait=true means pods should already be up,
           # but we allow a 3-minute window for any slow image pulls.
-          NAMESPACES="argocd crossplane-system external-secrets ingress-nginx"
+          # external-dns uses wait=false so it may need the full retry window.
+          NAMESPACES="argocd crossplane-system external-dns external-secrets ingress-nginx"
           for i in $(seq 1 18); do
             ALL_UP=true
             for NS in $NAMESPACES; do
@@ -394,21 +395,40 @@ jobs:
 
           HOSTNAME="argocd.management.${TF_VAR_domain}"
           ARGOCD_URL=$(terraform output -raw argocd_url)
-          echo "Waiting for DNS to resolve: $HOSTNAME"
+          echo "Waiting for Route53 record to be created by ExternalDNS: $HOSTNAME"
 
-          # ExternalDNS can take up to 5 minutes to create the CNAME.
+          # ExternalDNS reconciles ingress annotations into Route53. Querying the
+          # zone API directly is more deterministic than waiting for recursive
+          # resolver propagation, which can outlast the 5-minute window even
+          # after the record exists.
           DNS_OK=false
+          CLUSTER=$(terraform output -raw cluster_name)
+          KB=/tmp/e2e-kubeconfig
+          export KUBECONFIG="$KB"
           for i in $(seq 1 30); do
-            if dig +short "$HOSTNAME" | grep -q .; then
+            RECORD=$(aws route53 list-resource-record-sets \
+              --hosted-zone-id "$TF_VAR_route53_zone_id" \
+              --query "ResourceRecordSets[?Name=='${HOSTNAME}.'] | [0]" \
+              --output json 2>/dev/null || true)
+            if [ -n "$RECORD" ] && [ "$RECORD" != "null" ]; then
               DNS_OK=true
-              echo "DNS resolved after approx $((i * 10))s"
+              echo "Route53 record exists after approx $((i * 10))s:"
+              echo "$RECORD"
               break
             fi
-            echo "  no answer yet (attempt $i/30)..."
+            echo "  no record yet (attempt $i/30)..."
             sleep 10
           done
-          [ "$DNS_OK" = "true" ] \
-            || { echo "FAIL: DNS for $HOSTNAME did not resolve within 5 minutes"; exit 1; }
+          if [ "$DNS_OK" != "true" ]; then
+            echo "FAIL: Route53 record for $HOSTNAME was not created within 5 minutes"
+            echo "---- external-dns pod status ----"
+            kubectl get pods -n external-dns -o wide || true
+            echo "---- external-dns recent logs ----"
+            kubectl logs -n external-dns -l app.kubernetes.io/name=external-dns --tail=80 || true
+            echo "---- argocd ingress ----"
+            kubectl get ingress -n argocd -o yaml | head -60 || true
+            exit 1
+          fi
 
           # NLB terminates TLS; ArgoCD serves HTTP behind it.  Accept any 2xx or 3xx.
           HTTP=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 15 "$ARGOCD_URL" || true)
