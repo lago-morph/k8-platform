@@ -457,3 +457,96 @@ For IAM, removing it would mean a broken Keycloak takes the cluster offline for 
 - The kubectl client side requires the `oidc-login` krew plugin. This is one more local tool for operators to install. Documented in `docs/operations.md`.
 - API-server OIDC config is part of cluster-bring-up but cannot be wired until Keycloak is healthy. Iteration 5 takes the dependency. Earlier iterations rely on IAM for `kubectl`, which is fine.
 - Token refresh latency (typically minutes) bounds how fast removing a user from a Cognito group actually revokes cluster access. Acceptable for a learning platform; would warrant token lifetime tuning in production.
+
+### ADR-008: Tooling gaps are escalations, not design problems
+
+ADRs 001–007 record platform-architecture decisions. ADR-008 is the first
+operating-policy ADR in this section — a binding rule about *how the agent
+works*, not about *what the platform is*. It belongs in `ai/DESIGN.md`
+because the cost of getting it wrong is paid in the platform's code (see
+the consequences below for the concrete history), and because the
+operating rules and the architecture they produce are intertwined enough
+that splitting them across two documents loses more than it gains.
+
+**Decision:** When an agent driving this project discovers that a tool,
+API, CLI, or capability required by a documented procedure is unavailable
+in its execution environment, the default response is to flag the gap to
+the user as a platform-tooling issue and ask whether to (a) escalate to
+platform owners and wait, (b) build a scoped workaround, or (c) defer
+the dependent task. The agent must not silently design and ship a
+workaround under the assumption the limitation is permanent. Workarounds
+are built only after the user has explicitly chosen path (b), and only
+within the scope agreed in that choice.
+
+**Context:** On 2026-05-23 the agent was asked to "Start testing phase 1."
+The `ai/testing-guidelines.md` §3 procedure prescribed multiple
+`workflow_dispatch` calls; the GitHub MCP toolset the agent had access to
+did not expose a workflow-dispatch primitive, and neither `gh` CLI nor
+direct GitHub API access was available. The agent's response — at the
+user's invitation, but without first asking whether the gap should be
+escalated — was to design and ship a 31-file workaround built around a
+`.trigger-action.json` commit-driven trigger (issue #18, PR #19). PR #19
+was merged on its own merits. Within days it was reverted entirely,
+because the proper fix was direct GitHub API access for the agent (commit
+`140ba12`, "Remove sandbox-workaround auto-triggers from CI").
+
+The workaround was competently built, rigorously tested (52 unit tests,
+3 e2e tests), and had a clean validation surface. None of that
+mattered: it was the wrong response to the underlying gap. The right
+response was "I cannot dispatch workflows — this is a platform-tooling
+issue; should I escalate, work around, or wait?" — surfaced *before* any
+design work began, not after the work was already underway with a draft
+PR open.
+
+Workarounds for platform limitations carry three asymmetric costs that
+are easy to underweight at the moment they're proposed:
+
+1. **The limitation is often temporary.** Platform tooling improves on
+   timescales (days to weeks) shorter than most workarounds expect.
+   `.trigger-action.json` was obsolete before the test harness around
+   it was a week old.
+2. **Workarounds become load-bearing.** Tested, documented infrastructure
+   is hard to remove even when its underlying reason has gone away. The
+   replacement design (direct API access) had to be explicitly fenced
+   against being merged with the workaround machinery (commit `8a98ad7`,
+   "Fence ext-github-design.md against synthesis with repo cruft").
+3. **The platform owners don't learn what's needed.** A workaround that
+   ships without escalation means the platform team never hears the
+   signal "agents in this environment cannot dispatch workflows." The
+   underlying gap stays unfixed for the next project that hits it.
+
+The cost of the escalation question itself is one round of conversation.
+The cost of an unnecessary workaround is the workaround's full
+implementation cost plus the cleanup cost plus the diversion of design
+attention away from the proper fix.
+
+**Consequences:**
+
+- The agent's default reaction to "I cannot do X in this environment" is
+  to flag and ask, not to silently route around. This applies to missing
+  CLIs, restricted APIs, sandbox limitations, file-write restrictions,
+  and identity/permission gaps. The "follow procedure without asking"
+  clauses in `CLAUDE.md` do not override this — those clauses prescribe
+  *executing* the procedure, not *substituting* for it when its
+  prerequisites aren't met.
+- When the user does authorize a workaround (path (b)), the workaround
+  must carry an explicit sunset annotation per the companion proposed
+  ADR ("Sandbox/platform workarounds carry an explicit sunset
+  condition") — a comment in the file header naming the limitation,
+  who's tracking the fix, and the condition under which the workaround
+  should be removed. Without that annotation the workaround rots into
+  permanent infrastructure.
+- Acceptance of a workaround is scoped: agreeing to "build a workaround
+  for X" does not authorize follow-on scope (a test harness, a parallel
+  doctrine section, a new dispatch matrix) without a second
+  scope-expansion checkpoint. Scope expansion goes through the same
+  flag-and-ask discipline.
+- The companion `decommission-workaround` skill
+  (`retrospective/2026-05-22-24/decommission-workaround-spec.md`)
+  handles the removal side of the lifecycle once the underlying
+  limitation lifts. ADR-008 governs the creation side; the skill
+  governs the disposal side.
+- Future operating-policy ADRs — if the project accumulates them — may
+  warrant moving to a separate section header ("Operating Decisions")
+  to keep the architecture ADRs distinct. For one entry, a same-section
+  ADR with the framing above is sufficient.
