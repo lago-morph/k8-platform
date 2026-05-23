@@ -337,3 +337,23 @@ test before the fix.
 - The harness tests assume `jq`, `bash`, and (for e2e) `aws` CLI are
   on PATH. The GitHub-hosted runner provides all three; local
   contributors must install them.
+
+---
+
+## 9. Jentic Outage — Handoff Fallback
+
+The `ext-github` skill (`.claude/skills/ext-github/`) is the sole path
+from the sandbox to GitHub's Actions API: direct egress is blocked and
+the GitHub MCP server does not expose `workflow_dispatch` or
+run/job/log reads. When a call from `ext-github` fails for
+connectivity reasons — jentic 5xx, jentic rate-limited or unreachable,
+or the upstream PAT in jentic expired/got revoked — the agent does
+not retry inside the skill (one-shot policy per
+`ai/specs/ext-github-design.md` §4). Instead, write the intended next
+action — `workflow_id`, `ref`, full `inputs` map, and the reason for
+falling back — into the Current Sandbox Session block at the top of
+`ai/handoff.md`, commit, and stop. A human resumes by dispatching the
+recorded action manually via the GitHub Actions UI (Actions →
+terraform-test → "Run workflow") and updates handoff with the
+resulting run URL. The session does not attempt to recover
+automatically; jentic outages are rare and the manual path is fast.

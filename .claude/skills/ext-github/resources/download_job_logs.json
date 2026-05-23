@@ -1,0 +1,28 @@
+{
+  "endpoint_ref": "op_c08d23e5bd6966cb",
+  "recorded_at": "2026-05-23T01:24:30Z",
+  "last_verified": "2026-05-23",
+  "verified": true,
+  "purpose": "Download plain-text logs for a single workflow job. Used as the substitute for the broken run-wide logs endpoint (`actions/download-workflow-run-logs`, which returns 500 through jentic because jentic can't follow the 302 → zip-archive redirect). Caller enumerates jobs via list_jobs_for_workflow_run and concatenates per-job log bodies. For terraform-test.yml each run currently has a single job, so this is a one-call substitute in practice.",
+  "request": {
+    "method": "GET",
+    "url_template": "https://api.github.com/repos/{owner}/{repo}/actions/jobs/{job_id}/logs",
+    "headers": {
+      "Accept": "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28"
+    },
+    "query": {
+      "owner": "lago-morph",
+      "repo": "k8-platform",
+      "job_id": 77486193737
+    },
+    "query_inputs_schema": {
+      "owner":  { "required": true },
+      "repo":   { "required": true },
+      "job_id": { "required": true }
+    }
+  },
+  "response": {
+    "status": 200
+  }
+}

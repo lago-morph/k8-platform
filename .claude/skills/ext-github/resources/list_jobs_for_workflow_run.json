@@ -1,0 +1,29 @@
+{
+  "endpoint_ref": "op_2064ead94c9950bc",
+  "recorded_at": "2026-05-23T01:24:00Z",
+  "last_verified": "2026-05-23",
+  "verified": true,
+  "purpose": "List jobs for a workflow run. Required as the first step of the run-logs workaround (see download_job_logs.json) because the run-wide logs endpoint is broken via jentic.",
+  "request": {
+    "method": "GET",
+    "url_template": "https://api.github.com/repos/{owner}/{repo}/actions/runs/{run_id}/jobs",
+    "headers": {
+      "Accept": "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28"
+    },
+    "query": {
+      "owner": "lago-morph",
+      "repo": "k8-platform",
+      "run_id": 26319698837
+    },
+    "query_inputs_schema": {
+      "owner":  { "required": true },
+      "repo":   { "required": true },
+      "run_id": { "required": true },
+      "filter": { "required": false, "values": ["latest", "all"], "default": "latest" }
+    }
+  },
+  "response": {
+    "status": 200
+  }
+}
