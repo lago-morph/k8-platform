@@ -169,8 +169,15 @@ The previous session ended with **all 8 PRs from the session merged or expected 
 | #46 | fix(scripts): diag-component $SELECTOR typo + add platform-secret diagnostics | main | ✅ | Latent `$SELECTOR` bug fix + `platform-secret` component in diag-component.sh + 15-assertion unit test |
 | #47 | feat(ci): unit tests on every push | main | ✅ | `.github/workflows/unit-tests.yml` |
 | #48 | feat(ci): terraform fmt + validate on every push | main | ✅ | `.github/workflows/terraform-validate.yml` |
+| #49 | chore: terraform fmt (no behaviour change) | main | ?? | Pure fmt fix for pre-existing drift in `terraform/base/vpc.tf` + 4 management files. Surfaced by #48's CI. **Merge first** — every other open PR's CI fails on `terraform fmt -check` until this lands. |
 
 (This PR itself — `chore/session-wrap` — adds this very block.)
+
+**Suggested merge order** (the user said they would merge everything in one go):
+
+1. **#49 first** (`chore: terraform fmt`) — unblocks `terraform-validate.yml` CI on every other open PR.
+2. Then **#41 → #42 → #43 → #44 → #45 → this PR (#50?)** in stack order. Each child PR's merge will be a regular GH merge because each branch carries its own `merge main` commit resolving the `tests/unit/run.sh` additive conflict with #46. GitHub will auto-rebase the next child onto the new main on each merge.
+3. After #43 merges, **dispatch `phase=management action=apply-and-verify`** so the new `terraform_data.argocd_bootstrap` runs its local-exec. Without this step, `argocd/bootstrap.yaml` is never `kubectl apply`ed and phase 2a stays inert on the cluster.
 
 **Critical activation step:** PR #43 added `terraform_data.argocd_bootstrap` to `terraform/management/helm.tf`. That resource only takes effect on the live cluster when `phase=management action=apply-and-verify` runs. **You cannot skip this step.** Without it, the ArgoCD bootstrap App is never `kubectl apply`ed, ArgoCD doesn't discover `argocd/apps/`, and the PlatformSecret CRD never installs.
 
