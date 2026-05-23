@@ -155,6 +155,22 @@ MANIFEST
 # grep can verify the gate exists.
 kubectl wait --for=condition=Healthy provider.pkg.crossplane.io/provider-family-aws --timeout=300s
 
+# ---------- install provider-aws-secretsmanager ---------------------------
+# Upbound's family-aws is a meta-package; child providers (one per AWS
+# service) install separately. PlatformSecret needs the secretsmanager
+# child to reconcile its ASM Secret managed resource.
+echo ""
+echo "── installing provider-aws-secretsmanager ────────────────────"
+kubectl apply -f - <<MANIFEST
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-aws-secretsmanager
+spec:
+  package: "xpkg.upbound.io/upbound/provider-aws-secretsmanager:${PROVIDER_AWS_SECRETSMANAGER_VERSION}"
+MANIFEST
+kubectl wait --for=condition=Healthy provider.pkg.crossplane.io/provider-aws-secretsmanager --timeout=300s
+
 # ---------- install function-patch-and-transform ---------------------------
 # Crossplane v2 Pipeline compositions need a function to apply patches;
 # function-patch-and-transform implements the legacy `resources` shape.

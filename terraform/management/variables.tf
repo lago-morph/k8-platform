@@ -84,6 +84,17 @@ variable "crossplane_provider_family_aws_version" {
   default     = "v1.12.0"
 }
 
+variable "crossplane_provider_aws_secretsmanager_version" {
+  description = <<-EOT
+    Upbound provider-aws-secretsmanager package version. The family-aws
+    package above is a meta-package; each AWS service has its own child
+    provider. PlatformSecret claims need the secretsmanager child to
+    reconcile the ASM Secret managed resource.
+  EOT
+  type        = string
+  default     = "v1.12.0"
+}
+
 variable "crossplane_function_patch_and_transform_version" {
   description = <<-EOT
     crossplane-contrib/function-patch-and-transform package version.
