@@ -97,7 +97,7 @@ variable "ingress_nginx_version" {
 }
 
 variable "external_dns_version" {
-  description = "ExternalDNS (bitnami) Helm chart version"
+  description = "ExternalDNS Helm chart version (kubernetes-sigs/external-dns)"
   type        = string
-  default     = "6.31.0"
+  default     = "1.15.0"
 }

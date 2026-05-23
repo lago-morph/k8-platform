@@ -53,19 +53,18 @@ resource "helm_release" "ingress_nginx" {
 
 resource "helm_release" "external_dns" {
   name             = "external-dns"
-  repository       = "https://charts.bitnami.com/bitnami"
+  repository       = "https://kubernetes-sigs.github.io/external-dns/"
   chart            = "external-dns"
   version          = var.external_dns_version
   namespace        = "external-dns"
   create_namespace = true
+  timeout          = 600
+  wait             = false
+  replace          = true
 
   set {
-    name  = "provider"
+    name  = "provider.name"
     value = "aws"
-  }
-  set {
-    name  = "aws.region"
-    value = var.aws_region
   }
   set {
     name  = "policy"
@@ -74,6 +73,10 @@ resource "helm_release" "external_dns" {
   set {
     name  = "domainFilters[0]"
     value = var.domain
+  }
+  set {
+    name  = "txtOwnerId"
+    value = "k8-platform-mgmt"
   }
   set {
     name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
@@ -86,6 +89,14 @@ resource "helm_release" "external_dns" {
   set {
     name  = "sources[1]"
     value = "service"
+  }
+  set {
+    name  = "env[0].name"
+    value = "AWS_REGION"
+  }
+  set {
+    name  = "env[0].value"
+    value = var.aws_region
   }
 
   depends_on = [helm_release.ingress_nginx]
