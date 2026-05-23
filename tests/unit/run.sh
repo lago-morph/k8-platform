@@ -30,6 +30,7 @@ run_suite tests/unit/test_irsa_helm_linkage.sh
 run_suite tests/unit/test_iam_required_actions.sh
 run_suite tests/unit/test_eks_module_defaults.sh
 run_suite tests/unit/test_helm_render.sh
+run_suite tests/unit/test_post_comment.sh
 
 echo ""
 if [ "$OVERALL" -eq 0 ]; then
