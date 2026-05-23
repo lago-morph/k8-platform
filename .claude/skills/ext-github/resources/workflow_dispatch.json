@@ -1,0 +1,37 @@
+{
+  "endpoint_ref": "op_2acb005c9f3704ad",
+  "recorded_at": "2026-05-23T01:23:24Z",
+  "last_verified": "2026-05-23",
+  "verified": true,
+  "purpose": "Trigger a CI run on terraform-test.yml (workflow_dispatch).",
+  "request": {
+    "method": "POST",
+    "url_template": "https://api.github.com/repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches",
+    "headers": {
+      "Accept": "application/vnd.github+json",
+      "Content-Type": "application/json",
+      "X-GitHub-Api-Version": "2022-11-28"
+    },
+    "body": {
+      "owner": "lago-morph",
+      "repo": "k8-platform",
+      "workflow_id": "terraform-test.yml",
+      "ref": "main",
+      "inputs": {
+        "phase": "test",
+        "action": "test-unit"
+      }
+    },
+    "body_inputs_schema": {
+      "owner":          { "required": true },
+      "repo":           { "required": true },
+      "workflow_id":    { "required": true },
+      "ref":            { "required": true },
+      "inputs.phase":   { "required": true, "values": ["base", "management", "test"] },
+      "inputs.action":  { "required": true, "values": ["plan", "apply", "verify", "apply-and-verify", "destroy", "test-unit", "test-e2e"] }
+    }
+  },
+  "response": {
+    "status": 204
+  }
+}

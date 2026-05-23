@@ -1,0 +1,34 @@
+{
+  "endpoint_ref": "op_e5f9dfd148ed5018",
+  "recorded_at": "2026-05-23T01:23:30Z",
+  "last_verified": "2026-05-23",
+  "verified": true,
+  "purpose": "List recent runs of a specific workflow. Also serves as the substitute for the missing `actions/get-workflow-run` single-run GET — filter the returned `workflow_runs[]` by `id` to retrieve a specific run's `status`/`conclusion`.",
+  "request": {
+    "method": "GET",
+    "url_template": "https://api.github.com/repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs",
+    "headers": {
+      "Accept": "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28"
+    },
+    "query": {
+      "owner": "lago-morph",
+      "repo": "k8-platform",
+      "workflow_id": "terraform-test.yml",
+      "event": "workflow_dispatch",
+      "per_page": 3
+    },
+    "query_inputs_schema": {
+      "owner":       { "required": true },
+      "repo":        { "required": true },
+      "workflow_id": { "required": true },
+      "event":       { "required": false, "values": ["workflow_dispatch", "push", "pull_request", "schedule"] },
+      "branch":      { "required": false },
+      "status":      { "required": false, "values": ["completed", "in_progress", "queued", "waiting", "failure", "success"] },
+      "per_page":    { "required": false, "default": 30 }
+    }
+  },
+  "response": {
+    "status": 200
+  }
+}
