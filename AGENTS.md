@@ -303,15 +303,22 @@ confirming", "just do it", "skip the recap", "no need to repeat
 back", "go ahead", or equivalent. Do not infer opt-out from tone
 or brevity.
 
-**Action-as-confirmation.** If after sending the repeat-back the
-user does not reply in chat but instead takes a system action that
-plausibly answers the question — merges the in-flight PR, leaves
-a review comment on the PR, edits a file the agent is mid-work on,
-dispatches a workflow themselves — treat that action as implicit
-approval and proceed on the drafted plan. **The agent's very next
-chat message must name the inference explicitly**: "I'm reading
-<action> as approval of <step-N> of my repeat-back; correct me if
-not." The user can then redirect cheaply if the inference was wrong.
+**Action-is-not-confirmation.** If after sending the repeat-back the
+user does not reply in chat but instead takes a system action —
+merges a PR, leaves a review comment, dispatches a workflow, edits
+a file — **do not interpret that as approval**. The user is often
+reviewing and approving pull requests in parallel with agents doing
+work, and may take those actions without even realizing the agent
+has asked for approval for something. Approval comes from chat,
+explicitly, with words. Continue waiting for that chat reply.
+
+If the wait is unproductive, the agent's options are:
+- Continue any orthogonal work that is unaffected by the pending
+  question (e.g. drafting documentation for a different concern).
+- Send a follow-up chat message reminding the user the question is
+  open, naming the specific question.
+- Do not proceed on the question itself until the user replies in
+  chat with explicit approval, correction, or redirection.
 
 When the prompt is not compound (single action, short, unambiguous),
 proceed without a repeat-back. The discipline is filtering, not
