@@ -85,7 +85,10 @@ To be populated by the next agent by querying user before §Critique. One row pe
 | 18| `endpoint_ref` may not exist            | (a) Optional         | `endpoint_ref` becomes optional in the schema; populated when jentic returns a stable identifier in catalog search, omitted otherwise. |
 | 19| `action-class` field is vestigial       | (a) Drop             | Removed from TEMPLATE.md. No current resolution depends on it; field added no policy value. |
 
-(Add rows 20+ here if a later §Critique introduces additional risks worth slotting in.)
+| 20| `body_inputs_schema` per-key shape       | (a) Fixed sub-shape  | Each `body_inputs_schema` entry: `required` (bool), optional `values` (array of allowed literals; omit for unbounded), optional `default` (value when key absent at call time). README shows examples for enumerated, free-form, defaulted. |
+| 21| GET query parameters not in schema      | (a) Add query parallel | Schema adds `request.query` and `request.query_inputs_schema`, parallel to `request.body` and `request.body_inputs_schema`. Body fields used for POSTs; query fields used for GETs. |
+
+(Add rows 22+ here if a later §Critique introduces additional risks worth slotting in.)
 
 ---
 

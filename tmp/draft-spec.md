@@ -1,7 +1,7 @@
 # Resolved Design — external-api-bridge + ext-github
 
-**Status:** draft for fresh-eyes critique (iteration 3, after risks #17–#19).
-Folds the §Resolutions from `ai/specs/ext-github-design.md` (rows 1–19)
+**Status:** draft for fresh-eyes critique (iteration 4, after risks #20–#21).
+Folds the §Resolutions from `ai/specs/ext-github-design.md` (rows 1–21)
 into the design itself.
 
 **Scope reminder.** Total dispatch volume over the project's lifetime
@@ -203,10 +203,16 @@ shape of `<endpoint>.json` files that every child skill writes:
     "method": "POST | GET | ...",
     "url_template": "https://api.example.com/...",
     "headers": { "Content-Type": "application/json", "...": "..." },
+    "query": { "branch": "main", "per_page": 1 },
+    "query_inputs_schema": {
+      "branch": { "required": true },
+      "per_page": { "required": false, "default": 30 }
+    },
     "body": { "...": "..." },
     "body_inputs_schema": {
-      "phase": { "required": true,  "values": ["base", "management", "test"] },
-      "action": { "required": true, "values": ["plan", "apply", "verify", "apply-and-verify", "destroy"] }
+      "phase":  { "required": true, "values": ["base", "management", "test"] },
+      "action": { "required": true, "values": ["plan", "apply", "verify", "apply-and-verify", "destroy"] },
+      "ref":    { "required": true }
     }
   },
   "response": {
@@ -215,24 +221,46 @@ shape of `<endpoint>.json` files that every child skill writes:
 }
 ```
 
-Notes:
+### `*_inputs_schema` per-key shape (Res #20)
+
+Each entry in `body_inputs_schema` or `query_inputs_schema` uses this
+fixed shape:
+
+| Key       | Type          | Required? | Meaning |
+|-----------|---------------|-----------|---------|
+| `required`| bool          | yes       | Whether the input must be supplied at call time. |
+| `values`  | array of literals | no    | Enumerated allowed values. Omit when the value space is unbounded (e.g. `ref`). |
+| `default` | literal       | no        | Value to substitute when the key is absent at call time (only meaningful when `required: false`). |
+
+Examples in the README cover three shapes: enumerated
+(`action: { required: true, values: [...] }`), free-form
+(`ref: { required: true }`), defaulted
+(`per_page: { required: false, default: 30 }`).
+
+### Notes on the recording
+
 - `endpoint_ref` is **optional** (Res #18); populated when jentic
-  returns a stable identifier in catalog search, omitted otherwise.
+  returns a stable identifier, omitted otherwise.
 - `recorded_at` is informational (drift detection was dropped — Res
-  #13); it's there for audit, not policy.
+  #13); audit only.
 - `response.status` only — no response body schema (Res #13).
-- `request.body` is the verified working body from the live-fire
-  test — a concrete example.
-- `request.body_inputs_schema` lists which `body` keys are
-  call-time inputs and what values are allowed (Res #17). Keys in
-  `body` that aren't in `body_inputs_schema` are fixed and reused
-  as-is on every call. This is what prevents mechanical reuse from
-  triggering the wrong dispatch.
-- `url_template` uses `{owner}`, `{repo}`, etc. as path placeholders;
-  substitution is positional and obvious.
+- `request.body` / `request.query` are the verified working values
+  from the live-fire test — concrete examples.
+- `request.body_inputs_schema` / `request.query_inputs_schema` list
+  which keys are call-time inputs vs fixed. Keys in `body` / `query`
+  not listed in the corresponding schema are fixed and reused as-is
+  (Res #17, Res #21).
+- POST endpoints typically use `body` + `body_inputs_schema`; GET
+  endpoints typically use `query` + `query_inputs_schema`. Either
+  pair may be omitted when the method doesn't carry that section.
+- `headers` are recorded literally; auth headers are NOT recorded —
+  jentic supplies them at call time.
+- `url_template` uses `{owner}`, `{repo}`, etc. as path placeholders.
 
 The README also includes one fully-worked example
-(`workflow_dispatch`) so child authors have a concrete model.
+(`workflow_dispatch`) so child authors have a concrete model. (The
+worked example is populated from PR2's probe output and lands as a
+follow-up commit to PR1 if PR1 ships first with a placeholder.)
 
 ---
 
