@@ -1,2 +1,14 @@
 .claude/settings.local.json
 .claude/worktrees/
+
+# Python cache from importing .github/scripts/post-comment.py in unit
+# tests (tests/unit/test_post_comment.sh). Never useful to commit.
+__pycache__/
+*.pyc
+*.pyo
+
+# Terraform local state — backends are S3-backed; nothing local
+*.tfstate
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
