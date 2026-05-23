@@ -39,9 +39,9 @@ spec:
                 namespace: default
               status:
                 conditions:
-                  - type: Ready
-                    status: "True"
                   - type: Synced
+                    status: "True"
+                  - type: Ready
                     status: "True"
 
     - name: assert ExternalSecret materialized in claim namespace
