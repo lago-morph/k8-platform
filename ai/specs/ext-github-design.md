@@ -81,7 +81,11 @@ To be populated by the next agent by querying user before §Critique. One row pe
 | 15| `resources/<endpoint>.json` format      | (a) Strict JSON schema | `resources/README.md` defines required top-level keys: `request: {method, url_template, headers, body}`, `response: {status}` (no body_schema, per Risk #13), `recorded_at`, `endpoint_ref`. TEMPLATE.md checklist references the schema. |
 | 16| Extending an existing ext-{service}     | (a) Explicit sub-procedure | `reference/procedure.md` defines an "extend" flow: catalog search → test plan covers only the new endpoint(s) → existing recorded shapes untouched unless the user requests re-verify. Distinct from "create new". |
 
-(Add rows 17+ here if a later §Critique introduces additional risks worth slotting in.)
+| 17| `request.body` not templatable          | (a) Add body_inputs_schema | Schema adds a `body_inputs_schema` field listing which `request.body` keys are call-time inputs vs fixed. Mechanical reuse no longer triggers wrong dispatches. |
+| 18| `endpoint_ref` may not exist            | (a) Optional         | `endpoint_ref` becomes optional in the schema; populated when jentic returns a stable identifier in catalog search, omitted otherwise. |
+| 19| `action-class` field is vestigial       | (a) Drop             | Removed from TEMPLATE.md. No current resolution depends on it; field added no policy value. |
+
+(Add rows 20+ here if a later §Critique introduces additional risks worth slotting in.)
 
 ---
 

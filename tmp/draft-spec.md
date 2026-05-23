@@ -1,7 +1,7 @@
 # Resolved Design — external-api-bridge + ext-github
 
-**Status:** draft for fresh-eyes critique (iteration 2, after risks #13–#16).
-Folds the §Resolutions from `ai/specs/ext-github-design.md` (rows 1–16)
+**Status:** draft for fresh-eyes critique (iteration 3, after risks #17–#19).
+Folds the §Resolutions from `ai/specs/ext-github-design.md` (rows 1–19)
 into the design itself.
 
 **Scope reminder.** Total dispatch volume over the project's lifetime
@@ -86,8 +86,11 @@ Two flows: **create-new** and **extend-existing** (Res #16).
 4. **Test-plan negotiation.** Produce a draft live-fire test plan —
    one entry per intended endpoint, with cost / side effects / resource
    impact for each. Recommend a full live test of every endpoint to
-   be exposed. Ask the user to approve, modify, or veto each entry.
-   Record the approved plan.
+   be exposed. Ask the user to approve, modify, or veto each entry
+   (free-form during negotiation). After approval the plan lands as
+   a structured list in the child skill's "Test plan record" section
+   (§5 item 4): one line per endpoint with status `approved` or
+   `vetoed (reason)`.
 5. **Live-fire execution.** Run the approved test plan. Each call is
    one-shot — no retries (Res #2). On failure, stop and escalate.
 6. **Record verified shapes.** For each successful probe, write
@@ -107,7 +110,10 @@ Two flows: **create-new** and **extend-existing** (Res #16).
    invoking the skill to add a known set of endpoints.
 4. **Test plan covers only the new endpoint(s).** Existing
    `resources/<endpoint>.json` files are left untouched unless the
-   user explicitly requests re-verify of one or more.
+   user explicitly requests re-verify of one or more during this
+   invocation (free-form: "while you're in there, re-verify X"). If
+   requested, those endpoints are added to the new test plan
+   alongside the new endpoints.
 5. **Live-fire execution** as in §3.1 step 5.
 6. **Record verified shapes** as in §3.1 step 6, adding to (not
    replacing) the existing `resources/` directory.
@@ -165,10 +171,9 @@ Each `ext-{service}` child must include:
 1. **Frontmatter** — aggressive `description:`, trigger phrases,
    `allowed-tools` list.
 2. **When to use** — the specific gap this skill fills.
-3. **Endpoints** — table of `{purpose, endpoint, action-class,
-   resources/<endpoint>.json}`. `action-class` is `read-only` or
-   `mutating`; informs the CI re-dispatch policy and any
-   future per-class handling.
+3. **Endpoints** — table of `{purpose, endpoint,
+   resources/<endpoint>.json}`. (No `action-class` field — Res #19
+   dropped it as vestigial.)
 4. **Test plan record** — the approved live-fire plan from the
    authoring session(s), including vetoed entries with their reason.
    Updated when the extend sub-procedure adds new endpoints.
@@ -192,13 +197,17 @@ shape of `<endpoint>.json` files that every child skill writes:
 
 ```json
 {
-  "endpoint_ref": "jentic catalog identifier",
+  "endpoint_ref": "jentic catalog identifier (optional)",
   "recorded_at": "ISO-8601 timestamp",
   "request": {
     "method": "POST | GET | ...",
     "url_template": "https://api.example.com/...",
     "headers": { "Content-Type": "application/json", "...": "..." },
-    "body": { "...": "..." }
+    "body": { "...": "..." },
+    "body_inputs_schema": {
+      "phase": { "required": true,  "values": ["base", "management", "test"] },
+      "action": { "required": true, "values": ["plan", "apply", "verify", "apply-and-verify", "destroy"] }
+    }
   },
   "response": {
     "status": 204
@@ -207,12 +216,20 @@ shape of `<endpoint>.json` files that every child skill writes:
 ```
 
 Notes:
-- `response.status` only — no response body schema (Res #13 dropped
-  drift detection).
-- `request.body` is the verified working body from the live-fire test.
-- `url_template` uses `{owner}`, `{repo}`, etc. as placeholders.
-- `endpoint_ref` is the identifier jentic returned in the catalog
-  search; preserves traceability if jentic's catalog changes.
+- `endpoint_ref` is **optional** (Res #18); populated when jentic
+  returns a stable identifier in catalog search, omitted otherwise.
+- `recorded_at` is informational (drift detection was dropped — Res
+  #13); it's there for audit, not policy.
+- `response.status` only — no response body schema (Res #13).
+- `request.body` is the verified working body from the live-fire
+  test — a concrete example.
+- `request.body_inputs_schema` lists which `body` keys are
+  call-time inputs and what values are allowed (Res #17). Keys in
+  `body` that aren't in `body_inputs_schema` are fixed and reused
+  as-is on every call. This is what prevents mechanical reuse from
+  triggering the wrong dispatch.
+- `url_template` uses `{owner}`, `{repo}`, etc. as path placeholders;
+  substitution is positional and obvious.
 
 The README also includes one fully-worked example
 (`workflow_dispatch`) so child authors have a concrete model.
