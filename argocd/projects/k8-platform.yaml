@@ -1,0 +1,36 @@
+# ArgoCD AppProject scoping all platform-managed Applications.
+#
+# Tight scope by design:
+#   - sourceRepos: this repo only (no third-party charts via Argo —
+#     those go through Crossplane/Helm in terraform).
+#   - destinations: management cluster's namespaces only (workload
+#     clusters get their own Project later).
+#   - clusterResourceWhitelist / namespaceResourceWhitelist scoped to
+#     the kinds this project actually deploys (XRDs, ClusterSecretStores,
+#     etc.); broaden deliberately, not silently.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: k8-platform
+  namespace: argocd
+spec:
+  description: "Platform-managed resources (XRDs, Compositions, ClusterSecretStores)"
+  sourceRepos:
+    - "https://github.com/lago-morph/k8-platform.git"
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: "*"
+  clusterResourceWhitelist:
+    - group: "apiextensions.crossplane.io"
+      kind: "*"
+    - group: "external-secrets.io"
+      kind: "ClusterSecretStore"
+    - group: "kyverno.io"
+      kind: "ClusterPolicy"
+    - group: ""
+      kind: "Namespace"
+  namespaceResourceWhitelist:
+    - group: "external-secrets.io"
+      kind: "*"
+    - group: "platform.k8-platform.io"
+      kind: "*"

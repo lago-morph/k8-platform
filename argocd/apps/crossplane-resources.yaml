@@ -1,0 +1,42 @@
+# ArgoCD Application — syncs crossplane/ (XRDs, Compositions, example
+# claims) from this Git repo to the management cluster.
+#
+# Sync ordering note: this Application lands XRDs and Compositions.
+# The ClusterSecretStore (in management-cluster-config) MUST be Ready
+# BEFORE any PlatformSecret claim renders an ExternalSecret that
+# references it. The `sync-wave` annotations on each Application enforce
+# the order: ESO config = wave -10, crossplane resources = wave 0.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: crossplane-resources
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: k8-platform
+  source:
+    repoURL: https://github.com/lago-morph/k8-platform.git
+    targetRevision: main
+    path: crossplane
+    directory:
+      recurse: true
+      include: '{xrds/*.yaml,compositions/*.yaml}'
+      # claims/ deliberately excluded — those are example manifests,
+      # not platform resources. Users apply them by hand.
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: crossplane-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m

@@ -1,0 +1,92 @@
+# Deletion cleanup: deleting a PlatformSecret claim removes both the
+# ExternalSecret AND the underlying ASM secret.
+#
+# Per adversarial-reviewer A.13: assert deletionPolicy=Delete (not
+# Orphan) is the actual default behaviour. Per B.E.8: rely on the
+# Composition's recoveryWindowInDays=0 so the ASM secret is gone
+# immediately, not "scheduled for deletion".
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: claim-deletion-cleanup
+spec:
+  timeouts:
+    apply: 30s
+    assert: 120s
+    delete: 60s
+  steps:
+    - name: apply a claim
+      try:
+        - apply:
+            resource:
+              apiVersion: platform.k8-platform.io/v1alpha1
+              kind: PlatformSecret
+              metadata:
+                name: ($values.claimName)
+                namespace: default
+              spec:
+                refreshInterval: 30s
+                region: ($values.region)
+                description: "chainsaw scenario 01 — deletion cleanup"
+
+    - name: wait for claim Ready (otherwise deletion races provisioning)
+      try:
+        - assert:
+            resource:
+              apiVersion: platform.k8-platform.io/v1alpha1
+              kind: PlatformSecret
+              metadata:
+                name: ($values.claimName)
+                namespace: default
+              status:
+                conditions:
+                  - type: Ready
+                    status: "True"
+
+    - name: capture XR UID so we can verify ASM teardown out-of-band
+      try:
+        - script:
+            content: |
+              xr=$(kubectl get platformsecret ${CLAIM_NAME} -n default -o jsonpath='{.spec.resourceRef.name}')
+              uid=$(kubectl get xplatformsecret "$xr" -o jsonpath='{.metadata.uid}')
+              echo "k8-platform/${uid}" > /tmp/scenario01-asm-key.txt
+              echo "captured: $(cat /tmp/scenario01-asm-key.txt)"
+            env:
+              - name: CLAIM_NAME
+                value: ($values.claimName)
+
+    - name: delete the claim
+      try:
+        - delete:
+            ref:
+              apiVersion: platform.k8-platform.io/v1alpha1
+              kind: PlatformSecret
+              name: ($values.claimName)
+              namespace: default
+
+    - name: assert ExternalSecret is gone
+      try:
+        - error:
+            resource:
+              apiVersion: external-secrets.io/v1beta1
+              kind: ExternalSecret
+              metadata:
+                name: ($values.claimName)
+                namespace: default
+
+    - name: assert ASM secret is gone (out-of-band aws CLI check)
+      try:
+        - script:
+            content: |
+              set -euo pipefail
+              key=$(cat /tmp/scenario01-asm-key.txt)
+              echo "Checking ASM key is gone: $key"
+              # describe-secret returns 254 (no such secret) — that's success.
+              if aws secretsmanager describe-secret \
+                  --secret-id "$key" \
+                  --region "${AWS_REGION:-us-east-1}" \
+                  >/dev/null 2>&1; then
+                echo "FAIL: ASM secret $key still exists after claim delete"
+                exit 1
+              fi
+              echo "OK: ASM secret $key is gone"

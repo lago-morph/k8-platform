@@ -1,0 +1,79 @@
+# Happy-path: applying a PlatformSecret claim provisions an ASM secret
+# AND an ExternalSecret in the claim's namespace.
+#
+# Per adversarial-reviewer B.B.3: claim name carries CHAINSAW_RUN_ID
+# suffix so parallel CI runs against the same AWS account don't
+# collide on the ASM secret name (which is derived from XR UID, but
+# the K8s claim name still collides at the kubectl-apply layer).
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: claim-creates-secret
+spec:
+  timeouts:
+    apply: 30s
+    assert: 120s
+  steps:
+    - name: apply a PlatformSecret claim
+      try:
+        - apply:
+            resource:
+              apiVersion: platform.k8-platform.io/v1alpha1
+              kind: PlatformSecret
+              metadata:
+                name: ($values.claimName)
+                namespace: default
+              spec:
+                refreshInterval: 30s
+                region: ($values.region)
+                description: "chainsaw scenario 00 — happy path"
+
+    - name: assert claim becomes Ready
+      try:
+        - assert:
+            resource:
+              apiVersion: platform.k8-platform.io/v1alpha1
+              kind: PlatformSecret
+              metadata:
+                name: ($values.claimName)
+                namespace: default
+              status:
+                conditions:
+                  - type: Ready
+                    status: "True"
+                  - type: Synced
+                    status: "True"
+
+    - name: assert ExternalSecret materialized in claim namespace
+      try:
+        - assert:
+            resource:
+              apiVersion: external-secrets.io/v1beta1
+              kind: ExternalSecret
+              metadata:
+                name: ($values.claimName)
+                namespace: default
+              spec:
+                secretStoreRef:
+                  kind: ClusterSecretStore
+                  name: aws-secrets-manager
+
+    - name: assert ASM secret exists (out-of-band aws CLI check)
+      try:
+        - script:
+            content: |
+              set -euo pipefail
+              # The Composition derives the ASM name from XR UID — fetch
+              # the XR (composite) name to find the ASM key.
+              xr=$(kubectl get platformsecret ${CLAIM_NAME} -n default -o jsonpath='{.spec.resourceRef.name}')
+              uid=$(kubectl get xplatformsecret "$xr" -o jsonpath='{.metadata.uid}')
+              key="k8-platform/${uid}"
+              echo "Looking up ASM secret: $key"
+              aws secretsmanager describe-secret \
+                --secret-id "$key" \
+                --region "${AWS_REGION:-us-east-1}" \
+                --output text > /tmp/asm-describe.txt
+              grep -q "$key" /tmp/asm-describe.txt
+            env:
+              - name: CLAIM_NAME
+                value: ($values.claimName)
