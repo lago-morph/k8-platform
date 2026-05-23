@@ -61,16 +61,16 @@ After they merge their branches are deleted; you start from `main`.
 
 | Field | Value |
 |---|---|
-| Active phase | (none — fresh account, restart from phase 0) |
-| Last update | 2026-05-23 (handoff for new session) |
-| AWS account | (will be whatever credentials are in GitHub Secrets — confirm via `scripts/aws-creds-check.sh`) |
+| Active phase | 1 (management apply-and-verify in flight) |
+| Last update | 2026-05-23 (phase 0 verified on fresh account 309191981509) |
+| AWS account | `309191981509` — Route53 zone `309191981509.realhandsonlabs.net` (Z0426781193AJAT8UDLZO) |
 
 ### Phase states
 
 | Phase | State | Last action | Run URL |
 |---|---|---|---|
-| 0 base | code-only | (previous session's cluster is gone; restart from scratch) | — |
-| 1 management | code-only | (previous session's cluster is gone; restart from scratch) | — |
+| 0 base | verified | 2026-05-23 apply-and-verify ✅ (25 resources, ACM ISSUED, Cognito ready) | https://github.com/lago-morph/k8-platform/actions/runs/26340162917 |
+| 1 management | applied? | 2026-05-23 apply-and-verify in flight on `claude/sweet-mayer-swD65` | — |
 | 2 xrds | not-coded | — | — |
 | 3 platform | not-coded | — | — |
 | 4 observability | not-coded | — | — |
