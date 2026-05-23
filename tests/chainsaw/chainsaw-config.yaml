@@ -19,7 +19,3 @@ spec:
   # apply of XRDs/Compositions has caused webhook-related flakes
   # historically.
   parallel: 1
-  # Always collect cluster diagnostics on failure so PR-comment reviewers
-  # can see what blew up without re-running.
-  failureMode: continue
-  forceTerminationGracePeriodSeconds: 5
