@@ -1,7 +1,0 @@
-# Values for scenario 00. Claim name is a static literal; chainsaw v0.2.12
-# doesn't evaluate `env('VAR')` in value expressions, and we don't need
-# per-run isolation at the k8s name level — the kind cluster is fresh
-# per CI run, and the Composition derives the ASM name from XR UID
-# (also unique per claim creation).
-claimName: scenario00
-region: us-east-1

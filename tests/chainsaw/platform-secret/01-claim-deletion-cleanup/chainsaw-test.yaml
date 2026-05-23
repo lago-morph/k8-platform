@@ -22,11 +22,11 @@ spec:
               apiVersion: platform.k8-platform.io/v1alpha1
               kind: PlatformSecret
               metadata:
-                name: ($values.claimName)
+                name: scenario01
                 namespace: default
               spec:
                 refreshInterval: 30s
-                region: ($values.region)
+                region: us-east-1
                 description: "chainsaw scenario 01 — deletion cleanup"
 
     - name: wait for claim Ready (otherwise deletion races provisioning)
@@ -36,7 +36,7 @@ spec:
               apiVersion: platform.k8-platform.io/v1alpha1
               kind: PlatformSecret
               metadata:
-                name: ($values.claimName)
+                name: scenario01
                 namespace: default
               status:
                 conditions:
@@ -53,7 +53,7 @@ spec:
               echo "captured: $(cat /tmp/scenario01-asm-key.txt)"
             env:
               - name: CLAIM_NAME
-                value: ($values.claimName)
+                value: scenario01
 
     - name: delete the claim
       try:
@@ -61,7 +61,7 @@ spec:
             ref:
               apiVersion: platform.k8-platform.io/v1alpha1
               kind: PlatformSecret
-              name: ($values.claimName)
+              name: scenario01
               namespace: default
 
     - name: assert ExternalSecret is gone
@@ -71,7 +71,7 @@ spec:
               apiVersion: external-secrets.io/v1beta1
               kind: ExternalSecret
               metadata:
-                name: ($values.claimName)
+                name: scenario01
                 namespace: default
 
     - name: assert ASM secret is gone (out-of-band aws CLI check)
