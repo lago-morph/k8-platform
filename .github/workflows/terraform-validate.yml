@@ -1,0 +1,68 @@
+# Run `terraform fmt -check` and `terraform validate` on every push.
+#
+# Why: terraform-test.yml is workflow_dispatch-only, so format and
+# validation drift can land on main without anyone noticing until the
+# next manual dispatch. This workflow gates the cheap checks on every
+# push so they catch authoring-time mistakes before they reach an apply.
+#
+# Doesn't init against the real backend — `terraform init -backend=false`
+# downloads providers and module sources without touching S3, which lets
+# `validate` run on a branch where the state bucket may not exist yet
+# (e.g. a fresh-account session before phase 0 has been applied).
+name: Terraform validate
+
+on:
+  push:
+    branches-ignore:
+      - main
+    paths:
+      - "terraform/**"
+      - ".github/workflows/terraform-validate.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: terraform-validate-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: ${{ matrix.module }} — fmt + validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - base
+          - management
+    defaults:
+      run:
+        working-directory: terraform/${{ matrix.module }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.6"
+          terraform_wrapper: false
+
+      - name: terraform fmt -check -diff
+        # Recursive so a stray .tf file under .terraform/ wouldn't be
+        # exempt — except .terraform/ is .gitignored anyway. -diff prints
+        # the formatted-vs-actual delta so failures are diagnosable from
+        # the GH Actions log directly, no need to re-run locally.
+        run: terraform fmt -check -recursive -diff
+
+      - name: terraform init (no backend, no AWS)
+        # -backend=false: skip the S3 backend — validation doesn't need
+        # state. -input=false: never prompt. Module + provider downloads
+        # come from public registries; no AWS creds required.
+        run: terraform init -backend=false -input=false
+
+      - name: terraform validate
+        run: terraform validate -no-color
