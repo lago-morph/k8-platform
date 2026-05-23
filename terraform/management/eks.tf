@@ -16,6 +16,11 @@ module "eks" {
   # Restrict to operator IP ranges in production environments.
   cluster_endpoint_public_access = true
 
+  # EKS module v20 defaults this to false. Without it, the IAM principal that
+  # creates the cluster has no access entry and the helm provider's token is
+  # rejected ("the server has asked for the client to provide credentials").
+  enable_cluster_creator_admin_permissions = true
+
   # Enable OIDC provider — required for IRSA.
   enable_irsa = true
 
