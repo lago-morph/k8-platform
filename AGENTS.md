@@ -93,6 +93,36 @@ clarification**.
 2. **After every state change (apply, verify, destroy), update the
    Environment State block at the top of `ai/handoff.md` and commit.**
 
+### 5.1 "Tear down phase X" — precise definition
+
+When the user says "tear down phase X" (or "destroy phase X",
+"remove phase X", or equivalent), the scope is **exactly** these
+three steps, in order:
+
+1. **Delete every Claim** that was created from XRDs introduced in
+   phase X. Wait for Crossplane to deprovision the underlying cloud
+   resources (`kubectl wait --for=delete claim/<name>`), with a
+   per-claim timeout suitable for the resource type (5 min for S3,
+   20 min for EKS).
+2. **Delete the XRDs / Compositions / supporting manifests** that
+   phase X introduced from the cluster (`kubectl delete -f crossplane/...`
+   for the files touched by phase X).
+3. **Run `terraform destroy`** for any Terraform module the phase X
+   PR added or substantially modified, in reverse dependency order.
+
+The scope **does NOT include**:
+
+- Tearing down phase X-1 or anything lower (re-asserts §5 invariant 1).
+- Touching the management cluster's bootstrap stack (ingress-nginx,
+  ArgoCD, ESO, Crossplane core, ExternalDNS, Kyverno) — those are
+  phase 1 infrastructure and outlive every higher phase.
+- Deleting Terraform state files for phases not being torn down.
+- Removing IRSA roles or IAM policies that other phases depend on.
+
+If the user wants a broader teardown they will say so explicitly
+("tear down everything", "tear down phase 0 and 1", etc.). When
+in doubt, ask before destroying.
+
 ---
 
 ## 6. Test discipline (load-bearing — read this twice)
