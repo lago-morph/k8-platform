@@ -186,11 +186,64 @@ or generated at runtime.
 
 ---
 
+## What Was Done — 2026-05-23 (Phase 1 verified + test scaffolding)
+
+1. **Phase 1 verified end-to-end** in the Pluralsight sandbox. PR #34
+   contains the seven fixes that took us from cold management apply to a
+   live ArgoCD UI reachable over HTTPS through the NLB. See
+   `ai/TESTING-PLAN.md` for the bug-to-test traceability matrix.
+
+2. **Test scaffolding landed** to prevent another seven-strike phase-1
+   bring-up. Three layers (and a fourth planned):
+
+   - `tests/unit/` — four new suites: `test_helm_render.sh`,
+     `test_irsa_helm_linkage.sh`, `test_iam_required_actions.sh`,
+     `test_eks_module_defaults.sh`. All run in <30s, no AWS / no cluster.
+     Catch five of the seven phase-1 bugs at authoring time.
+   - `policies/audit/` — Kyverno installed in Audit mode with 8 starter
+     ClusterPolicies. Acts as continuous in-cluster assertion store.
+   - `tests/integration/` — 10 end-to-end smoke tests (ArgoCD app sync,
+     ExternalDNS → Route53, NLB → nginx → echo, ESO secret round-trip,
+     Crossplane MR + XRD/Claim, IRSA STS round-trip, Kyverno report,
+     selfHeal loop, secondary ingress). Orchestrator at
+     `tests/integration/run.sh`.
+   - **(Planned)** `tests/chainsaw/` — Kyverno Chainsaw for Crossplane
+     logic, to be authored as the first deliverable of phase 2. See
+     `ai/TESTING-PLAN.md` §"Layer 4 (planned)".
+
+3. **Helper scripts** under `scripts/`: `k8s-status.sh`, `k8s-logs.sh`,
+   `diag-component.sh`, `kyverno-policies.sh`, `kyverno-violations.sh`,
+   `argocd-apps.sh`, `route53-records.sh`, `sandbox-creds-check.sh`.
+   All read-only, all deterministic, source-pinned at top with usage.
+
+4. **Workflow diagnostics improved**: the management argocd-url verify
+   step now queries Route53 directly (not `dig` against public
+   resolvers) and dumps pod logs / events / ingress YAML on failure.
+   Same diagnostic block now mirrors to the HTTP step too.
+
+---
+
 ## Immediate Next Step
 
-**Run a full `apply-and-destroy` cycle** to validate management module
-end-to-end (base apply+destroy was confirmed on 2026-05-04; management was
-blocked by EKS/Crossplane bugs, now fixed).
+**Phase 2: Crossplane foundations.** Authorial order:
+
+1. Author `tests/chainsaw/` infrastructure first (kind config, run.sh,
+   per-XRD Test fixtures). See `ai/TESTING-PLAN.md` §"Layer 4 (planned)".
+2. Author `crossplane/xrds/platform-secret.yaml` + composition; verify
+   green via Chainsaw before any AWS apply.
+3. Author `crossplane/xrds/platform-cluster.yaml` + composition; verify
+   green via Chainsaw.
+4. Re-apply management module to register both XRDs in the live cluster
+   (terraform_data already in place would re-fire if XRDs added there;
+   for phase 2 they ship as ArgoCD-managed instead — wire an ArgoCD
+   Application pointing at `crossplane/`).
+5. Run `tests/integration/05_crossplane_managed_resource.sh` and
+   `06_crossplane_xrd_claim.sh` to confirm round-trip against real AWS.
+
+**Skipped from previous plan:** the standalone "apply-and-destroy" cycle
+is no longer the milestone — phase 1's `apply-and-verify` is already
+fully green and the seven canonical fixes are committed on
+`claude/busy-tesla-pe3Ey` (PR #34).
 
 1. Start a fresh Pluralsight AWS sandbox session
 2. Copy the three AWS credentials into GitHub repository secrets
