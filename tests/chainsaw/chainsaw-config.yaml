@@ -1,0 +1,25 @@
+# Chainsaw config — shared across every scenario in this directory.
+#
+# https://kyverno.github.io/chainsaw/latest/configuration/
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Configuration
+metadata:
+  name: k8-platform
+spec:
+  # Tight defaults — chainsaw scenarios should NOT hang the harness if
+  # something is broken. Per-scenario overrides go in the Test spec.
+  timeouts:
+    apply: 30s
+    assert: 60s
+    error: 30s
+    delete: 60s
+    cleanup: 60s
+    exec: 60s
+  # Run scenarios serially — they share the kind cluster, and parallel
+  # apply of XRDs/Compositions has caused webhook-related flakes
+  # historically.
+  parallel: 1
+  # Always collect cluster diagnostics on failure so PR-comment reviewers
+  # can see what blew up without re-running.
+  failureMode: continue
+  forceTerminationGracePeriodSeconds: 5
