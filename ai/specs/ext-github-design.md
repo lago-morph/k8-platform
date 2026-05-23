@@ -76,7 +76,12 @@ To be populated by the next agent by querying user before §Critique. One row pe
 | 11| Sandbox-budget policy for long CI runs  | (a) Fire-and-forget  | Agent dispatches regardless of remaining sandbox budget. Human collects results from Actions UI if a run outlives the sandbox. The whole workflow only needs to be durable until platform implementation completes — total dispatch volume is 10–20 ever, so optimising for the rare end-of-session case is overengineering. |
 | 12| Dispatch targeting `main`               | (c) Rely on repo     | No skill-level restriction. Relies on repository branch protections / environment protection rules. Consistent with the lightweight, "fix-when-it-bites" stance from Risks #5/#7/#11. |
 
-(Add rows 13+ here if §Critique introduces additional risks worth slotting in.)
+| 13| Drift detection trigger is fuzzy        | (c) Drop drift detection | No drift detection. Runtime call failures handled as ordinary failures. Removes ambiguity about what counts as "material" change. |
+| 14| Queue-depth gate self-vs-other          | (c) Refuse-or-queue  | No diagnosis. If >2 runs already queued for `(ref, phase)`, refuse and tell the user verbatim. Drops Resolution #3's diagnosis attempt; keeps the gate. |
+| 15| `resources/<endpoint>.json` format      | (a) Strict JSON schema | `resources/README.md` defines required top-level keys: `request: {method, url_template, headers, body}`, `response: {status}` (no body_schema, per Risk #13), `recorded_at`, `endpoint_ref`. TEMPLATE.md checklist references the schema. |
+| 16| Extending an existing ext-{service}     | (a) Explicit sub-procedure | `reference/procedure.md` defines an "extend" flow: catalog search → test plan covers only the new endpoint(s) → existing recorded shapes untouched unless the user requests re-verify. Distinct from "create new". |
+
+(Add rows 17+ here if a later §Critique introduces additional risks worth slotting in.)
 
 ---
 
