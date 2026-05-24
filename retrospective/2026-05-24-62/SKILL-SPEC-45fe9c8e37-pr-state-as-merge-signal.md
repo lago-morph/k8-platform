@@ -1,5 +1,8 @@
 # Spec: `pr-state-as-merge-signal`
 
+- **ID**: SKILL-SPEC-45fe9c8e37
+- **Source retrospective**: ../2026-05-24-62.md
+
 ## Intent
 
 A pull request's draft/ready state IS the agent's signal to the user about whether to merge. Treat it as load-bearing UI: a draft PR means "do not merge yet", a ready-for-review PR means "merge when you have time". Authoring everything as draft regardless of state confuses the user about which to merge; opening as ready while CI is still pending leaves red badges visible until the next push.

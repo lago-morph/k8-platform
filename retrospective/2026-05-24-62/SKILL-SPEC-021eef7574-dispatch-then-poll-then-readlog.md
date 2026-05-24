@@ -1,5 +1,8 @@
 # Spec: `dispatch-then-poll-then-readlog`
 
+- **ID**: SKILL-SPEC-021eef7574
+- **Source retrospective**: ../2026-05-24-62.md
+
 ## Intent
 
 A `workflow_dispatch` is a three-step interaction, not one: dispatch, poll until complete, then read the relevant step's log. Each step has its own failure mode, and skipping any of them is how you end up reporting "success" against a workflow that hasn't finished or whose script silently failed.

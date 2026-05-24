@@ -1,5 +1,8 @@
 # Spec: `verify-evidence-not-exit-codes`
 
+- **ID**: SKILL-SPEC-92c9f7a0af
+- **Source retrospective**: ../2026-05-24-62.md
+
 ## Intent
 
 After an action that touches a layered system (workflow dispatch, kubectl apply, ArgoCD sync, PR merge), do not trust the outermost wrapper's success indicator. Read the actual evidence — log lines, status conditions, API response bodies — and quote them before reporting an outcome. The skill captures and enforces this discipline.

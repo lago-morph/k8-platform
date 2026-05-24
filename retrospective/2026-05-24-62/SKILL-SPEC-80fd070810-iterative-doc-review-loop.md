@@ -1,5 +1,8 @@
 # Spec: `iterative-doc-review-loop`
 
+- **ID**: SKILL-SPEC-80fd070810
+- **Source retrospective**: ../2026-05-24-62.md
+
 ## Intent
 
 For long-form prose documents that must be load-bearing (handoffs, RFCs, specs, plans), one pass is not enough. Run iterations of `subagent review + self review → consolidate findings → fix → re-review` until a fresh pass surfaces no major or factual errors. Most documents stabilize in 2–4 iterations.

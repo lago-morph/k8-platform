@@ -1,5 +1,8 @@
 # Spec: `subagent-log-extraction`
 
+- **ID**: SKILL-SPEC-bbb1a32642
+- **Source retrospective**: ../2026-05-24-62.md
+
 ## Intent
 
 When a tool result is too large for the parent agent's context (the harness saves it to a file path), spawn a subagent in fresh context to extract findings. The subagent reads the full file, applies targeted queries (jq / python / regex), and returns a focused summary with verbatim quotes. The parent agent never loads the giant log.

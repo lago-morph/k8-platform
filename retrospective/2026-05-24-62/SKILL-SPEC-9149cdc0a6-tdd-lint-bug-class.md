@@ -1,5 +1,8 @@
 # Spec: `tdd-lint-bug-class`
 
+- **ID**: SKILL-SPEC-9149cdc0a6
+- **Source retrospective**: ../2026-05-24-62.md
+
 ## Intent
 
 Every bug fixed in this codebase is an opportunity to install a lint that prevents the bug class from returning. Write the lint **before** the fix (TDD): red → fix → green → wire into runner. This makes the lint demonstrably effective (it caught the bug) and adds a defending invariant for future code.

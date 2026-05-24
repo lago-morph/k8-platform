@@ -1,5 +1,8 @@
 # Spec: `chainsaw-script-dialect-awareness`
 
+- **ID**: SKILL-SPEC-085176fac1
+- **Source retrospective**: ../2026-05-24-62.md
+
 ## Intent
 
 Chainsaw's `script:` step runs with `/usr/bin/sh`, not bash. On Ubuntu 24.04 GH-hosted runners that's `dash`, which does NOT support `set -o pipefail` and several other bashisms. Additionally, Crossplane's XRD `status.conditions` array order is non-deterministic, so positional asserts in chainsaw `assert:` blocks are unreliable for those resources. This skill captures both gotchas as enforceable patterns.

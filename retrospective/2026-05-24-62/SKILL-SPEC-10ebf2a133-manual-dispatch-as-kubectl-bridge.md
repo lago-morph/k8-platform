@@ -1,5 +1,8 @@
 # Spec: `manual-dispatch-as-kubectl-bridge`
 
+- **ID**: SKILL-SPEC-10ebf2a133
+- **Source retrospective**: ../2026-05-24-62.md
+
 ## Intent
 
 When the agent needs to run a kubectl/AWS/ArgoCD command against a live cluster but has no direct cluster access (sandbox doesn't have AWS creds, no kubeconfig), author a manual-dispatch workflow that takes the command's intent as an input and prints the output to the workflow log. Treat it as a remote-exec channel.

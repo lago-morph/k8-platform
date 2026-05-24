@@ -1,5 +1,8 @@
 # Spec: `kyverno-argocd-drift-defense`
 
+- **ID**: SKILL-SPEC-738ec4c6b3
+- **Source retrospective**: ../2026-05-24-62.md
+
 ## Intent
 
 When ArgoCD manages Kyverno ClusterPolicies (or any resource whose controller mutates the spec after admission), the policy will drift `OutOfSync` perpetually because Kyverno's defaults arrive after ArgoCD's apply. The fix is to set the mutated fields explicitly in the source manifest so the controller has nothing to add — OR, as a fallback, add ArgoCD `ignoreDifferences` for those JSON paths.

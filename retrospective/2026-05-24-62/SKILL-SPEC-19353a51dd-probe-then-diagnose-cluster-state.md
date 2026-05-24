@@ -1,5 +1,8 @@
 # Spec: `probe-then-diagnose-cluster-state`
 
+- **ID**: SKILL-SPEC-19353a51dd
+- **Source retrospective**: ../2026-05-24-62.md
+
 ## Intent
 
 When the agent needs to know "is this thing actually working on the cluster?" but has no direct kubectl/API access, the cheapest reliable answer is: apply a throwaway probe resource, wait, dump all relevant state, clean up. Faster than re-running a full apply-and-verify, more informative than checking individual statuses one at a time.

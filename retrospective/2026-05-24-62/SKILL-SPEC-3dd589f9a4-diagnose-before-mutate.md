@@ -1,5 +1,8 @@
 # Spec: `diagnose-before-mutate`
 
+- **ID**: SKILL-SPEC-3dd589f9a4
+- **Source retrospective**: ../2026-05-24-62.md
+
 ## Intent
 
 Before consuming any expensive mutating operation (apply-and-verify on management cluster ~15 min; tear-down + rebuild ~30 min; EKS provisioning ~15 min), run a cheap read-only diagnose first. Confirm the inputs are right; surface latent bugs that would waste the long cycle. The asymmetry is huge: a 2-minute diagnose can save 15+ minutes of CI per mistake.
