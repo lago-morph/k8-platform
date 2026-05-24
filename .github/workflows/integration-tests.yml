@@ -1,0 +1,105 @@
+# Integration tests against the live management EKS cluster.
+#
+# Manual dispatch only — runs every tests/integration/NN_*.sh against
+# the real cluster, with optional filtering to a single test number.
+#
+# Why a separate workflow (not piggybacking on terraform-test.yml):
+# the existing `phase=test action=test-e2e` step references
+# `tests/e2e/run.sh` which doesn't exist (the orchestrator lives at
+# `tests/integration/run.sh`). Rather than reshape the canonical
+# test-bundle path right now, this workflow is a focused tool for
+# validating that phase 2 (PlatformSecret) landed correctly on the
+# live cluster after `phase=management action=apply-and-verify`.
+#
+# The integration tests skip cleanly (exit 2) when a precondition is
+# missing (e.g. CRD not present), so an early-run before ArgoCD
+# finishes syncing degrades to skips rather than failures.
+name: Integration tests (live cluster)
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_filter:
+        description: |
+          Optional integration test number prefix to run, e.g. "11"
+          for just 11_platform_secret_e2e.sh. Leave empty to run all.
+        required: false
+        default: ""
+
+concurrency:
+  # Don't let two manual dispatches race against the same cluster
+  # state. Queue rather than cancel — cleanup matters.
+  group: integration-tests-live
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    name: Integration tests
+    runs-on: ubuntu-24.04
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install yq
+        run: |
+          set -e
+          sudo curl -fsSL \
+            "https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64" \
+            -o /usr/local/bin/yq
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Verify AWS CLI
+        run: |
+          aws sts get-caller-identity
+
+      - name: Configure kubectl for management cluster
+        run: |
+          # Cluster name is fixed by the management module's variables.tf
+          # (k8-platform-mgmt). Region from the AWS_REGION secret. No
+          # terraform output required — this workflow runs without a
+          # terraform clone of state, intentionally.
+          aws eks update-kubeconfig \
+            --name k8-platform-mgmt \
+            --region "${AWS_REGION}"
+          kubectl version --client
+          kubectl get nodes
+
+      - name: Show ArgoCD application status (pre-flight)
+        run: |
+          kubectl get applications -n argocd \
+            -o custom-columns=NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status \
+            || true
+          echo ""
+          kubectl get clustersecretstore aws-secrets-manager \
+            -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}{"\n"}' \
+            2>/dev/null || true
+          echo ""
+          kubectl get crd platformsecrets.platform.k8-platform.io \
+            platformclusters.platform.k8-platform.io 2>&1 || true
+
+      - name: Run integration tests
+        env:
+          TEST_FILTER: ${{ inputs.test_filter }}
+        run: |
+          set -o pipefail
+          if [ -n "${TEST_FILTER}" ]; then
+            # Run a single test directly. The integration scripts use
+            # their own exit codes (0 pass, 2 skip, other fail) — let
+            # them propagate as the job's exit.
+            script=$(ls -1 tests/integration/${TEST_FILTER}_*.sh 2>/dev/null | head -1)
+            if [ -z "$script" ]; then
+              echo "no test matching prefix '${TEST_FILTER}' under tests/integration/"
+              exit 1
+            fi
+            echo "── running $script ──────────────────────────────"
+            bash "$script"
+          else
+            tests/integration/run.sh
+          fi
