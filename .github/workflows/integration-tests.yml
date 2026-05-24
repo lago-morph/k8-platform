@@ -1,27 +1,38 @@
-# Integration tests against the live management EKS cluster.
+# Manual-dispatch tooling against the live management EKS cluster.
 #
-# Manual dispatch only — runs every tests/integration/NN_*.sh against
-# the real cluster, with optional filtering to a single test number.
+# Four modes (see `mode` input):
+#   - test            (default) run tests/integration/NN_*.sh (filter optional)
+#   - teardown-phase-2  cascade-delete phase-2 ArgoCD apps + their managed resources
+#   - verify-absent     confirm phase-2 resources are gone
+#   - rebuild           re-create phase-2 ArgoCD apps from git
+#
+# Phase 2 teardown/rebuild lifecycle is documented end-to-end in
+# `ai/PHASE-2-LIFECYCLE-PLAN.md`. This workflow is the implementation.
 #
 # Why a separate workflow (not piggybacking on terraform-test.yml):
 # the existing `phase=test action=test-e2e` step references
-# `tests/e2e/run.sh` which doesn't exist (the orchestrator lives at
+# `tests/e2e/run.sh` which doesn't exist (orchestrator lives at
 # `tests/integration/run.sh`). Rather than reshape the canonical
-# test-bundle path right now, this workflow is a focused tool for
-# validating that phase 2 (PlatformSecret) landed correctly on the
-# live cluster after `phase=management action=apply-and-verify`.
-#
-# The integration tests skip cleanly (exit 2) when a precondition is
-# missing (e.g. CRD not present), so an early-run before ArgoCD
-# finishes syncing degrades to skips rather than failures.
+# test-bundle path, this workflow is a focused tool for phase-2
+# lifecycle operations on the already-applied cluster.
 name: Integration tests (live cluster)
 
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: "What to do"
+        required: true
+        default: "test"
+        type: choice
+        options:
+          - test
+          - teardown-phase-2
+          - verify-absent
+          - rebuild
       test_filter:
         description: |
-          Optional integration test number prefix to run, e.g. "11"
+          (mode=test only) Integration test number prefix, e.g. "11"
           for just 11_platform_secret_e2e.sh. Leave empty to run all.
         required: false
         default: ""
@@ -37,7 +48,7 @@ permissions:
 
 jobs:
   integration:
-    name: Integration tests
+    name: "${{ inputs.mode }}"
     runs-on: ubuntu-24.04
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -61,10 +72,9 @@ jobs:
 
       - name: Configure kubectl for management cluster
         run: |
-          # Cluster name is fixed by the management module's variables.tf
-          # (k8-platform-mgmt). Region from the AWS_REGION secret. No
-          # terraform output required — this workflow runs without a
-          # terraform clone of state, intentionally.
+          # Cluster name is fixed by management/variables.tf (k8-platform-mgmt).
+          # No terraform output dependency — pure consumer of an already-
+          # applied cluster.
           aws eks update-kubeconfig \
             --name k8-platform-mgmt \
             --region "${AWS_REGION}"
@@ -77,29 +87,226 @@ jobs:
             -o custom-columns=NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status \
             || true
           echo ""
+          echo "── ClusterSecretStore aws-secrets-manager Ready: ──"
           kubectl get clustersecretstore aws-secrets-manager \
             -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}{"\n"}' \
             2>/dev/null || true
           echo ""
+          echo "── platform.k8-platform.io CRDs: ──"
           kubectl get crd platformsecrets.platform.k8-platform.io \
             platformclusters.platform.k8-platform.io 2>&1 || true
 
+      # ─────────────────────────────────────────────────────────────
+      # MODE: test
+      # ─────────────────────────────────────────────────────────────
       - name: Run integration tests
+        if: inputs.mode == 'test'
         env:
           TEST_FILTER: ${{ inputs.test_filter }}
         run: |
           set -o pipefail
           if [ -n "${TEST_FILTER}" ]; then
-            # Run a single test directly. The integration scripts use
-            # their own exit codes (0 pass, 2 skip, other fail) — let
-            # them propagate as the job's exit.
             script=$(ls -1 tests/integration/${TEST_FILTER}_*.sh 2>/dev/null | head -1)
             if [ -z "$script" ]; then
               echo "no test matching prefix '${TEST_FILTER}' under tests/integration/"
               exit 1
             fi
-            echo "── running $script ──────────────────────────────"
+            echo "── running $script ──"
             bash "$script"
           else
             tests/integration/run.sh
           fi
+
+      # ─────────────────────────────────────────────────────────────
+      # MODE: teardown-phase-2
+      # Cascade-delete the two ArgoCD apps that own phase-2 resources.
+      # Order: claims → wait → disable selfHeal → delete apps with
+      # foreground cascade so finalizers run to completion.
+      # ─────────────────────────────────────────────────────────────
+      - name: Teardown phase 2
+        if: inputs.mode == 'teardown-phase-2'
+        run: |
+          set -e
+
+          echo "── B.1 delete in-flight PlatformSecret claims ──"
+          # If the CRD is gone (already torn down), skip cleanly.
+          if kubectl get crd platformsecrets.platform.k8-platform.io >/dev/null 2>&1; then
+            kubectl delete platformsecret --all -A --ignore-not-found || true
+          else
+            echo "  PlatformSecret CRD already absent — nothing to delete"
+          fi
+
+          echo ""
+          echo "── B.2 wait for composites + managed resources gone ──"
+          if kubectl get crd xplatformsecrets.platform.k8-platform.io >/dev/null 2>&1; then
+            # 5 min cap — claim deletion triggers Composition cascade →
+            # ASM API call → status propagation.
+            kubectl wait --for=delete xplatformsecret --all --timeout=300s 2>/dev/null || true
+          fi
+          # Also wait for any remaining ASM managed resources to drain.
+          if kubectl get crd secrets.secretsmanager.aws.upbound.io >/dev/null 2>&1; then
+            kubectl wait --for=delete secret.secretsmanager.aws.upbound.io --all --timeout=300s 2>/dev/null || true
+          fi
+
+          echo ""
+          echo "── B.3 disable selfHeal on the two phase-2 apps ──"
+          for app in crossplane-resources management-cluster-config; do
+            if kubectl get application "$app" -n argocd >/dev/null 2>&1; then
+              kubectl patch application "$app" -n argocd --type merge \
+                -p '{"spec":{"syncPolicy":{"automated":null}}}'
+              echo "  patched $app: selfHeal disabled"
+            else
+              echo "  $app already absent"
+            fi
+          done
+
+          echo ""
+          echo "── B.4 cascade-delete the apps ──"
+          # ArgoCD's resources-finalizer.argocd.argoproj.io triggers
+          # ordered prune of every resource the app manages. Foreground
+          # cascade blocks until finalizers complete.
+          for app in crossplane-resources management-cluster-config; do
+            if kubectl get application "$app" -n argocd >/dev/null 2>&1; then
+              # Ensure finalizer is set so cascade actually prunes.
+              kubectl patch application "$app" -n argocd --type merge \
+                -p '{"metadata":{"finalizers":["resources-finalizer.argocd.argoproj.io"]}}'
+              kubectl delete application "$app" -n argocd \
+                --cascade=foreground --timeout=600s &
+            fi
+          done
+          wait
+          echo "── teardown complete ──"
+
+      # ─────────────────────────────────────────────────────────────
+      # MODE: verify-absent
+      # ─────────────────────────────────────────────────────────────
+      - name: Verify phase 2 absent
+        if: inputs.mode == 'verify-absent'
+        run: |
+          set -e
+          fail=0
+
+          check_absent() {
+            local label="$1"; shift
+            if "$@" >/dev/null 2>&1; then
+              echo "  ✗ FAIL: $label — still present"
+              fail=1
+            else
+              echo "  ✓ ok: $label — absent"
+            fi
+          }
+
+          echo "── C.1 platform.k8-platform.io CRDs ──"
+          check_absent "platformsecrets CRD" \
+            kubectl get crd platformsecrets.platform.k8-platform.io
+          check_absent "xplatformsecrets CRD" \
+            kubectl get crd xplatformsecrets.platform.k8-platform.io
+          check_absent "platformclusters CRD" \
+            kubectl get crd platformclusters.platform.k8-platform.io
+          check_absent "xplatformclusters CRD" \
+            kubectl get crd xplatformclusters.platform.k8-platform.io
+
+          echo ""
+          echo "── C.2 Compositions ──"
+          # Composition CRD is from Crossplane and stays; just check the
+          # individual Composition objects we deployed are gone.
+          if kubectl get crd compositions.apiextensions.crossplane.io >/dev/null 2>&1; then
+            check_absent "platform-secret-aws Composition" \
+              kubectl get composition platform-secret-aws
+            check_absent "platform-cluster-aws Composition" \
+              kubectl get composition platform-cluster-aws
+          fi
+
+          echo ""
+          echo "── C.3 ClusterSecretStore ──"
+          if kubectl get crd clustersecretstores.external-secrets.io >/dev/null 2>&1; then
+            check_absent "aws-secrets-manager ClusterSecretStore" \
+              kubectl get clustersecretstore aws-secrets-manager
+          fi
+
+          echo ""
+          echo "── C.4 Kyverno ClusterPolicy ──"
+          if kubectl get crd clusterpolicies.kyverno.io >/dev/null 2>&1; then
+            check_absent "platform-secret-namespace-allowed ClusterPolicy" \
+              kubectl get clusterpolicy platform-secret-namespace-allowed
+          fi
+
+          echo ""
+          echo "── C.5 ASM secrets tagged PlatformAbstraction ──"
+          # We can't easily filter ASM by tag with a single CLI call —
+          # list-secrets returns a JSON array, jq filters it. An empty
+          # result is success.
+          asm=$(aws secretsmanager list-secrets \
+            --query 'SecretList[?Tags[?Key==`PlatformAbstraction`]].Name' \
+            --output text 2>/dev/null || true)
+          if [ -z "$asm" ] || [ "$asm" = "None" ]; then
+            echo "  ✓ ok: no ASM secrets tagged PlatformAbstraction"
+          else
+            echo "  ✗ FAIL: ASM secrets still present:"
+            echo "$asm" | sed 's/^/      /'
+            fail=1
+          fi
+
+          echo ""
+          echo "── C.6 Phase-2 ArgoCD apps ──"
+          for app in crossplane-resources management-cluster-config; do
+            check_absent "Application $app" \
+              kubectl get application "$app" -n argocd
+          done
+
+          echo ""
+          if [ "$fail" -ne 0 ]; then
+            echo "── VERIFY-ABSENT: FAIL ──"
+            exit 1
+          fi
+          echo "── VERIFY-ABSENT: all phase-2 resources confirmed gone ──"
+
+      # ─────────────────────────────────────────────────────────────
+      # MODE: rebuild
+      # Re-apply the two phase-2 ArgoCD apps from the repo. ArgoCD
+      # then syncs each app's source path (sync-wave -10 before 0).
+      # ─────────────────────────────────────────────────────────────
+      - name: Rebuild phase 2 from git
+        if: inputs.mode == 'rebuild'
+        run: |
+          set -e
+          echo "── D apply argocd/apps manifests ──"
+          kubectl apply -f argocd/apps/management-cluster-config.yaml
+          kubectl apply -f argocd/apps/crossplane-resources.yaml
+
+          echo ""
+          echo "── waiting for management-cluster-config to sync ──"
+          # Argo's automated sync kicks within ~30s; give it 5 min to
+          # converge fully (CRD installs + ClusterSecretStore Ready).
+          for i in $(seq 1 30); do
+            sync=$(kubectl get application management-cluster-config -n argocd \
+              -o jsonpath='{.status.sync.status}' 2>/dev/null || echo "")
+            health=$(kubectl get application management-cluster-config -n argocd \
+              -o jsonpath='{.status.health.status}' 2>/dev/null || echo "")
+            echo "  attempt $i: sync=$sync health=$health"
+            [ "$sync" = "Synced" ] && [ "$health" = "Healthy" ] && break
+            sleep 10
+          done
+
+          echo ""
+          echo "── waiting for crossplane-resources to sync ──"
+          for i in $(seq 1 30); do
+            sync=$(kubectl get application crossplane-resources -n argocd \
+              -o jsonpath='{.status.sync.status}' 2>/dev/null || echo "")
+            health=$(kubectl get application crossplane-resources -n argocd \
+              -o jsonpath='{.status.health.status}' 2>/dev/null || echo "")
+            echo "  attempt $i: sync=$sync health=$health"
+            [ "$sync" = "Synced" ] && [ "$health" = "Healthy" ] && break
+            sleep 10
+          done
+
+          echo ""
+          echo "── rebuild post-state ──"
+          kubectl get application -n argocd \
+            -o custom-columns=NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status
+          echo ""
+          kubectl get crd | grep platform.k8-platform.io || true
+          echo ""
+          kubectl get clustersecretstore aws-secrets-manager \
+            -o jsonpath='{"Ready="}{.status.conditions[?(@.type=="Ready")].status}{"\n"}' \
+            2>/dev/null || true
