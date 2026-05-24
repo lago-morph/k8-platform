@@ -185,6 +185,11 @@ resource "terraform_data" "crossplane_aws_provider" {
     module.irsa_crossplane.iam_role_arn,
     var.crossplane_provider_family_aws_version,
     sha256(local.crossplane_aws_provider_manifest),
+    # Bump when the local-exec command body changes (kubectl apply +
+    # delete-deploy steps) — those live outside the manifest local
+    # so the sha256 above doesn't cover them. v2: added rebuild
+    # of the provider Deployment after the apply.
+    "provisioner-command-v2",
   ]
 
   provisioner "local-exec" {
@@ -196,6 +201,16 @@ resource "terraform_data" "crossplane_aws_provider" {
       KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl apply -f - <<'MANIFEST'
 ${local.crossplane_aws_provider_manifest}
 MANIFEST
+      # Crossplane's Provider controller only re-renders its provider
+      # Deployment when the Provider object changes — DeploymentRuntimeConfig
+      # edits alone don't roll the Deployment, so an SA-name change
+      # creates the new SA but leaves the running pod mounted on the
+      # old hash-suffixed SA. Delete the Deployment so Crossplane
+      # recreates it from the current DeploymentRuntimeConfig.
+      # Observed in phase-2-diagnose run 26355033199.
+      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl -n crossplane-system \
+        delete deploy -l "pkg.crossplane.io/provider=provider-family-aws" \
+        --ignore-not-found --wait=false || true
     EOT
   }
 
