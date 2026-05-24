@@ -91,6 +91,7 @@ spec:
                 transforms:
                   - type: string
                     string:
+                      type: Format
                       fmt: "k8-platform-cluster-%s"
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.name
@@ -117,6 +118,7 @@ spec:
                 transforms:
                   - type: string
                     string:
+                      type: Format
                       fmt: "k8-platform-cluster-%s"
 
           # ---------- 3. Node-group IAM role -------------------------
@@ -151,6 +153,7 @@ spec:
                 transforms:
                   - type: string
                     string:
+                      type: Format
                       fmt: "k8-platform-nodegroup-%s"
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.name
@@ -177,6 +180,7 @@ spec:
                 transforms:
                   - type: string
                     string:
+                      type: Format
                       fmt: "k8-platform-nodegroup-%s"
 
           # ---------- 5. CNI policy attachment -----------------------
@@ -197,6 +201,7 @@ spec:
                 transforms:
                   - type: string
                     string:
+                      type: Format
                       fmt: "k8-platform-nodegroup-%s"
 
           # ---------- 6. ECR read-only attachment --------------------
@@ -217,6 +222,7 @@ spec:
                 transforms:
                   - type: string
                     string:
+                      type: Format
                       fmt: "k8-platform-nodegroup-%s"
 
           # ---------- 7. EKS Cluster ---------------------------------
@@ -312,6 +318,7 @@ spec:
                 transforms:
                   - type: string
                     string:
+                      type: Format
                       fmt: "%s-default"
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.region
