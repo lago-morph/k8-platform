@@ -156,22 +156,32 @@ jobs:
               -o jsonpath='{range .spec.resourceRefs[*]}{.apiVersion}/{.kind}/{.namespace}/{.name}{"\n"}{end}'
 
             echo ""
+            echo "══════ XR .spec.resourceRefs raw JSON ══════"
+            # Print raw JSON so the actual schema (field names, optional
+            # namespace) is visible before the templated loop runs. Prior
+            # run 26353150253 showed the loop misaligning fields, which
+            # was invisible until we could see the raw shape.
+            kubectl get xplatformsecret "$XR" -o jsonpath='{.spec.resourceRefs}' 2>&1
+            echo ""
+
+            echo ""
             echo "══════ describe every XR-owned managed resource ══════"
-            # Print one tab-separated record per resourceRef:
-            #   apiVersion<TAB>kind<TAB>namespace<TAB>name
-            # namespace is empty for cluster-scoped resources.
-            kubectl get xplatformsecret "$XR" -o jsonpath='{range .spec.resourceRefs[*]}{.apiVersion}{"\t"}{.kind}{"\t"}{.namespace}{"\t"}{.name}{"\n"}{end}' \
-              | while IFS=$'\t' read -r apiver kind ns name; do
+            # Use go-template (not jsonpath) so we can emit a literal
+            # "<none>" sentinel for missing namespace fields and avoid
+            # field-misalignment when a record has fewer than 4 tabs.
+            kubectl get xplatformsecret "$XR" \
+              -o go-template='{{range .spec.resourceRefs}}{{.apiVersion}}{{"|"}}{{.kind}}{{"|"}}{{or .namespace "<none>"}}{{"|"}}{{or .name "<none>"}}{{"\n"}}{{end}}' \
+              | while IFS='|' read -r apiver kind ns name; do
                   [ -z "$kind" ] && continue
+                  [ "$name" = "<none>" ] && { echo "── skipping ref with empty name: ${apiver}/${kind} ──"; continue; }
                   group="${apiver%%/*}"
-                  # core group ("v1") has no dot suffix
                   if [ "$group" = "$apiver" ]; then
                     res="$(echo "$kind" | tr '[:upper:]' '[:lower:]')"
                   else
                     res="$(echo "$kind" | tr '[:upper:]' '[:lower:]').${group}"
                   fi
-                  echo "── ${apiver}/${kind} ${ns}/${name} ──"
-                  if [ -n "$ns" ]; then
+                  echo "── ${apiver}/${kind} ns=${ns} name=${name} ──"
+                  if [ "$ns" != "<none>" ] && [ -n "$ns" ]; then
                     kubectl get "$res" "$name" -n "$ns" -o yaml 2>&1 || true
                   else
                     kubectl get "$res" "$name" -o yaml 2>&1 || true
