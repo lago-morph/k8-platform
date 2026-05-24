@@ -1,0 +1,38 @@
+# PlatformCluster claim — provisions the platform services cluster.
+#
+# Phase 3 / Iteration 3 (REQ-PLAT-01..06). This is the first real
+# invocation of the PlatformCluster XRD authored in phase 2b.
+#
+# WARNING: when this claim is synced by ArgoCD, Crossplane provisions
+# a REAL EKS cluster + managed node group + IAM roles. The
+# corresponding ArgoCD Application
+# (argocd/apps/platform-cluster-claim.yaml) is configured WITHOUT
+# automated sync — sync is a deliberate operator action.
+#
+# Substitute spec.vpc.subnetIds with the actual private subnet IDs
+# from the base module BEFORE syncing. The placeholders below cause
+# admission to fail closed at sync time.
+apiVersion: platform.k8-platform.io/v1alpha1
+kind: PlatformCluster
+metadata:
+  name: platform
+  namespace: default
+spec:
+  name: k8-platform-services
+  region: us-east-1
+  version: "1.32"
+  vpc:
+    subnetIds:
+      # TODO(phase-3): replace with `terraform output -raw private_subnet_ids`
+      # from the base module. Two subnets in two different AZs are
+      # required by EKS HA.
+      - subnet-REPLACE-ME-AZ1
+      - subnet-REPLACE-ME-AZ2
+  nodeGroup:
+    # t3.medium x 2 sized for the 9-instance EC2 quota in this account
+    # (management cluster uses 2 already; this leaves 5 headroom for
+    # workload clusters). Bump after the quota is raised.
+    instanceTypes: ["t3.medium"]
+    desiredSize: 2
+    minSize: 1
+    maxSize: 3
