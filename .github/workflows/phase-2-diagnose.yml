@@ -1,0 +1,202 @@
+# Phase 2 diagnostic dump — read-only, no cluster mutations.
+#
+# Pulls every piece of state needed to root-cause two open bugs from
+# 2026-05-24 integration-tests run 26347839740:
+#
+#   Bug 3: argocd Application `crossplane-resources` stays OutOfSync
+#          despite syncPolicy.automated.selfHeal=true.
+#   Bug 4: PlatformSecret claim never reaches Ready=True within 180s
+#          on the live management cluster (ExternalSecret stays
+#          NotReady → composite NotReady → claim NotReady).
+#
+# Dispatch this BEFORE attempting any product-code fix — it produces
+# the kubectl/aws output needed to diagnose, then exits without
+# changing anything.
+name: Phase 2 diagnose (read-only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    name: diagnose
+    runs-on: ubuntu-24.04
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure kubectl
+        run: |
+          aws sts get-caller-identity
+          aws eks update-kubeconfig --name k8-platform-mgmt --region "${AWS_REGION}"
+
+      # =====================================================================
+      # Bug 3 investigation: crossplane-resources OutOfSync
+      # =====================================================================
+      - name: "Bug 3 — ArgoCD applications + sync diffs"
+        run: |
+          set +e
+          echo ""
+          echo "══════ all Applications ══════"
+          kubectl get application -n argocd \
+            -o custom-columns=NAME:.metadata.name,PROJECT:.spec.project,REV:.spec.source.targetRevision,SYNC:.status.sync.status,HEALTH:.status.health.status,MSG:.status.conditions[*].message
+
+          for app in bootstrap management-cluster-config crossplane-resources platform-cluster-claim; do
+            echo ""
+            echo "══════ describe Application $app ══════"
+            kubectl describe application "$app" -n argocd | head -120
+            echo ""
+            echo "── $app .status.sync.comparedTo ──"
+            kubectl get application "$app" -n argocd \
+              -o jsonpath='{.status.sync.comparedTo}{"\n"}'
+            echo ""
+            echo "── $app .status.conditions ──"
+            kubectl get application "$app" -n argocd \
+              -o jsonpath='{range .status.conditions[*]}{.type}={.message}{"\n"}{end}'
+            echo ""
+            echo "── $app .status.operationState.message ──"
+            kubectl get application "$app" -n argocd \
+              -o jsonpath='{.status.operationState.message}{"\n"}'
+            echo ""
+            echo "── $app .status.resources (each) ──"
+            kubectl get application "$app" -n argocd \
+              -o jsonpath='{range .status.resources[*]}{.kind}/{.name} sync={.status} health={.health.status} {"\n"}{end}'
+          done
+
+      # =====================================================================
+      # Bug 4 investigation: PlatformSecret stuck Ready=False
+      # =====================================================================
+      - name: "Bug 4 — Crossplane providers + functions"
+        run: |
+          set +e
+          echo ""
+          echo "══════ providers ══════"
+          kubectl get provider.pkg.crossplane.io,providerrevision.pkg.crossplane.io,function.pkg.crossplane.io 2>&1 || true
+
+          for name in $(kubectl get provider.pkg.crossplane.io -o name 2>/dev/null); do
+            echo ""
+            echo "── describe $name ──"
+            kubectl describe "$name" | head -80
+          done
+
+      - name: "Bug 4 — ESO controller + ClusterSecretStore"
+        run: |
+          set +e
+          echo ""
+          echo "══════ ClusterSecretStore aws-secrets-manager ══════"
+          kubectl describe clustersecretstore aws-secrets-manager 2>&1 | head -80
+          echo ""
+          echo "══════ external-secrets pods ══════"
+          kubectl -n external-secrets get pods
+          echo ""
+          for pod in $(kubectl -n external-secrets get pods -o name 2>/dev/null); do
+            echo "── logs: $pod (tail 80) ──"
+            kubectl -n external-secrets logs --tail=80 "$pod" 2>&1
+            echo ""
+          done
+
+      - name: "Bug 4 — try a probe claim and observe"
+        run: |
+          set +e
+          # Skip the probe if the CRD isn't there — that itself is a finding.
+          if ! kubectl get crd platformsecrets.platform.k8-platform.io >/dev/null 2>&1; then
+            echo "PlatformSecret CRD absent — skipping probe."
+            exit 0
+          fi
+
+          PROBE_NS="diag-probe-$(date +%s)"
+          PROBE_NAME="diag-probe-claim"
+          echo "── probe namespace: $PROBE_NS ──"
+          kubectl create ns "$PROBE_NS"
+
+          cat <<YAML | kubectl apply -f -
+          apiVersion: platform.k8-platform.io/v1alpha1
+          kind: PlatformSecret
+          metadata:
+            name: $PROBE_NAME
+            namespace: $PROBE_NS
+          spec:
+            refreshInterval: 30s
+            region: ${AWS_REGION}
+            description: "phase-2 diagnostic probe"
+          YAML
+
+          echo ""
+          echo "── waiting 90s for composite XR to settle ──"
+          sleep 90
+
+          echo ""
+          echo "══════ claim status ══════"
+          kubectl get platformsecret -n "$PROBE_NS" "$PROBE_NAME" -o yaml | head -120
+
+          XR=$(kubectl get platformsecret -n "$PROBE_NS" "$PROBE_NAME" \
+            -o jsonpath='{.spec.resourceRef.name}' 2>/dev/null)
+          echo ""
+          echo "── XR (composite) name: $XR ──"
+          if [ -n "$XR" ]; then
+            echo ""
+            echo "══════ XR yaml ══════"
+            kubectl get xplatformsecret "$XR" -o yaml | head -120
+
+            XR_UID=$(kubectl get xplatformsecret "$XR" -o jsonpath='{.metadata.uid}' 2>/dev/null)
+            echo ""
+            echo "── XR uid: $XR_UID — managed resources owned by this XR ──"
+            kubectl get secret.secretsmanager.aws.upbound.io 2>&1 | grep -E "^NAME|$XR_UID" || true
+            kubectl get externalsecret -A 2>&1 | grep -E "^NAMESPACE|$PROBE_NS" || true
+
+            echo ""
+            echo "══════ describe ASM managed Secret (if any) ══════"
+            for asm in $(kubectl get secret.secretsmanager.aws.upbound.io \
+                           -o name 2>/dev/null | grep "$XR_UID" || true); do
+              kubectl describe "$asm" | head -80
+            done
+
+            echo ""
+            echo "══════ describe ExternalSecret in probe ns ══════"
+            kubectl describe externalsecret -n "$PROBE_NS" "$PROBE_NAME" 2>&1 | head -80
+          fi
+
+          echo ""
+          echo "══════ provider-aws-secretsmanager controller logs (tail 80) ══════"
+          for pod in $(kubectl -n crossplane-system get pods \
+                        -l pkg.crossplane.io/provider=provider-aws-secretsmanager \
+                        -o name 2>/dev/null); do
+            echo "── $pod ──"
+            kubectl -n crossplane-system logs --tail=80 "$pod" 2>&1 || true
+          done
+          # Fallback: also dump crossplane core
+          echo ""
+          echo "══════ crossplane core logs (tail 60) ══════"
+          for pod in $(kubectl -n crossplane-system get pods -l app=crossplane -o name 2>/dev/null); do
+            echo "── $pod ──"
+            kubectl -n crossplane-system logs --tail=60 "$pod" 2>&1 || true
+          done
+
+          echo ""
+          echo "── cleanup probe ──"
+          kubectl delete platformsecret -n "$PROBE_NS" "$PROBE_NAME" --wait=false || true
+          kubectl delete ns "$PROBE_NS" --wait=false || true
+
+      - name: "AWS-side ASM + IRSA check"
+        run: |
+          set +e
+          echo ""
+          echo "══════ ASM secrets tagged PlatformAbstraction ══════"
+          aws secretsmanager list-secrets \
+            --query 'SecretList[?Tags[?Key==`PlatformAbstraction`]].{Name:Name,Created:CreatedDate}' \
+            --output table || true
+          echo ""
+          echo "══════ provider-family-aws SA + IRSA role ══════"
+          kubectl -n crossplane-system get sa upbound-provider-family-aws \
+            -o jsonpath='{.metadata.annotations}{"\n"}' || true
+          echo ""
+          echo "══════ external-secrets SA + IRSA role ══════"
+          kubectl -n external-secrets get sa external-secrets \
+            -o jsonpath='{.metadata.annotations}{"\n"}' || true
