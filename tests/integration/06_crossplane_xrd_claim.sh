@@ -6,7 +6,7 @@
 # waits for composite Ready, asserts the underlying S3 bucket exists.
 # Tears everything down on exit.
 
-set -uo pipefail
+set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/lib/test-lib.sh"
 

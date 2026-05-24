@@ -9,7 +9,7 @@
 # cluster can show (live IRSA, real ESO sync timing, real ASM
 # eventual-consistency on first read).
 
-set -uo pipefail
+set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/lib/test-lib.sh"
 
@@ -75,9 +75,13 @@ wait_for "PlatformSecret/$CLAIM Ready=True" 180 5 -- \
 # ---- 3. Resolve the ASM key from the composite UID ----------------------
 XR=$(kubectl get platformsecret -n "$TEST_NS" "$CLAIM" -o jsonpath='{.spec.resourceRef.name}')
 [ -n "$XR" ] || ng "could not find composite XR name for claim"
-UID=$(kubectl get xplatformsecret "$XR" -o jsonpath='{.metadata.uid}')
-[ -n "$UID" ] || ng "could not find XR uid for $XR"
-ASM_KEY="k8-platform/${UID}"
+# NB: NOT `UID=$(...)` — `$UID` is a bash readonly builtin (process
+# user id, 1001 on Actions runners). Assignment under `set -u` silently
+# fails and downstream code constructs the wrong ASM key. Defended by
+# tests/unit/test_shell_readonly_var_assignment.sh.
+XR_UID=$(kubectl get xplatformsecret "$XR" -o jsonpath='{.metadata.uid}')
+[ -n "$XR_UID" ] || ng "could not find XR uid for $XR"
+ASM_KEY="k8-platform/${XR_UID}"
 log "ASM key: $ASM_KEY"
 
 # ---- 4. Verify ASM secret exists in AWS ----------------------------------

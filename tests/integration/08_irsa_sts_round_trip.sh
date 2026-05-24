@@ -12,7 +12,7 @@
 # do real work with it). The pod runs in a fresh namespace so the SA
 # matches the role's namespace_service_accounts entry.
 
-set -uo pipefail
+set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/lib/test-lib.sh"
 

@@ -40,6 +40,8 @@ run_suite tests/unit/test_platform_cluster_composition.sh
 run_suite tests/unit/test_argocd_app_revision_pinned.sh
 run_suite tests/unit/test_argocd_bootstrap.sh
 run_suite tests/unit/test_diag_component.sh
+run_suite tests/unit/test_shell_readonly_var_assignment.sh
+run_suite tests/unit/test_integration_scripts_strict_mode.sh
 
 echo ""
 if [ "$OVERALL" -eq 0 ]; then

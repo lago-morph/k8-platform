@@ -99,11 +99,11 @@ if [ "$COMPONENT" = "platform-secret" ]; then
     kubectl get xplatformsecret "$XR" \
       -o jsonpath='{range .status.conditions[*]}{.type}={.status} ({.reason}: {.message}){"\n"}{end}' \
       2>&1 | sed 's/^/  /'
-    UID=$(kubectl get xplatformsecret "$XR" -o jsonpath='{.metadata.uid}' 2>/dev/null)
+    XR_UID=$(kubectl get xplatformsecret "$XR" -o jsonpath='{.metadata.uid}' 2>/dev/null)
     echo ""
-    echo "── Underlying AWS-Secret managed resource (k8-platform/$UID) ─"
+    echo "── Underlying AWS-Secret managed resource (k8-platform/$XR_UID) ─"
     kubectl get secrets.secretsmanager.aws.upbound.io 2>/dev/null \
-      | grep "$UID" | sed 's/^/  /' || echo "  (none)"
+      | grep "$XR_UID" | sed 's/^/  /' || echo "  (none)"
   fi
 
   echo ""
