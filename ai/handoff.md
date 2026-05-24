@@ -206,6 +206,8 @@ In rough priority order.
 
 7. **Iteration 5 prerequisite.** Per the older 2026-05-10 entry below: base module needs Cognito groups (`k8s-admins`, `k8s-viewers`) before Keycloak realm work. Not yet authored.
 
+8. **Unit-test coverage audit — to be done IMMEDIATELY BEFORE starting phase 3.** The phase-2 verification on 2026-05-24 (integration-tests run 26347839740) silently reported PASS while four wait_for calls timed out; root cause was a class of bash bugs (`UID` shadowing + missing `set -e`) that no existing unit test would have caught — see PR `fix/integration-test-script-bugs` and the new `tests/unit/test_shell_readonly_var_assignment.sh` / `test_integration_scripts_strict_mode.sh` for the pattern. Several other failure modes encountered in this and earlier sessions (chainsaw condition-order non-determinism, dash-vs-bash pipefail in chainsaw `script` blocks, ESO webhook-cert harness regression, `crossplane-resources` OutOfSync, claim Ready=False on live cluster) likewise have no unit-test guard. **Scope of the audit (when started):** walk every PR retrospective and post-2026-05-23 CI failure, classify each as "a unit test would have caught this" / "no", and for the yes-rows author a focused lint. Goal is a measurable reduction in surprises during phase 3's live EKS-via-Crossplane work, where each iteration is ~15 min and a silent test failure costs far more than authoring the lint. Do NOT chase pure coverage metrics — author tests only where a real failure precedent exists.
+
 ---
 
 ---
