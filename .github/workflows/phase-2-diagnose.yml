@@ -133,8 +133,8 @@ jobs:
           sleep 90
 
           echo ""
-          echo "══════ claim status ══════"
-          kubectl get platformsecret -n "$PROBE_NS" "$PROBE_NAME" -o yaml | head -120
+          echo "══════ claim FULL yaml ══════"
+          kubectl get platformsecret -n "$PROBE_NS" "$PROBE_NAME" -o yaml
 
           XR=$(kubectl get platformsecret -n "$PROBE_NS" "$PROBE_NAME" \
             -o jsonpath='{.spec.resourceRef.name}' 2>/dev/null)
@@ -142,25 +142,54 @@ jobs:
           echo "── XR (composite) name: $XR ──"
           if [ -n "$XR" ]; then
             echo ""
-            echo "══════ XR yaml ══════"
-            kubectl get xplatformsecret "$XR" -o yaml | head -120
-
-            XR_UID=$(kubectl get xplatformsecret "$XR" -o jsonpath='{.metadata.uid}' 2>/dev/null)
-            echo ""
-            echo "── XR uid: $XR_UID — managed resources owned by this XR ──"
-            kubectl get secret.secretsmanager.aws.upbound.io 2>&1 | grep -E "^NAME|$XR_UID" || true
-            kubectl get externalsecret -A 2>&1 | grep -E "^NAMESPACE|$PROBE_NS" || true
+            echo "══════ XR FULL yaml ══════"
+            kubectl get xplatformsecret "$XR" -o yaml
 
             echo ""
-            echo "══════ describe ASM managed Secret (if any) ══════"
-            for asm in $(kubectl get secret.secretsmanager.aws.upbound.io \
-                           -o name 2>/dev/null | grep "$XR_UID" || true); do
-              kubectl describe "$asm" | head -80
+            echo "══════ XR .status.conditions (jsonpath) ══════"
+            kubectl get xplatformsecret "$XR" \
+              -o jsonpath='{range .status.conditions[*]}type={.type} status={.status} reason={.reason} message={.message}{"\n"}{end}'
+
+            echo ""
+            echo "══════ XR .spec.resourceRefs (managed resources Crossplane intends) ══════"
+            kubectl get xplatformsecret "$XR" \
+              -o jsonpath='{range .spec.resourceRefs[*]}{.apiVersion}/{.kind}/{.namespace}/{.name}{"\n"}{end}'
+
+            echo ""
+            echo "══════ describe every XR-owned managed resource ══════"
+            kubectl get xplatformsecret "$XR" -o json \
+              | python3 -c '
+import json, sys, subprocess
+xr = json.load(sys.stdin)
+for r in (xr.get("spec", {}).get("resourceRefs", []) or []):
+    apiver, kind = r.get("apiVersion",""), r.get("kind","")
+    ns, name = r.get("namespace",""), r.get("name","")
+    head = f"── {apiver}/{kind} {ns}/{name} ──"
+    print(head)
+    args = ["kubectl","get",f"{kind.lower()}.{apiver.split(\"/\")[0]}",name,"-o","yaml"]
+    if ns:
+        args = args[:2] + ["-n", ns] + args[2:]
+    try:
+        subprocess.run(args, check=False)
+    except Exception as e:
+        print(f"ERR: {e}")
+    print()
+' || true
+
+            echo ""
+            echo "══════ events in probe namespace ══════"
+            kubectl get events -n "$PROBE_NS" --sort-by=.lastTimestamp 2>&1 | tail -40
+
+            echo ""
+            echo "══════ events in crossplane-system (last 40) ══════"
+            kubectl get events -n crossplane-system --sort-by=.lastTimestamp 2>&1 | tail -40
+
+            echo ""
+            echo "══════ crossplane core logs filtered to XR name ══════"
+            for pod in $(kubectl -n crossplane-system get pods -l app=crossplane -o name 2>/dev/null); do
+              echo "── $pod ──"
+              kubectl -n crossplane-system logs --tail=400 "$pod" 2>&1 | grep -E "$XR|$PROBE_NS|$PROBE_NAME|error|Error|fail|Fail" | tail -40 || true
             done
-
-            echo ""
-            echo "══════ describe ExternalSecret in probe ns ══════"
-            kubectl describe externalsecret -n "$PROBE_NS" "$PROBE_NAME" 2>&1 | head -80
           fi
 
           echo ""

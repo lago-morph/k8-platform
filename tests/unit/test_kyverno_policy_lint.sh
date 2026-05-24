@@ -123,4 +123,55 @@ for dir in "${POLICY_DIRS[@]}"; do
   done
 done
 
+# ---- 4. Drift-defense fields explicit on every ClusterPolicy -----------
+#
+# Defends contract: Kyverno's admission/background controllers inject
+# defaults for spec.background, spec.admission, and the autogen rules
+# annotation when these are absent from the applied YAML. ArgoCD then
+# sees the live object as drifted from git and reports OutOfSync on
+# every sync. Bug-of-record: phase-2-diagnose run 26351930369 — the
+# `crossplane-resources` ArgoCD App stays OutOfSync because
+# ClusterPolicy/platform-secret-namespace-allowed has these fields
+# injected by Kyverno on every reconcile.
+#
+# Scope: ArgoCD-synced policies only (crossplane/policies/). The
+# policies/audit/ directory is kubectl-applied once by Terraform during
+# management bring-up and is not tracked by ArgoCD, so drift there is
+# invisible — no point flagging it.
+#
+# Note: this lint only defends against the KNOWN drift fields below.
+# New Kyverno releases may inject additional defaults; the loop-closer
+# remains a `phase-2-diagnose` run that confirms crossplane-resources
+# reaches sync=Synced.
+for dir in "crossplane/policies"; do
+  [ -d "$dir" ] || continue
+  for yaml_path in "$dir"/*.yaml; do
+    [ -f "$yaml_path" ] || continue
+    kind=$(yq -r '.kind' "$yaml_path" 2>/dev/null)
+    [ "$kind" = "ClusterPolicy" ] || continue
+    base=$(basename "$yaml_path")
+
+    bg=$(yq -r '.spec.background' "$yaml_path" 2>/dev/null)
+    if [ "$bg" = "true" ] || [ "$bg" = "false" ]; then
+      _pass "policy_background_explicit:$base"
+    else
+      _fail "policy_background_explicit:$base" "spec.background is $bg (must be set to true|false to prevent Kyverno default-injection drift)"
+    fi
+
+    adm=$(yq -r '.spec.admission' "$yaml_path" 2>/dev/null)
+    if [ "$adm" = "true" ] || [ "$adm" = "false" ]; then
+      _pass "policy_admission_explicit:$base"
+    else
+      _fail "policy_admission_explicit:$base" "spec.admission is $adm (must be set to true|false to prevent Kyverno default-injection drift)"
+    fi
+
+    autogen=$(yq -r '.metadata.annotations["pod-policies.kyverno.io/autogen-controllers"]' "$yaml_path" 2>/dev/null)
+    if [ -n "$autogen" ] && [ "$autogen" != "null" ]; then
+      _pass "policy_autogen_annotation_set:$base"
+    else
+      _fail "policy_autogen_annotation_set:$base" "annotation pod-policies.kyverno.io/autogen-controllers is unset (Kyverno autogen will inject Pod-controller rules causing ArgoCD drift; set to 'none' for non-Pod kinds)"
+    fi
+  done
+done
+
 assert_summary
