@@ -6,7 +6,7 @@
 # from the echo server (proves TLS terminates at the NLB, nginx routes by
 # Host header, and the backend pod receives traffic).
 
-set -uo pipefail
+set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/lib/test-lib.sh"
 

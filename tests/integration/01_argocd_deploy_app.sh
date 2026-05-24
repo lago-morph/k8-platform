@@ -6,7 +6,7 @@
 # running. Tears down the Application (auto-prunes the deployment via the
 # `prune: true` syncPolicy).
 
-set -uo pipefail
+set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/lib/test-lib.sh"
 

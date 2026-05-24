@@ -5,7 +5,7 @@
 # v1beta1 Bucket type, waits for Ready, asserts the bucket exists in AWS,
 # deletes the MR, asserts the bucket is gone.
 
-set -uo pipefail
+set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/lib/test-lib.sh"
 

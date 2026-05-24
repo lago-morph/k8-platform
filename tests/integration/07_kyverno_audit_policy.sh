@@ -7,7 +7,7 @@
 # PolicyReport for that namespace. Asserts the report shows the violation
 # within 30s.
 
-set -uo pipefail
+set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/lib/test-lib.sh"
 

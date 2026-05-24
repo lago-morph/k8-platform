@@ -5,7 +5,7 @@
 # ClusterSecretStore + ExternalSecret, waits for the k8s Secret to
 # materialize with the expected value. Deletes the SM secret on teardown.
 
-set -uo pipefail
+set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/lib/test-lib.sh"
 

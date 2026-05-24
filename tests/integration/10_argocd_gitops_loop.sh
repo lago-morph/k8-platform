@@ -8,7 +8,7 @@
 # selfHeal: true, Argo should revert the drift within its refresh
 # interval. Asserts the revert happened.
 
-set -uo pipefail
+set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/lib/test-lib.sh"
 

@@ -6,7 +6,7 @@
 # Ingress and asserts ExternalDNS removes the record (with policy=sync —
 # in upsert-only policy we skip the removal assertion).
 
-set -uo pipefail
+set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/lib/test-lib.sh"
 
