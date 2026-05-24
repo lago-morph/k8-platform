@@ -139,10 +139,52 @@ resource "helm_release" "crossplane" {
 # a top-level annotation on the config object.
 # Using local-exec avoids the kubernetes Terraform provider (which requires
 # a live API server at plan time) and lets us template the IRSA ARN directly.
+locals {
+  crossplane_aws_provider_manifest = <<-MANIFEST
+    ---
+    apiVersion: pkg.crossplane.io/v1beta1
+    kind: DeploymentRuntimeConfig
+    metadata:
+      name: aws-provider-config
+    spec:
+      serviceAccountTemplate:
+        metadata:
+          # Pin the SA name so it matches the IRSA trust policy in
+          # irsa.tf (namespace_service_accounts =
+          # ["crossplane-system:upbound-provider-family-aws"]).
+          # Without this, Crossplane derives a revision-hash-suffixed
+          # name like provider-family-aws-24aaab54a3a0;
+          # AssumeRoleWithWebIdentity then fails for the OIDC subject
+          # mismatch, every ASM Secret MR stalls Ready=False with no
+          # atProvider.arn, and PlatformSecret claims sit Waiting
+          # forever. Observed in phase-2-diagnose run 26353150253.
+          name: upbound-provider-family-aws
+          annotations:
+            eks.amazonaws.com/role-arn: "${module.irsa_crossplane.iam_role_arn}"
+    ---
+    apiVersion: pkg.crossplane.io/v1
+    kind: Provider
+    metadata:
+      name: provider-family-aws
+    spec:
+      package: "xpkg.upbound.io/upbound/provider-family-aws:${var.crossplane_provider_family_aws_version}"
+      runtimeConfigRef:
+        apiVersion: pkg.crossplane.io/v1beta1
+        kind: DeploymentRuntimeConfig
+        name: aws-provider-config
+    MANIFEST
+}
+
 resource "terraform_data" "crossplane_aws_provider" {
+  # Hash the manifest body so ANY edit to the inline YAML (e.g. pinning
+  # the SA name, adjusting tolerations, bumping a label) forces a
+  # re-apply. The pre-existing trigger pair only covered the templated
+  # values, so a manifest-body-only change (#66) silently no-op'd the
+  # apply on run 26354235231 ("No changes ... Apply complete! 0 added").
   triggers_replace = [
     module.irsa_crossplane.iam_role_arn,
     var.crossplane_provider_family_aws_version,
+    sha256(local.crossplane_aws_provider_manifest),
   ]
 
   provisioner "local-exec" {
@@ -152,38 +194,8 @@ resource "terraform_data" "crossplane_aws_provider" {
         --region ${var.aws_region} \
         --kubeconfig /tmp/k8-platform-kubeconfig
       KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl apply -f - <<'MANIFEST'
-      ---
-      apiVersion: pkg.crossplane.io/v1beta1
-      kind: DeploymentRuntimeConfig
-      metadata:
-        name: aws-provider-config
-      spec:
-        serviceAccountTemplate:
-          metadata:
-            # Pin the SA name so it matches the IRSA trust policy in
-            # irsa.tf (namespace_service_accounts =
-            # ["crossplane-system:upbound-provider-family-aws"]).
-            # Without this, Crossplane derives a revision-hash-suffixed
-            # name like provider-family-aws-24aaab54a3a0;
-            # AssumeRoleWithWebIdentity then fails for the OIDC subject
-            # mismatch, every ASM Secret MR stalls Ready=False with no
-            # atProvider.arn, and PlatformSecret claims sit Waiting
-            # forever. Observed in phase-2-diagnose run 26353150253.
-            name: upbound-provider-family-aws
-            annotations:
-              eks.amazonaws.com/role-arn: "${module.irsa_crossplane.iam_role_arn}"
-      ---
-      apiVersion: pkg.crossplane.io/v1
-      kind: Provider
-      metadata:
-        name: provider-family-aws
-      spec:
-        package: "xpkg.upbound.io/upbound/provider-family-aws:${var.crossplane_provider_family_aws_version}"
-        runtimeConfigRef:
-          apiVersion: pkg.crossplane.io/v1beta1
-          kind: DeploymentRuntimeConfig
-          name: aws-provider-config
-      MANIFEST
+${local.crossplane_aws_provider_manifest}
+MANIFEST
     EOT
   }
 
