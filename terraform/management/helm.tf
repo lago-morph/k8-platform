@@ -160,6 +160,16 @@ resource "terraform_data" "crossplane_aws_provider" {
       spec:
         serviceAccountTemplate:
           metadata:
+            # Pin the SA name so it matches the IRSA trust policy in
+            # irsa.tf (namespace_service_accounts =
+            # ["crossplane-system:upbound-provider-family-aws"]).
+            # Without this, Crossplane derives a revision-hash-suffixed
+            # name like provider-family-aws-24aaab54a3a0;
+            # AssumeRoleWithWebIdentity then fails for the OIDC subject
+            # mismatch, every ASM Secret MR stalls Ready=False with no
+            # atProvider.arn, and PlatformSecret claims sit Waiting
+            # forever. Observed in phase-2-diagnose run 26353150253.
+            name: upbound-provider-family-aws
             annotations:
               eks.amazonaws.com/role-arn: "${module.irsa_crossplane.iam_role_arn}"
       ---
