@@ -157,24 +157,27 @@ jobs:
 
             echo ""
             echo "══════ describe every XR-owned managed resource ══════"
-            kubectl get xplatformsecret "$XR" -o json \
-              | python3 -c '
-import json, sys, subprocess
-xr = json.load(sys.stdin)
-for r in (xr.get("spec", {}).get("resourceRefs", []) or []):
-    apiver, kind = r.get("apiVersion",""), r.get("kind","")
-    ns, name = r.get("namespace",""), r.get("name","")
-    head = f"── {apiver}/{kind} {ns}/{name} ──"
-    print(head)
-    args = ["kubectl","get",f"{kind.lower()}.{apiver.split(\"/\")[0]}",name,"-o","yaml"]
-    if ns:
-        args = args[:2] + ["-n", ns] + args[2:]
-    try:
-        subprocess.run(args, check=False)
-    except Exception as e:
-        print(f"ERR: {e}")
-    print()
-' || true
+            # Print one tab-separated record per resourceRef:
+            #   apiVersion<TAB>kind<TAB>namespace<TAB>name
+            # namespace is empty for cluster-scoped resources.
+            kubectl get xplatformsecret "$XR" -o jsonpath='{range .spec.resourceRefs[*]}{.apiVersion}{"\t"}{.kind}{"\t"}{.namespace}{"\t"}{.name}{"\n"}{end}' \
+              | while IFS=$'\t' read -r apiver kind ns name; do
+                  [ -z "$kind" ] && continue
+                  group="${apiver%%/*}"
+                  # core group ("v1") has no dot suffix
+                  if [ "$group" = "$apiver" ]; then
+                    res="$(echo "$kind" | tr '[:upper:]' '[:lower:]')"
+                  else
+                    res="$(echo "$kind" | tr '[:upper:]' '[:lower:]').${group}"
+                  fi
+                  echo "── ${apiver}/${kind} ${ns}/${name} ──"
+                  if [ -n "$ns" ]; then
+                    kubectl get "$res" "$name" -n "$ns" -o yaml 2>&1 || true
+                  else
+                    kubectl get "$res" "$name" -o yaml 2>&1 || true
+                  fi
+                  echo ""
+                done
 
             echo ""
             echo "══════ events in probe namespace ══════"
