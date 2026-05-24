@@ -1,0 +1,149 @@
+# XRD establishment + schema validation for PlatformCluster.
+#
+# Real EKS provisioning takes ~15 minutes and is impractical for per-PR
+# chainsaw runs. This scenario instead asserts the *contract*:
+#
+#   1. The PlatformCluster XRD is Established (the CRD installed
+#      cleanly into the cluster).
+#   2. The Composition is Offered (Crossplane accepted the pipeline
+#      shape and the function-patch-and-transform references).
+#   3. A valid claim is accepted by the API server (schema validation
+#      passes — required fields, patterns, enum-like defaults).
+#   4. An invalid claim is REJECTED at admission (proves the
+#      openAPIV3Schema is actually enforced; this is the schema
+#      strictness assertion referenced in adversarial-reviewer A
+#      finding 14).
+#
+# Live EKS provisioning is exercised by phase 3 (Iteration 3 platform
+# services cluster bring-up) and a separate nightly chainsaw scenario
+# (out of scope for phase 2b — that scenario will land in phase 3).
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: xrd-establishes
+spec:
+  timeouts:
+    apply: 30s
+    assert: 120s
+  steps:
+    - name: apply the PlatformCluster XRD
+      try:
+        - apply:
+            file: ../../../../crossplane/xrds/platform-cluster.yaml
+
+    - name: assert XRD reaches Established + Offered
+      # Crossplane emits XRD status.conditions in non-deterministic
+      # order: observed [Offered, Established] in run 26346566417 and
+      # [Established, Offered] in run 26346745818 against identical
+      # code. Chainsaw's assert is positional so neither hard-coded
+      # order is reliable. kubectl wait queries by condition type and
+      # is order-agnostic.
+      try:
+        - script:
+            content: |
+              set -eu
+              kubectl wait --for=condition=Established --timeout=60s \
+                xrd/xplatformclusters.platform.k8-platform.io
+              kubectl wait --for=condition=Offered --timeout=60s \
+                xrd/xplatformclusters.platform.k8-platform.io
+
+    - name: assert the CRDs landed in the cluster
+      try:
+        - assert:
+            resource:
+              apiVersion: apiextensions.k8s.io/v1
+              kind: CustomResourceDefinition
+              metadata:
+                name: platformclusters.platform.k8-platform.io
+        - assert:
+            resource:
+              apiVersion: apiextensions.k8s.io/v1
+              kind: CustomResourceDefinition
+              metadata:
+                name: xplatformclusters.platform.k8-platform.io
+
+    - name: apply the PlatformCluster Composition
+      try:
+        - apply:
+            file: ../../../../crossplane/compositions/platform-cluster.yaml
+
+    - name: assert a valid claim passes server-side validation
+      # Using --dry-run=server avoids triggering Composition rendering,
+      # which would require provider-aws-eks installed in the kind
+      # cluster. The contract under test here is the XRD schema, not
+      # the Composition reconciliation (live EKS is covered by phase 3).
+      try:
+        - script:
+            content: |
+              set -eu
+              kubectl apply --dry-run=server -f - <<'YAML'
+              apiVersion: platform.k8-platform.io/v1alpha1
+              kind: PlatformCluster
+              metadata:
+                name: schema-valid
+                namespace: default
+              spec:
+                name: chainsaw-valid
+                region: us-east-1
+                version: "1.32"
+                vpc:
+                  subnetIds:
+                    - subnet-0123456789abcdef0
+                    - subnet-0fedcba9876543210
+                nodeGroup:
+                  instanceTypes: ["t3.medium"]
+                  desiredSize: 2
+                  minSize: 1
+                  maxSize: 3
+              YAML
+
+    - name: assert an invalid-region claim is REJECTED
+      # The XRD's openAPIV3Schema is implicitly strict (no
+      # x-kubernetes-preserve-unknown-fields: true). A bogus region
+      # value must fail kubectl-apply at admission time, not silently
+      # pass through.
+      try:
+        - script:
+            content: |
+              set -eu
+              if kubectl apply --dry-run=server -f - <<'YAML' 2>/tmp/err.log
+              apiVersion: platform.k8-platform.io/v1alpha1
+              kind: PlatformCluster
+              metadata:
+                name: schema-invalid-region
+                namespace: default
+              spec:
+                name: chainsaw-bad
+                region: NOT-A-REGION
+                vpc:
+                  subnetIds:
+                    - subnet-0123456789abcdef0
+                    - subnet-0fedcba9876543210
+              YAML
+              then
+                echo "FAIL: invalid region was accepted"
+                exit 1
+              fi
+              grep -q "spec.region" /tmp/err.log
+
+    - name: assert a missing-vpc claim is REJECTED
+      # vpc is a required field; omitting it must fail at admission.
+      try:
+        - script:
+            content: |
+              set -eu
+              if kubectl apply --dry-run=server -f - <<'YAML' 2>/tmp/err.log
+              apiVersion: platform.k8-platform.io/v1alpha1
+              kind: PlatformCluster
+              metadata:
+                name: schema-invalid-novpc
+                namespace: default
+              spec:
+                name: chainsaw-novpc
+                region: us-east-1
+              YAML
+              then
+                echo "FAIL: claim without vpc was accepted"
+                exit 1
+              fi
+              grep -qE "spec\.vpc|required" /tmp/err.log

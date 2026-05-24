@@ -35,6 +35,8 @@ run_suite tests/unit/test_kyverno_policy_lint.sh
 run_suite tests/unit/test_chainsaw_kind_config.sh
 run_suite tests/unit/test_platform_secret_xrd.sh
 run_suite tests/unit/test_platform_secret_composition.sh
+run_suite tests/unit/test_platform_cluster_xrd.sh
+run_suite tests/unit/test_platform_cluster_composition.sh
 run_suite tests/unit/test_argocd_app_revision_pinned.sh
 run_suite tests/unit/test_argocd_bootstrap.sh
 run_suite tests/unit/test_diag_component.sh
