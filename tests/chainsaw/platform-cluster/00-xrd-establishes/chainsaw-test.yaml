@@ -31,24 +31,21 @@ spec:
         - apply:
             file: ../../../../crossplane/xrds/platform-cluster.yaml
 
-    - name: assert XRD is Established
+    - name: assert XRD reaches Established + Offered
+      # Crossplane emits XRD status.conditions in non-deterministic
+      # order: observed [Offered, Established] in run 26346566417 and
+      # [Established, Offered] in run 26346745818 against identical
+      # code. Chainsaw's assert is positional so neither hard-coded
+      # order is reliable. kubectl wait queries by condition type and
+      # is order-agnostic.
       try:
-        - assert:
-            resource:
-              apiVersion: apiextensions.crossplane.io/v1
-              kind: CompositeResourceDefinition
-              metadata:
-                name: xplatformclusters.platform.k8-platform.io
-              # Condition order matches Crossplane's emitted order
-              # (Offered first, then Established) — chainsaw assert is
-              # positional, not set-membership. PR #51 hit the same bug
-              # class on PlatformSecret's chainsaw.
-              status:
-                conditions:
-                  - type: Offered
-                    status: "True"
-                  - type: Established
-                    status: "True"
+        - script:
+            content: |
+              set -eu
+              kubectl wait --for=condition=Established --timeout=60s \
+                xrd/xplatformclusters.platform.k8-platform.io
+              kubectl wait --for=condition=Offered --timeout=60s \
+                xrd/xplatformclusters.platform.k8-platform.io
 
     - name: assert the CRDs landed in the cluster
       try:
