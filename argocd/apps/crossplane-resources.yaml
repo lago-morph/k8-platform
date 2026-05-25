@@ -26,7 +26,7 @@ spec:
     path: crossplane
     directory:
       recurse: true
-      include: '{xrds/*.yaml,compositions/*.yaml,policies/*.yaml}'
+      include: '{xrds/*.yaml,compositions/*.yaml,policies/*.yaml,rbac/*.yaml}'
       # claims/ deliberately excluded — those are example manifests,
       # not platform resources. Users apply them by hand.
   destination:

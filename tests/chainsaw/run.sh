@@ -137,6 +137,15 @@ helm install crossplane crossplane-stable/crossplane \
 kubectl wait --for=condition=Available --timeout=300s \
   -n crossplane-system deploy/crossplane
 
+# ---------- grant Crossplane RBAC on ExternalSecret ------------------------
+# Crossplane 2.3's composite reconciler enforces RBAC strictly when
+# applying composed resources. The PlatformSecret Composition renders
+# an ExternalSecret (from ESO, not a Crossplane provider package), so
+# Crossplane has no auto-RBAC for it. See
+# crossplane/rbac/01-crossplane-externalsecrets.yaml for the full
+# rationale; chainsaw mirrors the live-cluster RBAC here.
+kubectl apply -f ../../crossplane/rbac/01-crossplane-externalsecrets.yaml
+
 # ---------- install AWS provider --------------------------------------------
 echo ""
 echo "── installing provider-family-aws ─────────────────────────────"
