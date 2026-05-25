@@ -70,13 +70,21 @@ jobs:
         continue-on-error: true
         run: |
           set -uo pipefail
+          # Download to a temp dir so the binary never shadows the repo's
+          # crossplane/ directory. The install.sh script drops `crossplane`
+          # (a binary) in $PWD; if $PWD contains a crossplane/ directory the
+          # shell mv would move the directory, not a binary, to /usr/local/bin.
+          tmp=$(mktemp -d)
+          pushd "$tmp" > /dev/null
           curl -fsSL "https://raw.githubusercontent.com/crossplane/crossplane/main/install.sh" | sh || true
-          if [ -x ./crossplane ]; then
-            sudo mv ./crossplane /usr/local/bin/crossplane
-            crossplane --version || true
+          popd > /dev/null
+          if [ -f "$tmp/crossplane" ] && [ -x "$tmp/crossplane" ]; then
+            sudo mv "$tmp/crossplane" /usr/local/bin/crossplane
+            /usr/local/bin/crossplane --version || true
           else
             echo "(crossplane CLI install failed — render tests will skip)"
           fi
+          rm -rf "$tmp"
 
       - name: test_compute_gates
         run: bash tests/unit/test_compute_gates.sh
