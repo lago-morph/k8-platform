@@ -1,0 +1,98 @@
+# Cross-review additions from A3
+
+A3 lens: test gaps under prior constraints, bugs-from-retro perspective. All notes are ADDITIVE — extensions, regression-test framings, "this would have caught X too" observations, and complementary follow-ons. No criticism.
+
+## For A1-debug-tools-max-capability.md
+
+| ID | Idea | Category | Justification | Applies to phase |
+|---|---|---|---|---|
+| A3→A1-001 | Extend A1-002 `phase-status.sh` to also emit a JSON manifest a regression test can diff against the previous run, turning live probes into a drift oracle. | regression-extension | Doubles the debug tool as a recurring test artifact; would have surfaced Bug 3 (Kyverno drift) on cadence. | 0+ |
+| A3→A1-002 | Pair A1-018 IRSA trust validator with a CI mode that exits non-zero so it can run as a pre-merge gate, not only an interactive helper. | regression-extension | Bug 5 (PR #66) recurred because no gate enforced the trust=SA invariant. | 1+ |
+| A3→A1-003 | Add a "snapshot mode" to A1-019 `crossplane-trace.sh` that writes condition snapshots to disk so two consecutive runs can diff XR/MR state over time. | regression-extension | Catches "XR went silent" between reconciles; would have flagged the v2.0.1 zero-conditions bug. | 2+ |
+| A3→A1-004 | Extend A1-025 (TF post-apply IRSA verifier) to also verify the SA actually exists in cluster, not just that subjects parse — catches the SA-rename half of Bug 5. | regression-extension | Trust JSON can be syntactically valid while pointing at a deleted SA. | 1+ |
+| A3→A1-005 | A1-029 Kyverno explain helper could keep a golden corpus of "expected-pass" and "expected-fail" YAMLs so it doubles as a regression suite for policy refactors. | regression-extension | Policy 09 drift recurred; corpus-based regression locks behavior. | 1+ |
+| A3→A1-006 | Have A1-038 `diff-state.sh` write its drift report to a CloudWatch log group so any drift over time is auditable across sessions. | regression-extension | Cross-session drift is currently invisible between handoffs. | 1+ |
+| A3→A1-007 | A1-040 composition render dry-run helper should support a fixture directory so every Composition has an expected rendered output checked into git. | regression-extension | Locks in Bug 4 (string transform `type: Format`) as a permanent guard. | 2+ |
+| A3→A1-008 | Extend A1-058 pre-commit kubeconform hook to also verify Compositions against the function input schema, not only against the XRD. | regression-extension | Function-input-schema mismatches are a distinct silent-failure class. | 2+ |
+| A3→A1-009 | Add a "self-test" mode to A1-060 synthetic canary that intentionally injects a known-bad URL and asserts the metric goes red within deadline. | regression-extension | Validates the alarming pipeline itself (alarm-on-alarm-system). | 1+ |
+| A3→A1-010 | Pair A1-027 (Crossplane Provider healthy verifier) with a record of the provider image digest so silent image-pin rollbacks are caught. | regression-extension | Provider re-tag silently breaks Compositions; digest pin is the canonical guard. | 2+ |
+| A3→A1-011 | A1-070 orphan-cleanup script could emit a baseline expected-resource manifest per phase; deviations become a test failure not just a "list". | regression-extension | Codifies sandbox-cap invariant against silent leaks. | 0+ |
+| A3→A1-012 | Extend A1-048 diag bundle to include `terraform state pull` snapshot — completes the "send me everything" picture and supports apply-vs-state diff offline. | regression-extension | The "Apply complete: 0 added" silent-no-op class is invisible without state. | 1+ |
+| A3→A1-013 | A1-049 per-XRD chainsaw scenario should be templated from XRD source so adding a new XRD auto-generates the condition-coverage test. | regression-extension | Prevents future XRDs from shipping without condition assertions. | 2+ |
+
+## For A2-integration-e2e-tests-max-capability.md
+
+| ID | Idea | Category | Justification | Applies to phase |
+|---|---|---|---|---|
+| A3→A2-001 | Add a Bug-5 regression scenario to A2-005 (trust=SA invariant): rename a platform SA in a fixture and assert the invariant test fails loudly. | regression-extension | Locks PR #66 as a permanent guard rather than an emergent property. | 1+ |
+| A3→A2-002 | Pair A2-016 (20 parallel PlatformSecret claims) with a CloudWatch oracle that asserts no Crossplane `reconcile error` spike during the burst. | regression-extension | Catches throttling-induced silent retries that don't surface in claim status. | 2+ |
+| A3→A2-003 | Extend A2-022 chaos test to also kill the composition function pod, not just the core controller — separate failure surface. | regression-extension | Bug 4-class composition-function input rejections look like controller bugs but aren't. | 2+ |
+| A3→A2-004 | Add a Bug-3 regression to A2-007 ArgoCD drift test: pre-seed a Kyverno mutation that flips a field, assert the diff oracle flags it within one cycle. | regression-extension | Codifies the Kyverno-drift recurrence as a test, not a debug expedition. | 1+ |
+| A3→A2-005 | A2-026 (extra-field rejection) should also cover a Composition with a missing `type: Format` on a string transform — the literal PR #61 bug. | regression-extension | Pairs the schema-violation negative with the historical concrete bug. | 2+ |
+| A3→A2-006 | Extend A2-046 (spoke teardown) to enumerate by tag `managed-by=k8-platform` against the sandbox account, catching orphans across regions us-east-1 + us-west-2. | regression-extension | Sandbox-kill class; cross-region orphans are uniquely silent. | 3+ |
+| A3→A2-007 | Add a soak-test variant of A2-018 that runs across an SA token's 1h TTL boundary specifically (timed for T+59m), asserting refresh path works. | regression-extension | The 1h TTL is the documented IRSA failure-time landmark. | 2+ |
+| A3→A2-008 | Pair A2-031 (helm chart version lock) with a contract test that the chart digests in terraform match those resolved at `helm pull` time. | regression-extension | Version pin + digest pin = real reproducibility. | 1+ |
+| A3→A2-009 | Extend A2-042 (CloudTrail apply audit oracle) to also assert no out-of-band `RunInstances` events occurred during the apply window — sandbox-cap guard. | regression-extension | Cap exceedance has been the most catastrophic class historically. | 0+ |
+| A3→A2-010 | A2-058 (PR #61 `type: Format` regression) could be promoted to a fixture-driven negative suite where every past Composition bug gets its own fixture file. | regression-extension | Bug-class registry as living test corpus, not just doc. | 2+ |
+| A3→A2-011 | Extend A2-064 (destroy phase 2 only) to verify phase-1 IRSA roles still match their phase-1 SAs after the destroy, not just helm health. | regression-extension | Cross-phase blast-radius checks; AGENTS.md §5 invariant 1 has IRSA implications. | 2+ |
+| A3→A2-012 | Add a regression for the "Apply complete: 0 added silent no-op": run a known-mutating change with `triggers_replace` hash deliberately missing one manifest, assert the apply-and-verify oracle flags it. | regression-extension | Codifies PR #67 root cause as a test. | 0+ |
+| A3→A2-013 | Pair A2-019 ArgoCD soak with a Logs Insights oracle that asserts zero `OutOfSync` log lines for any app over the 90-min window. | regression-extension | Belt-and-suspenders for the documented Bug-3 recurrence. | 1+ |
+| A3→A2-014 | Extend A2-035 (concurrency + chaos) with a CloudWatch metric oracle for AWS API throttling — assert no `ThrottlingException` surge during the burst. | regression-extension | Sandbox-cap-style invariant on API quota, not just instance count. | 2+ |
+| A3→A2-015 | Add a contract test that every ClusterPolicy in `policies/audit/` has a corresponding fixture both for pass and fail to prove enforce-mode upgrade is safe. | regression-extension | Audit-to-enforce upgrade has historically been the highest-risk transition. | 1+ |
+
+## For A4-debug-tool-gaps-prior-constraints.md
+
+| ID | Idea | Category | Justification | Applies to phase |
+|---|---|---|---|---|
+| A3→A4-001 | Pair A4-006 (`irsa-check.yml`) with a permanent unit test that asserts every IRSA role in `terraform/management/irsa.tf` is exercised by at least one workflow input fixture — would have made Bug 5 a build-time failure. | regression-extension | Locks the bug class into the lint surface, not only the diagnose surface. | 1+ |
+| A3→A4-002 | Extend A4-008 (`terraform-plan-diff.yml`) to emit a structured "expected-zero-resources" flag the agent can set; if non-zero, the run must explicitly acknowledge. | regression-extension | Prevents the run-26354235231 misread class from recurring. | 0+ |
+| A3→A4-003 | A4-013 runbook for "Apply complete: 0 added" could be paired with `silent-pass-detector.sh` (A4-076) so the runbook entry is enforced not just documented. | regression-extension | Doc-only lessons rot; lint-enforced lessons don't. | 0+ |
+| A3→A4-004 | A4-022 Kyverno explain workflow should ship with a corpus of known-mutating policies (incl. policy 09) and assert mutation behavior is unchanged across PRs. | regression-extension | Bug 3 specifically; corpus locks behavior. | 1+ |
+| A3→A4-005 | Pair A4-033 (CRD-installed assertion) with a phase-2 bootstrap-order regression test that intentionally races CRD install vs policy apply to prove ordering. | regression-extension | PR #52 root cause as positive test. | 2+ |
+| A3→A4-006 | A4-038 `wait-for-condition.yml` should refuse to claim success if zero condition rows ever appeared (counts the silent-PASS PR #59 bug class explicitly). | regression-extension | Direct mitigation of the wait_for silent-PASS bug. | 1+ |
+| A3→A4-007 | Extend A4-053 (Crossplane version skew) to record image digests + a baseline file in repo so any silent upgrade is caught as a digest diff. | regression-extension | The v2.0.1 vs v2.2 question becomes a tracked, diffable fact. | 2+ |
+| A3→A4-008 | A4-062 (terraform_data triggers_replace audit) deserves a CI lint that also fires on `null_resource` blocks — historical equivalent footgun. | regression-extension | Generalizes PR #67's bug class. | 0+ |
+| A3→A4-009 | A4-063 (provider runtime config binding assert) could be a chainsaw step that intentionally mutates the RuntimeConfig and asserts the binding detector fires. | regression-extension | Locks PR #68 as a permanent guard. | 2+ |
+| A3→A4-010 | Pair A4-073 (chainsaw condition coverage lint) with a once-per-PR run that diffs the lint's findings against an allowlist file so new violations require explicit ack. | regression-extension | Codifies PR #53 lesson with an evolving allowlist. | 2+ |
+| A3→A4-011 | A4-076 silent-pass detector could grow a sub-rule for "test asserts only on substring of kubectl output without `--no-headers`" — another known false-PASS shape. | regression-extension | Expands the detector to the next-most-common silent-pass shape. | 0+ |
+| A3→A4-012 | Extend A4-094 (policy mutate detector) to also diff CRD `default:` blocks — defaults are another silent-fill source distinct from Kyverno. | regression-extension | Generalizes Bug 3 to non-Kyverno defaulting sources. | 1+ |
+| A3→A4-013 | A4-100 golden snapshot diff workflow should encode the snapshot per region (us-east-1 vs us-west-2) so cross-region drift is detected separately. | regression-extension | Sandbox supports both regions; cross-region silent drift is currently invisible. | 1+ |
+| A3→A4-014 | Add a runbook entry "ESO ASM 403 vs ESO secret-not-found" to the A4-010 IRSA debug runbook — these two error strings are confusable and historically misdiagnosed. | regression-extension | Disambiguates a recurring false-trail. | 1+ |
+
+## For A5-orchestration-post-actions.md
+
+| ID | Idea | Category | Justification | Applies to phase |
+|---|---|---|---|---|
+| A3→A5-001 | Pair A5-001 (parallel base applies) with a post-apply contract test that VPC + Cognito outputs are written atomically — race-condition consumers fail otherwise. | regression-extension | Parallel applies introduce a new "outputs not all written" bug class worth testing for. | 0+ |
+| A3→A5-002 | Extend A5-007 (event-driven cluster-Ready watcher) to also emit a `cluster-API-reachable` event (separate from ACTIVE) — ACTIVE doesn't mean kubectl works. | regression-extension | Historical bug class: ACTIVE then 5xx for a minute. | 1+ |
+| A3→A5-003 | A5-013 (`argocd app sync` on helm landing) deserves a chaos test that runs sync before the helm release finishes settling — proves sync is idempotent or fails loudly. | regression-extension | Catches sync-too-early race that today is hidden by the 3-min wait. | 1+ |
+| A3→A5-004 | Pair A5-019 (pre-create ACM cert) with a verification that the cert's DNS validation record is in Route53 BEFORE waiting on ISSUED — speeds up failure detection. | regression-extension | Validation hang is silent; pre-checking the CNAME is the fast oracle. | 0+ |
+| A3→A5-005 | A5-024 shared provider cache should have a contract test that the cache directory's provider versions match what each root's `versions.tf` declares — silent-mismatch guard. | regression-extension | Shared caches introduce cross-root version-coupling bugs. | 0+ |
+| A3→A5-006 | Extend A5-027 (event bus) with a "deadletter" log: events with no subscriber within deadline trigger an alarm — invisible orchestration bugs become visible. | regression-extension | Missed-event class is the hardest event-driven bug to debug. | 0+ |
+| A3→A5-007 | A5-029 (pre-applied Applications) needs a regression test that an Application sitting in OutOfSync for >N minutes (because CRD never landed) becomes a hard failure, not silent waiting. | regression-extension | Pre-applied Apps can sit forever; need a deadline. | 2+ |
+| A3→A5-008 | Pair A5-034 (parallel argocd sync --async) with a per-app timeout map so one slow app doesn't mask successes — catches the "1/15 stuck" pattern. | regression-extension | Aggregate "max" hides single-app stuck cases. | 2+ |
+| A3→A5-009 | A5-040 (rehearsal kind cluster) should snapshot composition function inputs from the rehearsal and diff them against the real EKS run — proves equivalence. | regression-extension | Kind rehearsal is only valuable if proven equivalent to EKS. | 2+ |
+| A3→A5-010 | Extend A5-042 (backpressure watcher) with a regression test that throttling above threshold actually causes subagents to slow down — the watcher must demonstrably feed back. | regression-extension | Backpressure systems are notorious for silently not back-pressuring. | 0+ |
+| A3→A5-011 | Pair A5-046 (atomic Application via kubernetes_manifest) with a tear-down test asserting `terraform destroy` cleanly removes the Application without leaving cluster-side orphan. | regression-extension | kubernetes_manifest has historical destroy-time edge cases. | 1-2 |
+| A3→A5-012 | A5-049/A5-050 (warm pool / import existing VPC) need a session-start invariant test that the warm pool VPC matches the expected CIDR and subnet count — drift after import is silent. | regression-extension | Imported state can mismatch source-of-truth; explicit assert is cheap. | 0-1 |
+| A3→A5-013 | Extend A5-017 (long-lived TF shell subagent) with a heartbeat assertion: if no apply within N min, exit — prevents zombie subagents from holding state locks. | regression-extension | Hung subagents holding DynamoDB locks are a known sandbox stall pattern. | 0+ |
+
+## For A6-removal-refactor.md
+
+| ID | Idea | Category | Justification | Applies to phase |
+|---|---|---|---|---|
+| A3→A6-001 | Before deleting `phase-2-diagnose.yml` (A6-007), extract its bug-3/bug-4 named query bodies into a `tests/regression/` corpus so the historical evidence survives the deletion. | regression-extension | Lessons embedded in the workflow shouldn't vanish with it. | 2+ |
+| A3→A6-002 | A6-008 (delete chainsaw-verify) — pair removal with a new lint that fails any PR introducing a dispatch-then-verify handshake pattern in a workflow. | regression-extension | Prevents the pattern from re-emerging accidentally. | 2+ |
+| A3→A6-003 | Before A6-014 (delete post-comment.py) lands, port its truncation+section-heading logic into a `scripts/pr-body-format.sh` so PR summaries keep their shape. | regression-extension | Output-format regression is the silent kind. | 0+ |
+| A3→A6-004 | A6-018 (collapse terraform-test matrix) deserves a regression test that the new `scripts/terraform.sh` accepts every (phase, action) tuple the matrix supported — easy to drop a combination. | regression-extension | Matrix-to-script migrations historically lose edge cases. | 0+ |
+| A3→A6-005 | When A6-022 removes terraform-validate.yml, pair the pre-commit hook with a CI-side check that the hook actually ran — pre-commit can be bypassed. | regression-extension | Pre-commit hooks ship with bypass flags; redundancy is the test. | 0+ |
+| A3→A6-006 | A6-023 (remove unit-tests.yml) should keep one minimum CI run that asserts `tests/unit/run.sh` exits zero on main — local-only runs don't catch other contributors' breaks. | regression-extension | Local-runs-only opens a "works on my machine" regression class. | 0+ |
+| A3→A6-007 | Before A6-038 (remove `provisioner-command-v2` sentinel), add a regression test that PR #68's manifest-hash pattern produces a non-empty `triggers_replace` for the affected resource. | regression-extension | Don't remove the workaround until the replacement is proven equivalent. | 1+ |
+| A3→A6-008 | A6-039 (remove the `kubectl delete deploy` hack post-v2.2) deserves an explicit chainsaw scenario that mutates DeploymentRuntimeConfig and asserts Crossplane rolls the Deployment natively — proves the removal is safe. | regression-extension | Locks the v2.2 promise as a verified property, not a hope. | 1+ |
+| A3→A6-009 | Pair A6-033 (reduce diag-component.sh) with retention of a script-mode test fixture for `platform-secret` since it's the surviving custom path — easy to break in the slimming. | regression-extension | Refactor-to-smaller often loses the one special case. | 1+ |
+| A3→A6-010 | A6-046 (delete chainsaw kind config lint) should be replaced with a runtime assertion in `tests/chainsaw/run.sh` that the config file parses + has the expected node count. | regression-extension | Replace static lint with runtime invariant rather than dropping entirely. | 2+ |
+| A3→A6-011 | When A6-048 prunes CI-substrate bug-class registry rows, move them to a `historical/` section instead of deleting — future agents searching for the bug string should still find context. | regression-extension | Bug 3 recurred because nobody searched prior occurrences; preserve searchability. | 0+ |
+| A3→A6-012 | A6-043 (convert diagnose dump to cheatsheet) — keep one synthetic golden-output sample of each diagnose section in `tests/fixtures/` so a future agent can recognize the pattern in the wild. | regression-extension | Cheatsheets without examples lose discoverability. | 2+ |
+| A3→A6-013 | Before A6-021 removes the Route53 zone auto-discovery step, add a session-start `scripts/route53-zone-lock.sh` invariant check that the zone hasn't changed between sessions. | regression-extension | "AWS account rotated; no Route53 zone" was a documented surprise class. | 0+ |
+| A3→A6-014 | A6-029 (inline aws-creds-check.sh) — keep a one-line `scripts/preflight.sh` that wraps STS + sandbox region whitelist (us-east-1, us-west-2) + EC2 instance-type whitelist check. | regression-extension | Sandbox-kill prevention is too cheap to inline away entirely. | 0+ |
+| A3→A6-015 | A6-050 (remove obsolete mcp__github__* from allowed-tools) — add a `tests/unit/test_skill_tool_allowlist.sh` that any future skill removal also prunes its tool entries, preventing dangling allow-lists. | regression-extension | Allow-list drift is silent and hard to spot in review. | 0+ |
