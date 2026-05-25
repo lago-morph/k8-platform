@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://k8-platform/ai/brainstorming/brainstorm.schema.json",
+  "title": "k8-platform brainstorm corpus",
+  "description": "Canonical structured form of the six-agent brainstorming fan-out (A1-A6) + cross-review comments. Lossless port from the markdown originals.",
+  "type": "object",
+  "required": ["metadata", "agents"],
+  "additionalProperties": false,
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": ["session", "date", "branch", "totals"],
+      "additionalProperties": false,
+      "properties": {
+        "session": {"type": "string"},
+        "date": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+        "branch": {"type": "string"},
+        "pr": {"type": ["integer", "null"]},
+        "totals": {
+          "type": "object",
+          "required": ["agents", "ideas", "comments", "comment_associations", "general_comments"],
+          "additionalProperties": false,
+          "properties": {
+            "agents": {"type": "integer", "minimum": 0},
+            "ideas": {"type": "integer", "minimum": 0},
+            "comments": {"type": "integer", "minimum": 0, "description": "Distinct comment rows across all cross-review files."},
+            "comment_associations": {"type": "integer", "minimum": 0, "description": "Total (comment, idea) attachments — a comment that references N source ideas counts N times."},
+            "general_comments": {"type": "integer", "minimum": 0, "description": "Comment rows targeted at an agent but not referencing any specific idea ID."}
+          }
+        }
+      }
+    },
+    "agents": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/agent"}
+    }
+  },
+  "$defs": {
+    "agent": {
+      "type": "object",
+      "required": ["id", "short_mandate", "long_mandate", "source_file", "ideas", "general_comments"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "pattern": "^A[1-6]$"},
+        "short_mandate": {"type": "string", "description": "3-word handle."},
+        "long_mandate": {"type": "string", "description": "Verbatim from the original A{N}-*.md header."},
+        "source_file": {"type": "string"},
+        "idea_count": {"type": "integer", "minimum": 0},
+        "ideas": {"type": "array", "items": {"$ref": "#/$defs/idea"}},
+        "general_comments": {
+          "type": "array",
+          "description": "Comments aimed at this agent's file but with no parseable source-ID reference.",
+          "items": {"$ref": "#/$defs/comment"}
+        }
+      }
+    },
+    "idea": {
+      "type": "object",
+      "required": ["id", "idea", "category", "justification", "applies_to_phase", "comments"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "pattern": "^A[1-6]-[0-9]+$"},
+        "idea": {"type": "string"},
+        "category": {"type": "string"},
+        "justification": {"type": "string"},
+        "applies_to_phase": {"type": "string", "pattern": "^(?:[0-9]\\+|[0-9][\\u2013\\u2014-][0-9])$", "description": "Either '<phase>+' (e.g. '0+') or a range '<lo>–<hi>' (en-dash); preserved verbatim from the markdown."},
+        "comments": {"type": "array", "items": {"$ref": "#/$defs/comment"}}
+      }
+    },
+    "comment": {
+      "type": "object",
+      "required": ["comment_id", "from_agent", "to_agent", "idea", "category", "justification", "applies_to_phase", "references"],
+      "additionalProperties": false,
+      "properties": {
+        "comment_id": {"type": "string", "description": "Original ID from the cross-review file (e.g. 'A2→A1-007' or 'P→A3-002')."},
+        "from_agent": {"type": "string", "pattern": "^(A[1-6]|PRIMARY)$"},
+        "to_agent": {"type": "string", "pattern": "^A[1-6]$"},
+        "idea": {"type": "string"},
+        "category": {"type": "string"},
+        "justification": {"type": "string"},
+        "applies_to_phase": {"type": "string"},
+        "references": {
+          "type": "array",
+          "description": "Source-idea IDs referenced inline in the comment text (within the to_agent's namespace).",
+          "items": {"type": "string", "pattern": "^A[1-6]-[0-9]+$"}
+        },
+        "external_refs": {
+          "type": "array",
+          "description": "Bug numbers, PR numbers, retro citations, etc. referenced in the comment text.",
+          "items": {"type": "string"}
+        }
+      }
+    }
+  }
+}
