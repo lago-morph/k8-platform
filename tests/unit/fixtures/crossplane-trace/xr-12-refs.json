@@ -1,0 +1,30 @@
+{
+  "apiVersion": "platform.k8-platform.io/v1alpha1",
+  "kind": "XPlatformSecret",
+  "metadata": {
+    "name": "big-xr",
+    "uid": "00000000-0000-0000-0000-000000000099"
+  },
+  "spec": {
+    "resourceRefs": [
+      {"apiVersion": "secretsmanager.aws.upbound.io/v1beta1", "kind": "Secret", "name": "mr01"},
+      {"apiVersion": "secretsmanager.aws.upbound.io/v1beta1", "kind": "Secret", "name": "mr02"},
+      {"apiVersion": "secretsmanager.aws.upbound.io/v1beta1", "kind": "Secret", "name": "mr03"},
+      {"apiVersion": "secretsmanager.aws.upbound.io/v1beta1", "kind": "Secret", "name": "mr04"},
+      {"apiVersion": "secretsmanager.aws.upbound.io/v1beta1", "kind": "Secret", "name": "mr05"},
+      {"apiVersion": "secretsmanager.aws.upbound.io/v1beta1", "kind": "Secret", "name": "mr06"},
+      {"apiVersion": "secretsmanager.aws.upbound.io/v1beta1", "kind": "Secret", "name": "mr07"},
+      {"apiVersion": "secretsmanager.aws.upbound.io/v1beta1", "kind": "Secret", "name": "mr08"},
+      {"apiVersion": "secretsmanager.aws.upbound.io/v1beta1", "kind": "Secret", "name": "mr09"},
+      {"apiVersion": "secretsmanager.aws.upbound.io/v1beta1", "kind": "Secret", "name": "mr10"},
+      {"apiVersion": "secretsmanager.aws.upbound.io/v1beta1", "kind": "Secret", "name": "mr11"},
+      {"apiVersion": "secretsmanager.aws.upbound.io/v1beta1", "kind": "Secret", "name": "mr12"}
+    ]
+  },
+  "status": {
+    "conditions": [
+      {"type": "Synced", "status": "False", "reason": "ReconcileError", "message": "downstream MRs failing"},
+      {"type": "Ready", "status": "False", "reason": "Creating", "message": "waiting"}
+    ]
+  }
+}

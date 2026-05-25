@@ -1,0 +1,36 @@
+{
+  "apiVersion": "platform.k8-platform.io/v1alpha1",
+  "kind": "PlatformSecret",
+  "metadata": {
+    "name": "stuck-claim",
+    "namespace": "test-ns",
+    "uid": "22222222-2222-2222-2222-222222222222"
+  },
+  "spec": {
+    "refreshInterval": "10s",
+    "region": "us-east-1",
+    "resourceRef": {
+      "apiVersion": "platform.k8-platform.io/v1alpha1",
+      "kind": "XPlatformSecret",
+      "name": "stuck-claim-abc34"
+    }
+  },
+  "status": {
+    "conditions": [
+      {
+        "type": "Synced",
+        "status": "False",
+        "reason": "ReconcileError",
+        "message": "cannot create external resource: AccessDenied",
+        "lastTransitionTime": "2026-05-25T12:00:00Z"
+      },
+      {
+        "type": "Ready",
+        "status": "False",
+        "reason": "Waiting",
+        "message": "claim is waiting for composite to become Ready",
+        "lastTransitionTime": "2026-05-25T12:00:00Z"
+      }
+    ]
+  }
+}

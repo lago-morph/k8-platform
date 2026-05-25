@@ -1,0 +1,7 @@
+[
+  {
+    "name": "argocd-server-78c8b7f8c8-xyz",
+    "serviceAccountName": "argocd-server",
+    "component": "argocd-server"
+  }
+]

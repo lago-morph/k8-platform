@@ -198,6 +198,13 @@ loop:
    underlying failure was timing-related (DNS propagation, slow image pull,
    IRSA propagation).
 
+### IRSA invariant
+
+- Run `scripts/irsa_trust_validator.py --all --ci` after every
+  `terraform apply` that touches `terraform/management/irsa.tf` or any
+  `DeploymentRuntimeConfig`. A non-zero exit means a new Bug 5
+  (IRSA SA-name drift). See SPEC-S3.
+
 ---
 
 ## 5. Action Wall-Clock Reference
@@ -315,6 +322,17 @@ test before the fix.
 - The harness tests assume `jq`, `bash`, and (for e2e) `aws` CLI are
   on PATH. The GitHub-hosted runner provides all three; local
   contributors must install them.
+
+### Integration-test wait conventions (SPEC-S7)
+
+Claim waits inside `tests/integration/NN_*.sh` and chainsaw `try.script`
+blocks **must** call `scripts/wait-for-claim.sh <kind> <name> [ns] [timeout]`
+rather than a bespoke `until kubectl get ... | grep True` loop. The
+script exits 1 on timeout and auto-dumps the last-seen `.status.conditions`,
+composition events, and recent cluster events to stdout — eliminating
+the need for per-test dump logic and defending against the
+PR #59 (silent-PASS, missing `-e`) and PR #67 (empty-status false-positive)
+bug classes. See `ai/brainstorming/specs/SPEC-S7-wait-for-claim.md`.
 
 ### Unit-test inventory
 

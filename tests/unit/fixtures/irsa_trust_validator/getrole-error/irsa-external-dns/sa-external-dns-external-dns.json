@@ -1,0 +1,9 @@
+{
+  "metadata": {
+    "name": "external-dns",
+    "namespace": "external-dns",
+    "annotations": {
+      "eks.amazonaws.com/role-arn": "arn:aws:iam::123456789012:role/irsa-external-dns"
+    }
+  }
+}

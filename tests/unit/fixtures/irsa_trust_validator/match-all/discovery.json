@@ -1,0 +1,7 @@
+{
+  "account": "123456789012",
+  "region": "us-east-1",
+  "cluster": "k8-platform-mgmt",
+  "oidc_issuer": "https://oidc.eks.us-east-1.amazonaws.com/id/EXAMPLEDEADBEEFCAFE",
+  "roles": ["irsa-external-dns"]
+}
