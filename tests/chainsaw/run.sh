@@ -430,22 +430,24 @@ if [ -n "$META_DIRS" ]; then
     set -e
 
     # Inverted-exit gate: PASS iff chainsaw exited non-zero AND the
-    # `catch:` handler actually fired. The markers `CATCH | BEGIN` and
-    # `CATCH | END` are chainsaw's own structural-log frames (emitted
-    # unconditionally when a `spec.catch:` block runs); they prove the
-    # post-mortem hook is wired without depending on what the catch
-    # operations actually dumped (the meta scenario's namespace is empty
-    # — there are no crossplane resources for the catch to describe, so
-    # content-based markers like `Name:` from `kubectl describe` will
-    # not appear here even though the hook is firing correctly).
+    # `catch:` handler actually fired. Chainsaw emits structural log
+    # frames of the form
+    #   l.go:52: | HH:MM:SS | <scenario> | <step> | CATCH | BEGIN |
+    #   l.go:52: | HH:MM:SS | <scenario> | <step> | CATCH | END   |
+    # whenever any `spec.catch:` block runs. Because chainsaw colors
+    # those frames with ANSI escape codes between the literal tokens,
+    # we use a permissive `.*` regex so the matcher does not depend on
+    # exact whitespace or color sequences. The presence of `CATCH`
+    # followed eventually by `BEGIN` on the same line is unique to
+    # chainsaw's catch frame.
     if [ "$META_RC" -eq 0 ]; then
       echo "  ✗ meta-test '$meta_dir' chainsaw RC=0 (expected non-zero — deliberate-fail step passed)"
       OVERALL_RC=1
       continue
     fi
     MISSING=""
-    grep -q "CATCH | BEGIN" "$META_LOG"  || MISSING="${MISSING} 'CATCH | BEGIN'"
-    grep -q "CATCH | END"   "$META_LOG"  || MISSING="${MISSING} 'CATCH | END'"
+    grep -qE "CATCH.*BEGIN" "$META_LOG"  || MISSING="${MISSING} 'CATCH...BEGIN'"
+    grep -qE "CATCH.*END"   "$META_LOG"  || MISSING="${MISSING} 'CATCH...END'"
     if [ -n "$MISSING" ]; then
       echo "  ✗ meta-test '$meta_dir' chainsaw RC=$META_RC but catch markers missing:${MISSING}"
       OVERALL_RC=1
