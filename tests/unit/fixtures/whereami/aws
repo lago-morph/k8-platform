@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Stub aws CLI for whereami unit tests.
+# Returns fixed values that match expected.json.
+
+case "$*" in
+  *"sts get-caller-identity"*)
+    echo "123456789012"
+    ;;
+  *"eks list-clusters"*)
+    # Return text format output
+    echo "k8-platform-dev"
+    ;;
+  *)
+    # Unknown subcommand — fail silently (like real aws on missing perms)
+    exit 1
+    ;;
+esac

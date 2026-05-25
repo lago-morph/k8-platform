@@ -316,6 +316,16 @@ test before the fix.
   on PATH. The GitHub-hosted runner provides all three; local
   contributors must install them.
 
+### Unit-test inventory
+
+| Test file | What it covers | Fixtures |
+|---|---|---|
+| `test_compute_gates.sh` | `compute-gates.sh` (phase × action gate matrix) | `tests/unit/fixtures/compute-gates/` |
+| `test_whereami.sh` | `scripts/whereami.sh` JSON schema, human fields, credential-absent exit, partial-kubectl exit 0, `--cache` file vars, fixture field match. Adversarial additions: null-value guard, `--help` exit 0, lib direct-exec guard. | `tests/unit/fixtures/whereami/` |
+
+For any new e2e or integration test, confirm the first step invokes
+`scripts/whereami.sh --json` as a precondition gate (SPEC-S4 §5).
+
 ---
 
 ## 9. Last-Profile Outage — Handoff Fallback
