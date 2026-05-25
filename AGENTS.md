@@ -137,7 +137,7 @@ delivers the code:
 |---|---|---|
 | Unit | always | `tests/unit/test_*.sh` |
 | Kyverno audit policy | for any new runtime invariant that can be expressed as a cluster-resource pattern | `policies/audit/*.yaml` |
-| Integration | for every end-to-end flow the phase introduces | `tests/integration/NN_*.sh` |
+| Integration | for every end-to-end flow the phase introduces | `tests/integration/NN_*.sh` (claim waits use `scripts/wait-for-claim.sh`; see SPEC-S7) |
 | Chainsaw | for every XRD / Composition added | `tests/chainsaw/` |
 
 The default is **maximal coverage**: if a contract can be expressed as a
@@ -550,6 +550,7 @@ clusters/                # Per-cluster Kubernetes resource overlays
 platform-services/       # Helm values for platform components
 policies/audit/          # Kyverno audit-mode ClusterPolicies
 scripts/                 # Diagnostic helper scripts (read-only)
+scripts/_lib/            # Shared bash helpers sourced by scripts/ executables (SPEC-S7+)
 tests/unit/              # Pre-apply unit tests (helm-render, IRSA linkage, IAM policy completeness, EKS module defaults)
 tests/integration/       # End-to-end smoke tests against the live cluster
 tests/chainsaw/          # Chainsaw scenarios for Crossplane XRDs (phase 2+)

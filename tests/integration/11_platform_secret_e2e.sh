@@ -69,8 +69,8 @@ spec:
 YAML
 
 # ---- 2. Wait for claim Ready --------------------------------------------
-wait_for "PlatformSecret/$CLAIM Ready=True" 180 5 -- \
-  bash -c "kubectl get platformsecret -n $TEST_NS $CLAIM -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}' 2>/dev/null | grep -q True"
+# SPEC-S7: canonical wait + auto-dump on timeout.
+"$HERE/../../scripts/wait-for-claim.sh" PlatformSecret "$CLAIM" "$TEST_NS" 180
 
 # ---- 3. Resolve the ASM key from the composite UID ----------------------
 XR=$(kubectl get platformsecret -n "$TEST_NS" "$CLAIM" -o jsonpath='{.spec.resourceRef.name}')
