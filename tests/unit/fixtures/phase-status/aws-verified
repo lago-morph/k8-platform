@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# AWS shim for phase-status: returns "all phases applied + verified".
+case "$*" in
+  *"sts get-caller-identity"*"--query Account"*)
+    echo "111122223333"
+    ;;
+  *"sts get-caller-identity"*)
+    echo "111122223333"
+    ;;
+  *"route53 list-hosted-zones"*)
+    echo "realhandsonlabs.net"
+    ;;
+  *"cognito-idp list-user-pools"*)
+    # Return >=1 pool
+    echo "us-east-1_ABC123"
+    ;;
+  *"eks describe-cluster"*)
+    echo "ACTIVE"
+    ;;
+  *"eks list-clusters"*)
+    echo "k8-platform-mgmt"
+    ;;
+  *)
+    exit 1
+    ;;
+esac

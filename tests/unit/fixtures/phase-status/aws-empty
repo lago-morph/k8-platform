@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# AWS shim: account known, but nothing else is provisioned.
+case "$*" in
+  *"sts get-caller-identity"*)
+    echo "111122223333"
+    ;;
+  *"route53 list-hosted-zones"*)
+    # No matching zone
+    echo ""
+    ;;
+  *"cognito-idp list-user-pools"*)
+    # No pools
+    echo ""
+    ;;
+  *"eks describe-cluster"*)
+    exit 1
+    ;;
+  *"eks list-clusters"*)
+    echo "None"
+    ;;
+  *)
+    exit 1
+    ;;
+esac

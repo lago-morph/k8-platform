@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# kubectl shim: phase 1 verified, phase 2 sentinel present but probe broken
+# (provider Healthy=False). All other phases empty.
+case "$*" in
+  *"get nodes"*"--no-headers"*)
+    echo "ip-10-0-0-1   Ready   <none>   1d   v1.30"
+    ;;
+  *"get pod"*"argocd"*)
+    echo "argocd-server-1   1/1   Running"
+    ;;
+  *"get crd"*"platformsecrets.platform.k8-platform.io"*)
+    # Sentinel present
+    echo "platformsecrets.platform.k8-platform.io"
+    ;;
+  *"get crd"*"xplatformsecrets.platform.k8-platform.io"*)
+    # Probe-side CRD: missing → triggers applied (not verified)
+    exit 1
+    ;;
+  *"get provider.pkg/provider-family-aws"*)
+    # Even if reached, Healthy=False
+    echo "False"
+    ;;
+  *"config current-context"*)
+    echo "arn:aws:eks:us-east-1:111122223333:cluster/k8-platform-mgmt"
+    ;;
+  *)
+    exit 1
+    ;;
+esac

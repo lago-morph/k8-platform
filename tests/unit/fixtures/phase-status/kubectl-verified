@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# kubectl shim: cluster healthy, all CRDs/claims present, all probes verified.
+case "$*" in
+  *"get nodes"*"--no-headers"*)
+    # 2 ready nodes
+    echo "ip-10-0-0-1   Ready   <none>   1d   v1.30"
+    echo "ip-10-0-0-2   Ready   <none>   1d   v1.30"
+    ;;
+  *"get pod"*"argocd"*)
+    echo "argocd-server-1   1/1   Running"
+    ;;
+  *"get crd"*"platformsecrets.platform.k8-platform.io"*)
+    echo "platformsecrets.platform.k8-platform.io"
+    ;;
+  *"get crd"*"xplatformsecrets.platform.k8-platform.io"*)
+    echo "xplatformsecrets.platform.k8-platform.io"
+    ;;
+  *"get provider.pkg/provider-family-aws"*)
+    echo "True"
+    ;;
+  *"get crd"*"platformclusters.platform.k8-platform.io"*)
+    echo "platformclusters.platform.k8-platform.io"
+    ;;
+  *"get helmrelease"*"grafana"*)
+    exit 1
+    ;;
+  *"get deployment"*"keycloak"*)
+    exit 1
+    ;;
+  *"get platformcluster"*)
+    exit 1
+    ;;
+  *"get crd"*)
+    # Generic CRD lookup
+    exit 1
+    ;;
+  *"config current-context"*)
+    echo "arn:aws:eks:us-east-1:111122223333:cluster/k8-platform-mgmt"
+    ;;
+  *)
+    exit 1
+    ;;
+esac

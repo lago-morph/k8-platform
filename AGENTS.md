@@ -512,7 +512,7 @@ Crossplane version in one call (SPEC-S4).
 
 When picking up a session, the first concrete commands are:
 1. `scripts/whereami.sh` — one call for account, region, EKS, zone, kubectl ctx, ArgoCD URL, Crossplane version.
-2. Treat the handoff doc's account-level statements (phase 0+1 "applied" vs "needs apply") as the session-author's belief, not ground truth — verify with the live API.
+2. Treat the handoff doc's account-level statements (phase 0+1 "applied" vs "needs apply") as the session-author's belief, not ground truth — verify with the live API. Run `scripts/phase-status.sh` (SPEC-S5) to derive the live state instead of trusting the handoff table.
 
 ---
 

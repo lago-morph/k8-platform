@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# AWS shim: credentials totally absent. All calls fail.
+exit 1

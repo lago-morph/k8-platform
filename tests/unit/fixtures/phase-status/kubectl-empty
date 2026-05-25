@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# kubectl shim: no cluster, no CRDs, nothing.
+exit 1

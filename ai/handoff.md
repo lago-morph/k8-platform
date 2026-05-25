@@ -114,6 +114,9 @@ State semantics: `code-only` = never applied on THIS account; `applied` = applie
 on THIS account this session; `verified` = applied AND probed end-to-end.
 Cross-session `applied`/`verified` are NOT durable (AGENTS.md §8.1).
 
+Live probe: `scripts/phase-status.sh --json` (SPEC-S5) is the authoritative
+source; this table is the session-author's last-known state.
+
 | Phase | State (this account) | Notes |
 |---|---|---|
 | 0 base | **applied** | [run 26382645677](https://github.com/lago-morph/k8-platform/actions/runs/26382645677) |

@@ -1,0 +1,37 @@
+# SPEC-S5 §6/§7 — chainsaw scenario that uses scripts/phase-status.sh as
+# an `assert:` oracle inside a script step. Proves the live-probe oracle
+# works against the kind-cluster bootstrapped by the chainsaw harness.
+#
+# Two assertions:
+#   1. --assert-phase 2 verified exits 0 once phase 2 (PlatformSecret XRD)
+#      is up and the provider is Healthy on the kind cluster.
+#   2. --assert-phase 6 verified exits non-zero — phase 6 (PlatformCluster
+#      claims provisioning real EKS) is not deployed in the kind harness.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: phase-status-assert
+spec:
+  timeouts:
+    apply: 30s
+    assert: 120s
+    exec: 60s
+  steps:
+    - name: phase 2 should be verified on the standard kind cluster
+      try:
+        - script:
+            content: |
+              set -euo pipefail
+              # Path is relative to the chainsaw working directory (repo root).
+              ./scripts/phase-status.sh --assert-phase 2 verified
+
+    - name: phase 6 should NOT be verified on the kind cluster
+      try:
+        - script:
+            content: |
+              set -euo pipefail
+              if ./scripts/phase-status.sh --assert-phase 6 verified; then
+                echo "ERROR: phase 6 reported verified on a kind cluster" >&2
+                exit 1
+              fi
+              echo "OK: phase 6 correctly not-verified"
