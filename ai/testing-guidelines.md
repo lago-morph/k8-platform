@@ -250,6 +250,35 @@ five actions are only valid for `base` and `management`.
 Every action is dispatched via `workflow_dispatch` — there are no
 auto-triggers on `terraform-test.yml`.
 
+### 6.4 Chainsaw scenario authoring conventions
+
+Every chainsaw scenario MUST inherit the canonical `catch:` block from
+`tests/chainsaw/_lib/catch-block.yaml`. The block runs on any step
+failure and emits the XR `describe`, every referenced MR's `describe`,
+and recent reconcile events for the test namespace — inline in the
+chainsaw log.
+
+Authoring a new scenario:
+
+1. Paste the contents of `tests/chainsaw/_lib/catch-block.yaml` into
+   the scenario's `Test.spec.catch:` list verbatim.
+2. Edit only the first `describe.kind` line to match the XR your
+   scenario owns (`PlatformSecret`, `PlatformCluster`, etc.). Every
+   other field is structurally enforced.
+3. Run `bash tests/unit/test_chainsaw_catch_block.sh` locally — it
+   asserts the block is present and structurally matches the
+   canonical fragment.
+
+The unit test runs in `.github/workflows/unit-tests.yml` on every push,
+so a missing or drifted block fails CI before the chainsaw harness
+runs. The meta-test `tests/chainsaw/meta-catch-fires/` is the live
+proof that the catch block fires; `tests/chainsaw/run.sh` inverts the
+exit-code expectation for any scenario whose name begins with `meta-`.
+
+When the adversarial-review step (AGENTS.md §6.4) runs for a new
+chainsaw scenario, confirm the shared `catch:` block is present and
+the `kind` override is correct.
+
 ---
 
 ## 7. What to Update After Each Step

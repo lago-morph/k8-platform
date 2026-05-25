@@ -110,6 +110,16 @@ jobs:
             echo "(test_chainsaw_kind_config.sh not on this branch — skipped)"
           fi
 
+      # SPEC-A4 enforcer: every chainsaw scenario carries the canonical
+      # `catch:` block from tests/chainsaw/_lib/catch-block.yaml.
+      - name: test_chainsaw_catch_block
+        run: |
+          if [ -f tests/unit/test_chainsaw_catch_block.sh ]; then
+            bash tests/unit/test_chainsaw_catch_block.sh
+          else
+            echo "(test_chainsaw_catch_block.sh not on this branch — skipped)"
+          fi
+
       - name: test_platform_secret_xrd
         run: |
           if [ -f tests/unit/test_platform_secret_xrd.sh ]; then

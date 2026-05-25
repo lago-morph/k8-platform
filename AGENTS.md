@@ -138,7 +138,7 @@ delivers the code:
 | Unit | always | `tests/unit/test_*.sh` |
 | Kyverno audit policy | for any new runtime invariant that can be expressed as a cluster-resource pattern | `policies/audit/*.yaml` |
 | Integration | for every end-to-end flow the phase introduces | `tests/integration/NN_*.sh` |
-| Chainsaw | for every XRD / Composition added | `tests/chainsaw/` |
+| Chainsaw | for every XRD / Composition added (every scenario inherits the shared catch block — see testing-guidelines §6.4) | `tests/chainsaw/` |
 
 The default is **maximal coverage**: if a contract can be expressed as a
 helm-render assertion, a Kyverno policy, an integration test, AND a
