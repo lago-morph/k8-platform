@@ -1,0 +1,16 @@
+{
+  "apiVersion": "platform.k8-platform.io/v1alpha1",
+  "kind": "PlatformSecret",
+  "metadata": {
+    "name": "fresh-claim",
+    "namespace": "test-ns",
+    "uid": "33333333-3333-3333-3333-333333333333"
+  },
+  "spec": {
+    "refreshInterval": "10s",
+    "region": "us-east-1"
+  },
+  "status": {
+    "conditions": []
+  }
+}

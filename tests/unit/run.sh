@@ -27,6 +27,7 @@ run_suite() {
 
 run_suite tests/unit/test_compute_gates.sh
 run_suite tests/unit/test_irsa_helm_linkage.sh
+run_suite tests/unit/test_irsa_trust_validator.sh
 run_suite tests/unit/test_iam_required_actions.sh
 run_suite tests/unit/test_eks_module_defaults.sh
 run_suite tests/unit/test_helm_render.sh
@@ -43,6 +44,10 @@ run_suite tests/unit/test_argocd_bootstrap.sh
 run_suite tests/unit/test_diag_component.sh
 run_suite tests/unit/test_shell_readonly_var_assignment.sh
 run_suite tests/unit/test_integration_scripts_strict_mode.sh
+run_suite tests/unit/test_whereami.sh
+run_suite tests/unit/test_runbook_apply_zero_resources.sh
+run_suite tests/unit/test_wait_for_claim.sh
+run_suite tests/unit/test_crossplane_trace.sh
 run_suite tests/unit/test_kubeconform_manifests.sh
 
 echo ""

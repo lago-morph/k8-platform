@@ -1,0 +1,33 @@
+{
+  "apiVersion": "platform.k8-platform.io/v1alpha1",
+  "kind": "XPlatformSecret",
+  "metadata": {
+    "name": "happy-claim-xr1",
+    "uid": "00000000-0000-0000-0000-000000000002"
+  },
+  "spec": {
+    "resourceRefs": [
+      {
+        "apiVersion": "secretsmanager.aws.upbound.io/v1beta1",
+        "kind": "Secret",
+        "name": "happy-claim-asm"
+      }
+    ]
+  },
+  "status": {
+    "conditions": [
+      {
+        "type": "Synced",
+        "status": "True",
+        "reason": "ReconcileSuccess",
+        "message": "ok"
+      },
+      {
+        "type": "Ready",
+        "status": "True",
+        "reason": "Available",
+        "message": "all good"
+      }
+    ]
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "apiVersion": "platform.k8-platform.io/v1alpha1",
+  "kind": "XPlatformSecret",
+  "metadata": {
+    "name": "stuck-claim-xr1",
+    "uid": "00000000-0000-0000-0000-000000000012"
+  },
+  "spec": {
+    "resourceRefs": []
+  },
+  "status": {
+    "conditions": []
+  }
+}

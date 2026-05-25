@@ -97,8 +97,8 @@ add_cleanup "kubectl delete composition testbucket-aws --wait=false"
 add_cleanup "kubectl delete xrd platformtestbuckets.test.k8-platform.local --wait=false"
 add_cleanup "kubectl delete ns $TEST_NS --wait=false"
 
-wait_for "Claim TestBucket/$BUCKET becomes Ready" 240 5 -- \
-  bash -c "kubectl get testbucket -n $TEST_NS $BUCKET -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}' 2>/dev/null | grep -q True"
+# SPEC-S7: canonical wait + auto-dump on timeout.
+"$HERE/../../scripts/wait-for-claim.sh" TestBucket "$BUCKET" "$TEST_NS" 240
 
 wait_for "S3 bucket $BUCKET exists in AWS" 60 3 -- \
   bash -c "aws s3api head-bucket --bucket $BUCKET 2>/dev/null"

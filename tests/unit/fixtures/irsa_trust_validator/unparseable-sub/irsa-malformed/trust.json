@@ -1,0 +1,20 @@
+{
+  "Arn": "arn:aws:iam::123456789012:role/irsa-malformed",
+  "AssumeRolePolicyDocument": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Principal": {
+          "Federated": "arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/EXAMPLEDEADBEEFCAFE"
+        },
+        "Action": "sts:AssumeRoleWithWebIdentity",
+        "Condition": {
+          "StringEquals": {
+            "oidc.eks.us-east-1.amazonaws.com/id/EXAMPLEDEADBEEFCAFE:sub": "not-a-valid-sub-claim"
+          }
+        }
+      }
+    ]
+  }
+}
