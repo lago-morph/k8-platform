@@ -1,6 +1,6 @@
 # SPEC-A1 — crossplane-claim-verify: chain walk on Ready=False
 
-## Summary
+## 1. Summary
 
 Extend the existing `crossplane-claim-verify` skill so that when a claim
 fails to reach `Ready=True` within the Phase-2 timeout, the skill emits a
@@ -11,7 +11,7 @@ failure mode that consumed five sequential PRs in the late-2026-05-24
 IRSA cascade (PRs #66, #67, #68). Skill semantics on success are
 unchanged; the chain walk is purely additive on `Ready=False`.
 
-## Retro pain killed
+## 2. Retro pain killed
 
 - **PR #66** — `retrospective/2026-05-25-70.md` Phase 2: subagent
   consumed a 166 KB log to discover the IRSA trust subject
@@ -37,7 +37,7 @@ unchanged; the chain walk is purely additive on `Ready=False`.
   XR's empty `.status.conditions` immediately, pointing at the provider
   layer before five iterations of blind chainsaw.
 
-## Out of scope
+## 3. Out of scope
 
 - No new Kubernetes RBAC, no cluster-side controller, no new MCP tool.
   Skill stays a shell-driven `Bash + Read + Edit + Write` skill.
@@ -53,7 +53,7 @@ unchanged; the chain walk is purely additive on `Ready=False`.
 - Does not cover delete-time finalizer chains — that's a separate spec.
 - Does not implement the spec; this is design only.
 
-## Files to change / create
+## 4. Files to change / create
 
 | Path | What changes |
 |---|---|
@@ -65,7 +65,7 @@ unchanged; the chain walk is purely additive on `Ready=False`.
 | `ai/handoff.md` "Skills inventory" | One-line update noting the chain-walk extension (no behavior change on success). |
 | `docs/operations.md` | If a "When a claim won't go Ready" section exists, point it at the chain block; otherwise add a 3-line stub. |
 
-## Implementation notes
+## 5. Implementation notes
 
 The chain walk runs inside the skill at the moment Phase 2's
 `kubectl wait` exits non-zero or the 10-minute poll cap is hit with
@@ -184,7 +184,7 @@ and into the escalation template without consuming the agent's
 context. Truncate messages with `cut -c1-N` not `head` (line-aware).
 The MR-FAIL cap (5) and resourceRefs cap (10) enforce the upper bound.
 
-## Tests required (per AGENTS.md §6.1)
+## 6. Tests required (per AGENTS.md §6.1)
 
 Three canonical broken-chain fixtures + one happy-path regression test.
 Fixtures live alongside the test file in `tests/unit/fixtures/chain-walk/`.
@@ -206,7 +206,57 @@ class from #52/#53), the verbatim job phrasing, and explicit
 non-goals (no live-cluster tests in unit layer; no provider-internals
 testing; no AWS quota testing).
 
-## Documentation updates
+## 7. Testing suggestions (unit / integration / e2e)
+
+Section §6 is the gate — the spec is not done without those tests. This
+section is the broader catalogue of tests one might add as the surrounding
+system matures. It distinguishes deliberate coverage from accidental gaps.
+
+**Unit**
+
+- `tests/unit/test_chain_walk_format.sh` — assert that a rendered chain
+  block produced from the SA-mismatch JSON fixture contains `MISMATCH` as
+  a standalone token and no `MATCH` token.
+- `tests/unit/test_chain_walk_format.sh` — assert that the
+  missing-MR fixture renders `PROVIDER=not-derivable` and that the block
+  is ≤5120 bytes (output-budget regression).
+- `tests/unit/test_chain_walk_format.sh` — assert that the
+  provider-unhealthy fixture renders `Healthy=False` and that `===
+  END CHAIN BLOCK ===` appears as the final non-empty line.
+- `tests/unit/test_skill_chain_walk_doc.sh` — assert that SKILL.md
+  contains the exact header `## Phase 6.0 — Emit chain block`; fails red
+  on the unmodified skill to verify the test itself fires.
+- `tests/unit/test_failure_taxonomy_irsa_row.sh` — assert `irsa-sa-name`
+  row is present in `reference/failure-taxonomy.md`; defends the row from
+  accidental deletion in future edits.
+
+**Integration**
+
+- `tests/integration/12_chain_walk_smoke.sh` — skipped by default; when
+  enabled against a live cluster with a known-broken claim, assert the
+  skill emits `=== END CHAIN BLOCK ===` within 12 min wall-clock.
+- `tests/integration/13_chain_walk_region_guard.sh` — patch the kubeconfig
+  to point at a fake cluster in `eu-west-1`, run the chain walk, assert
+  output contains `AWS=skipped: region=eu-west-1 outside sandbox allowlist`
+  and no `aws iam` call was made.
+- `tests/integration/14_chain_walk_cloudtrail_absent.sh` — mock
+  `aws cloudtrail lookup-events` to exit non-zero; assert the block still
+  renders and the CLOUD line reads `no recent API failure observed`.
+
+**E2E**
+
+- `tests/chainsaw/chain-walk-irsa-mismatch/` — apply a claim whose
+  provider SA name is deliberately mismatched from the IRSA trust subject;
+  run the skill's chain-walk script as a chainsaw `script:` step; assert
+  captured output contains `MISMATCH`.
+- `tests/chainsaw/chain-walk-missing-mr/` — apply a claim that references
+  a Composition with a resource that never reconciles; assert the block
+  contains `PROVIDER=not-derivable`.
+- `tests/chainsaw/chain-walk-provider-unhealthy/` — inject an unhealthy
+  provider pod (wrong image tag); assert the block contains `Healthy=False`
+  and the block terminates with `=== END CHAIN BLOCK ===`.
+
+## 8. Documentation updates
 
 - **`AGENTS.md` §7** — single-sentence addition (see Files table) so any
   agent reading the canonical companion-skills list knows the chain
@@ -232,7 +282,7 @@ testing; no AWS quota testing).
 - **`docs/operations.md`**: 3-line "When a claim won't go Ready" stub
   pointing at the skill.
 
-## Workflow / auto-invocation wiring
+## 9. Workflow / auto-invocation wiring
 
 The skill is **already** auto-invoked per **`AGENTS.md` §7**:
 
@@ -247,12 +297,12 @@ Phase 2's `Ready=True` wait fails. No new trigger is required; the
 chain walk fires automatically whenever the skill is triggered AND
 the claim doesn't reach Ready=True within Phase 2's 10-minute cap.
 
-Confirmation that the trigger fires: §7's wording covers `kubectl apply`,
+Confirmation that the trigger fires: §9's wording covers `kubectl apply`,
 ArgoCD sync, AND CI. The three real-world failures (PRs #66/#67/#68)
 all happened via the management terraform apply → ArgoCD sync path,
 which is in scope.
 
-## Discoverability for future agents
+## 10. Discoverability for future agents
 
 A future agent must be forced to invoke this without remembering it
 exists. Forcing functions:
@@ -272,7 +322,7 @@ exists. Forcing functions:
    it has failed to follow the template, which is easy for the user
    to spot.
 
-## Verification checklist
+## 11. Verification checklist
 
 - [ ] `kubectl apply` a deliberately broken PlatformSecret claim (use
       chainsaw `chain-walk-irsa-mismatch` fixture against a kind
@@ -298,7 +348,7 @@ exists. Forcing functions:
 - [ ] Skill `description` front-matter contains the trigger phrases
       "Ready=False", "Waiting", and "IRSA" (greppable check).
 
-## Rollout notes
+## 12. Rollout notes
 
 - **Backwards-compat for skill consumers:** the chain block is purely
   additive on the failure path. Existing Phase 1-5 happy-path behavior
@@ -321,7 +371,7 @@ exists. Forcing functions:
   on a Ready=False claim, the new behavior kicks in. No state to
   carry forward.
 
-## Estimated effort
+## 13. Estimated effort
 
 **M.** ~150 lines of new skill content (`chain-walk.md`) + ~10 line
 edits across SKILL.md / taxonomy / readiness-conditions + ~4 hours

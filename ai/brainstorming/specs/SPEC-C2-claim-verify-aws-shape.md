@@ -1,6 +1,6 @@
 # SPEC-C2 — crossplane-claim-verify: assert AWS resource shape matches intent
 
-## Summary
+## 1. Summary
 
 Extend the existing `crossplane-claim-verify` skill so that after a claim
 reaches `Ready=True`, the skill queries the underlying AWS resource(s)
@@ -12,7 +12,7 @@ while the underlying AWS resource is silently wrong-shaped — exactly the
 class that took weeks to surface when Crossplane v2.0.1's strict-decoding
 behavior silently dropped a string-transform field.
 
-## Retro pain killed
+## 2. Retro pain killed
 
 - **Bug 4 — PR #61** (Composition `string` transform missing
   `type: Format` under Crossplane v2.0.1 strict-decoding). The
@@ -46,7 +46,7 @@ behavior silently dropped a string-transform field.
   separate, narrower probe would have fingerprinted the gap
   immediately.
 
-## Out of scope
+## 3. Out of scope
 
 - **Performance / availability.** Does not measure latency,
   throughput, IOPS, replication lag, or any time-series shape. A
@@ -73,7 +73,7 @@ behavior silently dropped a string-transform field.
   the existing chainsaw harness and the AGENTS §6.4 adversarial
   reviewer.
 
-## Files to change / create
+## 4. Files to change / create
 
 | Path | What changes |
 |---|---|
@@ -87,7 +87,7 @@ behavior silently dropped a string-transform field.
 | `.claude/skills/crossplane-claim-verify/reference/escalation-template.md` | Add a `Shape drift report` placeholder section so escalations include the verbatim per-field diff. |
 | `ai/handoff.md` "Skills inventory" / "Pending follow-ups" | One-line note pointing future agents at the shape-contract pattern and the backfill obligation. |
 
-## Implementation notes
+## 5. Implementation notes
 
 The assertion engine runs inside the skill at the moment Phase 5
 declares success. It reads the shape contract that ships alongside
@@ -224,7 +224,7 @@ skill already fetched in Phase 4. Unresolved variables → assertion
 failure with `interpolation-failed: ${...}` reason; never silently
 substitute empty string.
 
-## Tests required (per AGENTS.md §6.1)
+## 6. Tests required (per AGENTS.md §6.1)
 
 | Layer | File path | Assertion shape |
 |---|---|---|
@@ -244,7 +244,91 @@ silent-acceptance class explicitly; the broader "Ready=True doesn't
 mean correct" class), and non-goals (no perf, no data-plane, no
 cross-region).
 
-## Documentation updates
+## 7. Testing suggestions (unit / integration / e2e)
+
+The cases below are the broader catalogue of tests worth adding as the
+surrounding system matures. Distinct from §6: §6 is the gate — the
+spec is incomplete without those tests; §7 is the follow-on library.
+
+### Unit
+
+File naming convention: `tests/unit/test_<name>.sh`.
+
+1. **`test_aws_shape_assert_all_pass.sh`** — drives the engine against
+   a fully-conformant `(contract.yaml, describe-output.json)` fixture;
+   asserts every row shows `PASS` and the summary reads `... 0 FAIL`.
+2. **`test_aws_shape_assert_set_equal_extras.sh`** — fixture where AWS
+   returns tags including service-managed AWS-prefixed keys not in the
+   contract; asserts `set-equal` reports both missing *and* extra
+   entries (verifies the engine distinguishes `set-equal` from
+   `subset`).
+3. **`test_aws_shape_assert_regex_fail.sh`** — `Description` value does
+   not match the contract regex; asserts output contains the literal
+   `expected:` and `actual:` lines for that field.
+4. **`test_aws_shape_assert_interpolation_unknown_path.sh`** — contract
+   references `${claim.spec.nonexistent}`; asserts exit non-zero and
+   output contains `interpolation-failed: ${claim.spec.nonexistent}`
+   (never empty-string substitution).
+5. **`test_aws_shape_assert_output_budget.sh`** — synthetic contract
+   with 20 assertions across 3 MR kinds; asserts captured output
+   `wc -c` is ≤ 5120 bytes and the `=== END SHAPE ASSERTION ===`
+   terminator is present.
+
+### Integration
+
+File naming convention: `tests/integration/<NN>_<name>.sh`. All must
+run idempotently in `us-east-1` within 2-minute wall-clock.
+
+1. **`tests/integration/13_aws_shape_drift_smoke.sh`** — already listed
+   in §6; included here for completeness. Apply probe `PlatformSecret`,
+   wait for Ready, assert 0 FAIL; corrupt description field, re-run,
+   assert ≥1 FAIL; revert and delete.
+2. **`tests/integration/14_aws_shape_region_guard.sh`** — apply a claim
+   whose resolved region resolves to `eu-west-1` (via a stub XRD or a
+   patched claim env var); assert Phase 5.5 prints
+   `AWS-SHAPE=skipped: region=eu-west-1 outside sandbox allowlist` and
+   exits 0.
+3. **`tests/integration/15_aws_shape_unknown_service.sh`** — add a
+   shape contract entry referencing an unlisted `awsService` (e.g.,
+   `kinesis`); assert Phase 5.5 prints
+   `AWS-SHAPE=skipped: no recipe for awsService=kinesis` and exits 0,
+   does not crash or attempt a call.
+4. **`tests/integration/16_aws_shape_partial_atprovider.sh`** — apply a
+   claim whose MR has an empty `status.atProvider` (e.g., immediately
+   after creation before provider syncs); assert Phase 5.5 skips *that
+   resource* with a `skip: atProvider empty` notice but does not skip
+   the whole assertion and does not fail.
+
+**N/A note:** a fifth integration case covering cross-region resource
+discovery is deliberately absent — cross-region orphan checks are
+explicitly out of scope per §3.
+
+### E2E
+
+File naming convention:
+`tests/chainsaw/<scenario>/chainsaw-test.yaml` or `tests/e2e/<name>/`.
+
+1. **`tests/chainsaw/platform-secret/03-aws-shape-assert/chainsaw-test.yaml`** —
+   already listed in §6; included here for completeness. Full-stack
+   chainsaw: apply claim, wait `Ready=True`, run assertion engine as
+   `script:` step, assert `SUMMARY ... 0 FAIL`.
+2. **`tests/chainsaw/platform-secret/03b-aws-shape-drift/chainsaw-test.yaml`** —
+   already listed in §6; included here for completeness. Strips the
+   `Environment` tag via `aws secretsmanager untag-resource`, re-runs
+   engine, asserts drift reported; restores tag in `catch:` block.
+3. **`tests/e2e/shape-contract-ci-gate/`** — a CI-only scenario that
+   authors a throwaway XRD directory *without* an
+   `aws-shape-contract.yaml`, runs `tests/unit/run.sh`, asserts the
+   `test_xrd_ships_with_shape_contract.sh` unit test exits non-zero,
+   then deletes the throwaway directory and asserts the same test now
+   exits 0. Verifies the contract-presence gate itself is testable.
+
+**N/A note:** a fourth E2E case covering the PlatformCluster EKS shape
+contract is not yet applicable — the `aws-shape-contract.yaml` for
+PlatformCluster is a phase-2b deliverable per §4. Add when that PR
+lands.
+
+## 8. Documentation updates
 
 - **`.claude/skills/crossplane-claim-verify/SKILL.md`** —
   - Front-matter `description`: add "asserts the live AWS resource
@@ -270,7 +354,7 @@ cross-region).
   `test_xrd_ships_with_shape_contract.sh` unit test as the
   enforcement mechanism.
 
-## Workflow / auto-invocation wiring
+## 9. Workflow / auto-invocation wiring
 
 The skill is **already** auto-invoked per **`AGENTS.md` §7**:
 
@@ -291,7 +375,7 @@ The §7 wording covers the three real triggering paths Bug 4 originally
 slipped through (`kubectl apply`, ArgoCD sync, CI) — all three now
 gain Phase 5.5 coverage with no agent action required.
 
-## Discoverability for future agents
+## 10. Discoverability for future agents
 
 Forcing functions that make a future agent *unable to skip* the
 contract:
@@ -317,7 +401,7 @@ contract:
    reviewer dispatched for every new XRD test-drafting moment will
    probe contract completeness.
 
-## Verification checklist
+## 11. Verification checklist
 
 - [ ] Apply the existing `PlatformSecret` claim on the live cluster;
       Phase 5.5 fires after Ready=True and reports `SUMMARY ... 0 FAIL`
@@ -347,7 +431,7 @@ contract:
       (greppable check: only `describe-*`, `get-*`, `list-*`,
       `get-bucket-*`, `get-role`).
 
-## Rollout notes
+## 12. Rollout notes
 
 - **PlatformSecret is the first instance.** This spec backfills
   `crossplane/xrds/platformsecret/aws-shape-contract.yaml` as part of
@@ -377,7 +461,7 @@ contract:
   Pluralsight sandbox limits. Region-guard prevents any
   non-allowlisted-region call.
 
-## Estimated effort
+## 13. Estimated effort
 
 **M.** ~120 lines of new skill content (`aws-shape-assert.md`) + ~60
 lines of bash assertion engine + ~40 lines for the PlatformSecret

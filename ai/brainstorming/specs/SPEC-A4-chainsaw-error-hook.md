@@ -179,7 +179,56 @@ test), current plan above, the failure-mode (chainsaw-red-with-no-
 context) as bug history, the job text verbatim, and the explicit
 non-goal "we are not testing chainsaw's own retry semantics".
 
-## 7. Documentation updates
+## 7. Testing suggestions (unit / integration / e2e)
+
+This section catalogues follow-on tests as the surrounding system matures.
+Distinguish from §6: §6 is the gate (the spec is not done without those
+tests); §7 is the broader catalogue a future agent may draw from.
+
+**Unit**
+
+1. `tests/unit/test_chainsaw_catch_block.sh` — assert that for a
+   synthetically generated `chainsaw-test.yaml` with no `catch:` field,
+   the script exits non-zero and prints the offending path. Confirms the
+   negative case is caught, not just the positive pass.
+2. Same file — inject a `catch:` block that omits the `events:` operation
+   (only `describe` + `script` present) and assert the structural-diff
+   check fails with a message naming the missing operation type. Ensures
+   partial compliance does not silently pass.
+3. Same file — confirm the check ignores YAML files under `_lib/` itself
+   (the canonical fragment should not be self-tested as a scenario).
+4. Same file — supply a `catch:` block where `describe.kind` is changed
+   to a different XR kind (the only allowed deviation) and assert the
+   check still passes. Validates that the kind-override escape hatch
+   works without widening the drift window.
+
+**Integration**
+
+1. `tests/integration/01_catch_block_live.sh` — spin up a minimal kind
+   cluster with Crossplane installed, apply the meta-test scenario
+   (`meta-catch-fires`), and assert the chainsaw stdout contains
+   `Describe Resource:` and `Events:`. Proves the `catch:` block fires
+   correctly against a real API server, not just as YAML structure.
+2. Same script — assert that the happy-path scenario (`_smoke`) does NOT
+   produce a `Describe Resource:` line when its step succeeds. Proves the
+   catch block is silent on green runs.
+3. `tests/integration/02_output_budget.sh` — run the meta-test and pipe
+   chainsaw stdout through `wc -c`; assert the catch-block section is
+   ≤ 5120 bytes. Validates the truncation constants hold against a real
+   API server whose `describe` output may differ from synthetic fixtures.
+
+**E2E**
+
+The `tests/chainsaw/meta-catch-fires/chainsaw-test.yaml` scenario (§6)
+already serves as the primary E2E proof — it is a live chainsaw run that
+deliberately fails and verifies the catch block fires. Separate E2E
+cases beyond the meta-test are not applicable at this time: the feature
+is a diagnostic aid whose value is fully captured by the meta-test
+scenario and the integration tests above. If chainsaw adds support for
+a repo-wide `catch:` in `Configuration` in a future release, a
+dedicated E2E scenario testing that mechanism would belong here.
+
+## 8. Documentation updates
 
 - `/home/user/k8-platform/ai/testing-guidelines.md` §6.4 (or wherever
   chainsaw-pattern guidance lives — add a subsection if absent):
@@ -195,7 +244,7 @@ non-goal "we are not testing chainsaw's own retry semantics".
   exemplar.
 - No edits to retros or handoff — the change is mechanical.
 
-## 8. Workflow / auto-invocation wiring
+## 9. Workflow / auto-invocation wiring
 
 `tests/chainsaw/run.sh` discovers every `chainsaw-test.yaml` under
 `tests/chainsaw/` automatically (chainsaw's default scenario walk).
@@ -216,7 +265,7 @@ The meta-test (§6) is part of the standard chainsaw run, so the same
 auto-discovery covers it. The inverted-exit-code handling lives in
 `tests/chainsaw/run.sh` — see §4 file list.
 
-## 9. Discoverability
+## 10. Discoverability
 
 Three forcing functions, mirroring SPEC-A2's structure:
 
@@ -235,7 +284,7 @@ Three forcing functions, mirroring SPEC-A2's structure:
    reviewer subagent flag missing blocks during the test-drafting
    gate.
 
-## 10. Verification checklist
+## 11. Verification checklist
 
 Concrete observable checks the agent runs after implementing this
 spec:
@@ -261,7 +310,7 @@ spec:
   CI chainsaw job and is reported as PASS by `run.sh` (inverted
   exit code) without breaking the overall job exit.
 
-## 11. Rollout notes
+## 12. Rollout notes
 
 - **Coordinate with the impl agent's PR #X chainsaw-tests work**
   (currently in flight per operator brief). Two paths:
@@ -286,7 +335,7 @@ spec:
 - No account-derived values per AGENTS.md §8.1 — the catch block
   reads `($namespace)` and `${AWS_REGION:-us-east-1}` dynamically.
 
-## 12. Estimated effort
+## 13. Estimated effort
 
 **S** — small.
 
@@ -295,6 +344,6 @@ existing scenarios (with one-line `kind:` edit each), one new
 meta-test scenario (~20 lines), one bash unit test (~60 lines), three
 small doc edits. No new tooling, no chainsaw plugins, no workflow
 changes. Total: ~3–4 hours of focused work including the §6.4
-adversarial-review pass and the §10 manual smoke. The load-bearing
+adversarial-review pass and the §11 manual smoke. The load-bearing
 risk is the meta-test's inverted-exit handling in `run.sh` — budget
 an extra hour for that wiring.

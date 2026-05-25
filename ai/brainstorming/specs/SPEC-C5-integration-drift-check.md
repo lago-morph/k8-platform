@@ -79,7 +79,7 @@ Create:
 Modify (documentation/wiring only; no code changes elsewhere):
 
 - `ai/testing-guidelines.md` — §6.3 full-bundle list updated to name
-  the new test explicitly (see §7).
+  the new test explicitly (see §8).
 
 No new shared library files needed. The test is single-file and
 self-contained per the existing integration-test convention.
@@ -220,7 +220,64 @@ reviewer will likely surface drift shapes we haven't seen (e.g. EKS
 ACM certificate `validation_record_fqdns` re-computed on Route53
 record drift).
 
-## 7. Documentation updates
+## 7. Testing suggestions (unit / integration / e2e)
+
+**Unit** tests are fast (<10 s each) and exercise the allowlist filter
+and plan-output parser in isolation using synthetic JSON fixtures.
+No live AWS credentials or cluster required.
+
+- `tests/unit/test_no_drift_meta.sh` — fixture with only
+  `meta.helm.sh/last-applied` timestamp changes; assert the allowlist
+  filter returns "no real drift" (exit 0).
+- `tests/unit/test_no_drift_meta.sh` — fixture with a `tags` block
+  mutation outside the allowlist; assert "real drift detected" (exit 1
+  from the filter function).
+- `tests/unit/test_no_drift_meta.sh` — fixture with an IRSA trust
+  policy mutation (`aws_iam_role` + `assume_role_policy`); assert exit 1
+  and the resource address appears in the printed summary.
+- `tests/unit/test_no_drift_meta.sh` — fixture with both an allowlisted
+  `tags_all` delta and a real `security_group_rule` change; assert only
+  the security group change triggers failure (allowlisted noise is
+  NOTICE-only).
+- `tests/unit/test_no_drift_meta.sh` — fixture with exit-code 2 from a
+  mocked `terraform plan` (infrastructure error); assert the test script
+  exits 1, not 2, distinguishing the "skip" path from the "infra error"
+  path.
+
+**Integration** tests run against a live cluster with real AWS
+credentials. They are part of the `tests/integration/run.sh` auto-
+discovery loop and exercise the end-to-end `terraform init` + `plan`
+path, not just the filter logic.
+
+- `tests/integration/99_no_drift.sh` (module: `terraform/base/`) —
+  real plan against freshly-applied state returns exit 0; no diff
+  lines printed.
+- `tests/integration/99_no_drift.sh` (module: `terraform/management/`) —
+  same; exit 0 with "no drift in terraform/management" summary line.
+- Manual negative-path smoke test (operator-run, not CI): temporarily
+  add an out-of-band AWS tag to the EKS VPC via `aws ec2 create-tags`,
+  re-run the test, assert exit 1 and the resource address named in
+  output; revert the tag and confirm green. Document this procedure
+  in `tests/integration/README.md` so future operators can reproduce
+  it without reading the full spec.
+
+**E2E** — not applicable. The test is itself an integration-layer
+artifact (it calls `terraform plan` against a live backend); there is
+no higher-level chainsaw scenario or full-stack probe that adds
+meaningful coverage beyond the integration cases above. A chainsaw
+test wrapping `terraform plan` would require a Kubernetes job that
+holds AWS credentials and a Terraform binary — the operational overhead
+exceeds the coverage benefit. If a future "cluster health dashboard"
+chainsaw scenario is added, the drift check could be embedded there,
+but that is out of scope for this spec.
+
+Distinguish from §6: §6 is the gate (the spec is not done without the
+unit fixtures and both integration assertions); §7 is the broader
+catalogue of cases one might add or run manually as the surrounding
+system matures (e.g. the negative-path smoke test, additional
+allowlist-boundary cases).
+
+## 8. Documentation updates
 
 - `ai/testing-guidelines.md` §6.3 — extend the full-bundle list to
   name the new test explicitly:
@@ -242,7 +299,7 @@ record drift).
 - No new ADR. The decision to plan-on-verify is a direct extension
   of SPEC-C1's plan-on-apply, not a new architectural axis.
 
-## 8. Workflow / auto-invocation wiring
+## 9. Workflow / auto-invocation wiring
 
 No new workflow files. Existing wiring fires the test automatically:
 
@@ -258,10 +315,10 @@ No new workflow files. Existing wiring fires the test automatically:
   last item.
 
 `continue-on-error` is **never** set on this step. Drift must fail
-loud. If the rollout phase (§11) reveals pre-existing drift, the fix
+loud. If the rollout phase (§12) reveals pre-existing drift, the fix
 is to remediate the drift, not to suppress the test.
 
-## 9. Discoverability for future agents
+## 10. Discoverability for future agents
 
 Three forcing functions, none requiring an agent to remember anything:
 
@@ -280,7 +337,7 @@ Three forcing functions, none requiring an agent to remember anything:
 
 No new skill required. No new doc-link at session start.
 
-## 10. Verification checklist
+## 11. Verification checklist
 
 - [ ] `bash tests/integration/99_no_drift.sh` exits 0 against a
   freshly-applied phase 0+1 environment.
@@ -300,7 +357,7 @@ No new skill required. No new doc-link at session start.
 - [ ] `tests/unit/test_no_drift_meta.sh` exists, all assertions pass.
 - [ ] `ai/testing-guidelines.md` §6.3 mentions the new test by name.
 
-## 11. Rollout notes
+## 12. Rollout notes
 
 **The test will fail against the current repo on day one if pre-existing
 drift exists.** Before merging, complete:
@@ -344,7 +401,7 @@ Stack the PRs per AGENTS.md §3 if the fix pass is large:
 PR 3's CI gates on the test being green, which proves the audit and
 fix passes were complete.
 
-## 12. Estimated effort
+## 13. Estimated effort
 
 **M** — medium.
 

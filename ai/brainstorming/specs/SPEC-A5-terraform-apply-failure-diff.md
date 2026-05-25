@@ -114,7 +114,7 @@ Create:
 - (No change to `terraform/`, `crossplane/`, `argocd/`, `clusters/`,
   `platform-services/`, `tests/`, `policies/`, `scripts/`, or
   `.github/` per the spec's scope rules. The workflow change to
-  *emit* the pre-apply plan artifact is captured below in §11
+  *emit* the pre-apply plan artifact is captured below in §12
   Rollout notes as a separate, prerequisite PR.)
 
 ## 5. Implementation notes
@@ -146,7 +146,7 @@ no-op test would generate noise.
 
 **In CI** (preferred path): the apply job already runs
 `terraform plan` then `terraform apply <plan-file>`. Add (in the
-prerequisite workflow PR — see §11) two steps:
+prerequisite workflow PR — see §12) two steps:
 
 - After the existing pre-apply plan, write
   `terraform show -json mgmt.tfplan > pre-apply.plan.json` and
@@ -255,7 +255,69 @@ No new Kyverno layer (no cluster-runtime invariant). No new chainsaw
 scenario (no XRD/Composition). The contract is text-transformation
 over Terraform's own JSON schema.
 
-## 7. Documentation updates
+## 7. Testing suggestions (unit / integration / e2e)
+
+This section is the broader catalogue of tests one might add as the
+surrounding system matures. §6 is the gate (the spec is not done
+without those tests); §7 documents follow-on coverage that increases
+confidence but is not a merge blocker.
+
+### Unit
+
+Fast (<10 s each). Files follow `tests/unit/test_<name>.sh`.
+
+1. **`tests/unit/test_apply_intent_diff.sh` — MATCH path**: feed two
+   identical pre/post plan JSON fixtures (all intended actions appear
+   in post). Assert exit 0 and `Verdict: MATCH` in stdout.
+2. **`tests/unit/test_apply_intent_diff.sh` — NO_OP_SUSPECTED path**:
+   pre plan shows `terraform_data.crossplane_aws_provider` with
+   action `replace`; post plan shows the same address with action
+   `no-op`. Assert exit 3, `Verdict: NO_OP_SUSPECTED`, and the
+   "Missed addresses" block names `triggers_replace`.
+3. **`tests/unit/test_apply_intent_diff.sh` — DRIFT path**: pre plan
+   shows `helm_release.crossplane` with a specific set of attribute
+   changes; post plan shows a different set. Assert exit 2 and
+   `Verdict: DRIFT`.
+4. **`tests/unit/test_apply_intent_diff.sh` — legitimate empty plan**:
+   pre plan is `Plan: 0 to add, 0 to change, 0 to destroy`; post
+   plan identical. Assert exit 0 and stdout does NOT contain
+   `NO_OP_SUSPECTED` (the Phase 3.5 trigger guard must fire).
+5. **`tests/unit/test_apply_intent_diff.sh` — output budget**: feed a
+   500-address fixture; assert the rendered Markdown is ≤5 KB and
+   ends with the `… (N more rows)` truncation marker.
+
+### Integration
+
+Tests against a live cluster (kind for chainsaw; sandbox EKS for
+deeper ones). Slower (seconds to minutes). Files follow
+`tests/integration/<NN>_<name>.sh`.
+
+1. **`tests/integration/NN_apply_intent_diff_round_trip.sh` —
+   clean-apply MATCH**: after a phase-1 apply with no pending
+   manifest changes, invoke Phase 3.5 via the skill. Assert the
+   skill prints `Verdict: MATCH` and no `MISSED` rows appear.
+2. **`tests/integration/NN_apply_intent_diff_round_trip.sh` —
+   controlled no-op injection**: introduce a `triggers_replace` miss
+   (edit a manifest body without bumping its sentinel), dispatch
+   `terraform-test phase=management action=apply`, invoke the skill.
+   Assert `Verdict: NO_OP_SUSPECTED` and the exact affected address
+   appears in the output. Revert the edit, re-dispatch, assert
+   `Verdict: MATCH`.
+3. **`tests/integration/NN_apply_intent_diff_round_trip.sh` — lock
+   contention path**: dispatch two `terraform-test` runs
+   back-to-back; assert the skill on the second run emits either a
+   clean `Verdict:` line or `UNKNOWN_LOCK_CONTENTION`, never a false
+   `Verdict: MATCH` on broken state.
+
+**E2E**: not applicable for this spec. Phase 3.5 operates entirely
+within the Terraform state-vs-plan layer; there is no XRD,
+Composition, or chainsaw scenario surface. Crossplane-side
+verification is the responsibility of the `crossplane-claim-verify`
+skill (see §5 Implementation notes). A full-stack E2E scenario would
+add value only if a future spec wires these two skills into a single
+orchestrated pipeline — that is out of scope here (see §3).
+
+## 8. Documentation updates
 
 - `.claude/skills/terraform-ci-watch/SKILL.md` — Phase 3.5 insertion
   per §4.
@@ -275,7 +337,7 @@ over Terraform's own JSON schema.
 - `AGENTS.md` — no change. §7 already names the skill; the new
   phase is internal.
 
-## 8. Workflow / auto-invocation wiring
+## 9. Workflow / auto-invocation wiring
 
 AGENTS.md §7 already mandates invocation after every `git push`
 affecting Terraform. The new Phase 3.5 fires inside that same
@@ -301,7 +363,7 @@ the operator's intended change is structurally impossible to
 detect (e.g. a `triggers_replace` that genuinely needs a different
 strategy).
 
-## 9. Discoverability for future agents
+## 10. Discoverability for future agents
 
 Four forcing functions:
 
@@ -321,7 +383,7 @@ Four forcing functions:
    reviewers — and the next session reading the PR — see the
    warning header even before scrolling logs.
 
-## 10. Verification checklist
+## 11. Verification checklist
 
 Concrete observable checks the agent runs after implementing this
 spec:
@@ -350,7 +412,7 @@ spec:
   plan diff (test fixture), confirm the rendered comment is
   ≤5 KB.
 
-## 11. Rollout notes
+## 12. Rollout notes
 
 - Land on branch `feat/terraform-ci-watch-intent-diff` stacked off
   `main` per AGENTS.md §3. No prerequisite spec; the skill changes
@@ -384,7 +446,7 @@ spec:
   SKILL.md notes this; the actual cross-skill coordination is a
   follow-up if it proves load-bearing.
 
-## 12. Estimated effort
+## 13. Estimated effort
 
 **M** — medium.
 

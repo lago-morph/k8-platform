@@ -267,7 +267,29 @@ review and paste the run URL into the PR description, demonstrating
 the three new steps produced output. This is the standard pattern; not
 a §6.7 mandated verifier-workflow gate.
 
-## 7. Documentation updates
+## 7. Testing suggestions (unit / integration / e2e)
+
+### Unit
+
+Concrete cases for `tests/unit/test_phase_2_diagnose_workflow_parse.sh`
+(a superset of the §6 gate tests — §6 specifies the minimum; this
+section catalogues additional cases worth adding as the workflow grows):
+
+1. **YAML parses cleanly** — `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/phase-2-diagnose.yml'))"` exits 0. Covers the PR #65 silent-registration failure class.
+2. **Step (a) trust-subject loop present** — `grep -c 'TRUST_SUBJECTS' .github/workflows/phase-2-diagnose.yml` returns ≥ 1. Ensures the diff logic was not accidentally removed during a rebase.
+3. **`tail -5` budget enforced in step (c)** — `grep -c 'tail -5' .github/workflows/phase-2-diagnose.yml` returns ≥ 1. Guards against output-budget drift.
+4. **`diag-probe=true` label present in probe step** — `grep -c 'diag-probe=true' .github/workflows/phase-2-diagnose.yml` returns ≥ 1. Validates the 2-line additive change that lets step (c) locate the probe namespace.
+5. **`set +e` at top of each new step body** — `grep -c 'set +e' .github/workflows/phase-2-diagnose.yml` returns a count ≥ the total new steps (3) plus whatever the existing workflow already had. Prevents a missing-role from aborting the full diagnose run.
+
+### Integration
+
+N/A at the automated layer. The workflow itself IS the integration harness — dispatching `phase-2-diagnose.yml` against a live cluster exercises steps (a), (b), and (c) end-to-end. The §6 manual-verify dispatch (paste run URL into PR description) serves as the integration gate. There is no value in an additional `tests/integration/` wrapper that merely re-dispatches the workflow.
+
+### E2E
+
+N/A. No XRD, Composition, or Crossplane claim is introduced by this spec. The chainsaw suite (`tests/chainsaw/`) exercises claim lifecycle; SPEC-A3 only adds read-only diagnostic steps to an existing workflow and does not alter any claim path. A future spec that adds claim-level fixture tests may reference the step-(c) reconcile-error dump format, but that is out of scope here.
+
+## 8. Documentation updates
 
 - `ai/handoff.md` "QUICKSTART → Step 7" paragraph: add a sentence
   pointing at the new diagnose steps as the first read instead of
@@ -283,7 +305,7 @@ a §6.7 mandated verifier-workflow gate.
 
 No new docs file; no ADR (this is workflow plumbing, not a design choice).
 
-## 8. Workflow / auto-invocation wiring
+## 9. Workflow / auto-invocation wiring
 
 `.github/workflows/phase-2-diagnose.yml` is the existing diagnose entry
 point. Triggered by `workflow_dispatch` only. The three new steps are
@@ -301,14 +323,14 @@ Discoverability of the workflow itself is unchanged — it remains
 `gh workflow run phase-2-diagnose.yml` from any branch with the file
 present.
 
-## 9. Discoverability (AGENTS.md sections that point to this workflow)
+## 10. Discoverability (AGENTS.md sections that point to this workflow)
 
 The implementing PR must verify (and add if missing) references in:
 
 - **`ai/handoff.md` Pointers section** — already lists
   `.github/workflows/phase-2-diagnose.yml`; confirm the description
   reflects the IRSA / SA / reconcile-error capture.
-- **`AGENTS.md` §7** — add the cross-reference described in §7 of this
+- **`AGENTS.md` §7** — add the cross-reference described in §8 of this
   spec.
 - **`AGENTS.md` §6.7** — note (one sentence) that phase-2-diagnose is
   the read-only snapshot workflow and is intentionally NOT under the
@@ -320,7 +342,7 @@ The implementing PR must verify (and add if missing) references in:
   `phase-2-diagnose.yml` run's IRSA/SA evidence over re-querying the
   cluster.
 
-## 10. Verification checklist
+## 11. Verification checklist
 
 - [ ] `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/phase-2-diagnose.yml'))"` exits 0.
 - [ ] `gh workflow list` shows `Phase 2 diagnose (read-only)` (i.e.
@@ -340,7 +362,7 @@ The implementing PR must verify (and add if missing) references in:
       wired into `tests/unit/run.sh`, and passes locally.
 - [ ] PR description includes the dispatched run URL.
 
-## 11. Rollout notes
+## 12. Rollout notes
 
 - Single PR off `main` (or stacked on SPEC-A2's implementation PR if
   ordering is convenient — they don't conflict because A2 modifies a
@@ -360,7 +382,7 @@ The implementing PR must verify (and add if missing) references in:
   convention, the new steps continue to work — they discover labels
   dynamically rather than hardcoding names.
 
-## 12. Estimated effort
+## 13. Estimated effort
 
 **S** (small) — three additive YAML steps + one 2-line edit to an
 existing step + one new shell unit test (≈40 LOC) + three documentation

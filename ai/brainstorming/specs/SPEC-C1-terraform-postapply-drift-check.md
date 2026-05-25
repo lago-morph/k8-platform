@@ -246,7 +246,70 @@ in the PR body.
 
 ---
 
-## 7. Documentation updates
+## 7. Testing suggestions (unit / integration / e2e)
+
+### Unit
+
+Fast, local, no cluster required. Names follow `tests/unit/test_<name>.sh`.
+
+1. `tests/unit/test_workflow_postapply_plan_present.sh` — assert both
+   `postapply_plan_base` and `postapply_plan_mgmt` steps exist, carry
+   `plan -detailed-exitcode`, and are conditioned on `outcome == 'success'`
+   of the preceding apply step. (Overlaps §6 gate test; this copy is the
+   discovery-catalogue entry.)
+2. `tests/unit/test_postapply_exit_code_mapping.sh` — feed synthesised
+   exit codes `0`, `1`, and `2` into the step shell fragment and assert
+   the expected workflow-step exit code and `$GITHUB_OUTPUT` content.
+3. `tests/unit/test_postapply_summary_truncation.sh` — pipe a 10 KB plan
+   body through the truncation logic and assert the output is ≤5 KB with
+   the `... [truncated; see artifact ...]` trailer appended.
+4. `tests/unit/test_post_comment_postapply_keys.sh` — extend the existing
+   `STEP_LABELS`/`OUTCOMES` keys-equal invariant test to cover both
+   `POSTAPPLY_PLAN_BASE_OUTCOME` and `POSTAPPLY_PLAN_MGMT_OUTCOME` env
+   vars added to `post-comment.py`.
+5. `tests/unit/test_retry_sleep_present.sh` — grep the workflow YAML for
+   the `sleep 60` literal and a second `terraform plan` invocation within
+   the same step body; assert both are present.
+
+### Integration
+
+Requires a local kind cluster or the Pluralsight sandbox (us-east-1 /
+us-west-2). Names follow `tests/integration/<NN>_<name>.sh`. These are
+opt-in and are not run in the regular phase bring-up to avoid cost.
+
+1. `tests/integration/12_postapply_drift_repro.sh` — dispatches
+   `apply-and-verify` against the fixture at
+   `tests/fixtures/postapply-drift/` (§6 gate) and asserts the
+   `postapply_plan_*` step exits non-zero (exit code `2` detected).
+2. `tests/integration/13_postapply_drift_fixed.sh` — same fixture,
+   after a manifest-hash-aware `triggers_replace` is patched in; asserts
+   the post-apply plan exits `0`.
+3. `tests/integration/14_postapply_transient_retry.sh` — injects a
+   synthetic one-shot plan diff (exit `2` on first call, `0` on second)
+   and asserts the step sleeps, retries, and ultimately passes with a
+   logged warning about the transient.
+
+N/A for a fourth or fifth case at this layer: the three cases above cover
+the full exit-code matrix (`0`, transient-`2`-then-`0`, persistent-`2`)
+and adding more would duplicate unit-level assertions at a higher cost.
+
+### E2E
+
+Full-stack, against a deployed phase-N cluster. Names follow
+`tests/chainsaw/<scenario>/chainsaw-test.yaml` or `tests/e2e/<name>/`.
+
+E2E is **not applicable** for this spec. The post-apply plan step is a
+CI workflow concern, not a cluster-state concern. Chainsaw scenarios
+exercise live Crossplane / ArgoCD resource lifecycles; there is no
+cluster-state assertion this spec could make that is not already covered
+by the integration layer above. Adding a chainsaw wrapper here would add
+cost and complexity without increasing coverage. If a future spec wires
+the drift-check output into an ArgoCD out-of-sync event, an E2E test
+would then be warranted.
+
+---
+
+## 8. Documentation updates
 
 When the implementation PR lands:
 
@@ -275,7 +338,7 @@ When the implementation PR lands:
 
 ---
 
-## 8. Workflow / auto-invocation wiring
+## 9. Workflow / auto-invocation wiring
 
 `apply-and-verify` is already the canonical phase bring-up action
 per `AGENTS.md §5` and `ai/handoff.md`'s NEW SESSION QUICKSTART
@@ -290,7 +353,7 @@ drift check rides on the existing critical path.
 
 ---
 
-## 9. Discoverability for future agents
+## 10. Discoverability for future agents
 
 The implementation buys discoverability automatically:
 
@@ -313,7 +376,7 @@ authoring time.
 
 ---
 
-## 10. Verification checklist
+## 11. Verification checklist
 
 Before marking the implementation PR ready:
 
@@ -343,7 +406,7 @@ Before marking the implementation PR ready:
 
 ---
 
-## 11. Rollout notes
+## 12. Rollout notes
 
 - **Idempotent helm-release transient drift.** Crossplane's chart
   occasionally re-renders a `metadata.generation`-derived field on
@@ -374,7 +437,7 @@ Before marking the implementation PR ready:
 
 ---
 
-## 12. Estimated effort
+## 13. Estimated effort
 
 **S** (small).
 
@@ -383,7 +446,7 @@ Before marking the implementation PR ready:
 - Unit test: ~30 minutes.
 - Fixture + integration repro: ~1–2 hours (most of the time is
   in shaping the fixture to be deterministic).
-- Docs updates (§7): ~30 minutes.
+- Docs updates (§8): ~30 minutes.
 - Adversarial review + adoption: ~1 hour.
 
 Total: half a day of focused work. Pays for itself the first
