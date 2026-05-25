@@ -147,6 +147,15 @@ class are not redundant — they fire in different environments and catch
 different failure modes (authoring time, runtime drift, real-AWS flow,
 Crossplane composition logic).
 
+**Composition render dry-run is mandatory at author time** — every new
+or modified Composition MUST land with a matching
+`crossplane/xrds/<name>/render-fixtures/` directory containing
+`input.yaml` and `expected.yaml`. See SPEC-S9
+(`ai/brainstorming/specs/SPEC-S9-composition-render-dryrun.md`). The
+helper `scripts/composition-render.sh` runs the diff; the pre-commit
+hook and `tests/unit/test_composition_render_fixtures.sh` gate every
+push.
+
 ### 6.2 TDD discipline when fixing bugs
 
 **When the agent finds any issue — CI failure, verify mismatch, runtime
