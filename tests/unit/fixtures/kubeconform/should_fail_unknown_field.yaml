@@ -1,0 +1,22 @@
+# Fixture: SHOULD FAIL. Reproduces PR #74 Crossplane 2.3.0 Bug 1 — the
+# Upbound provider-aws-secretsmanager Secret CRD does NOT have a
+# `forceOverwriteReplica` field. (The actual upstream field is
+# `forceOverwriteReplicaSecret`.) Crossplane 2.0.1 tolerated the typo;
+# 2.3.0 rejects it with `field not declared in schema`. kubeconform's
+# additionalProperties=false on the provider CRD catches this at commit
+# time. SPEC-S6 §6.
+apiVersion: secretsmanager.aws.upbound.io/v1beta1
+kind: Secret
+metadata:
+  name: fixture-unknown-field
+spec:
+  forProvider:
+    name: fixture/asm
+    region: us-east-1
+    recoveryWindowInDays: 0
+    # BUG: `forceOverwriteReplica` is not in the CRD. The intended
+    # upstream field is `forceOverwriteReplicaSecret`.
+    forceOverwriteReplica: true
+  deletionPolicy: Delete
+  providerConfigRef:
+    name: default

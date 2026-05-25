@@ -1,0 +1,3 @@
+# Fixture: SHOULD PASS. An empty YAML file. kubeconform must not crash
+# and the meta-test must not exit non-zero on an empty input — protects
+# against future authoring of placeholder files. SPEC-S6 §7 case 2.

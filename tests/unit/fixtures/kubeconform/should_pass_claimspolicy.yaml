@@ -1,0 +1,28 @@
+# Fixture: SHOULD PASS. A valid Kyverno ClusterPolicy with all required
+# fields populated. Mirrors the shape of policies/audit/*.yaml so the
+# lint exercises the same schema path. SPEC-S6 §6.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: fixture-valid-clusterpolicy
+  annotations:
+    policies.kyverno.io/title: Fixture policy
+    policies.kyverno.io/category: Fixture
+    policies.kyverno.io/severity: low
+spec:
+  validationFailureAction: Audit
+  background: true
+  admission: true
+  rules:
+    - name: fixture-rule
+      match:
+        any:
+          - resources:
+              kinds: [ConfigMap]
+              namespaces: [default]
+      validate:
+        message: "fixture passes by construction"
+        pattern:
+          metadata:
+            labels:
+              app.kubernetes.io/name: "?*"

@@ -1,0 +1,11 @@
+# Fixture: SHOULD PASS. A built-in ConfigMap validated against the
+# default upstream schema location (no custom schema needed). Defends
+# the contract that `--schema-location 'default'` is wired up.
+# SPEC-S6 §7 case 3.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fixture-builtin
+  namespace: default
+data:
+  hello: world

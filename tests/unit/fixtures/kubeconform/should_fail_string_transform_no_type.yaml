@@ -1,0 +1,39 @@
+# Fixture: SHOULD FAIL. Reproduces PR #61 Bug 4 — a string transform
+# with `type: string` but no `string.type` field. The
+# function-patch-and-transform input schema requires the inner
+# discriminator. kubeconform must reject this. SPEC-S6 §6.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: fixture-string-transform-missing-inner-type
+spec:
+  compositeTypeRef:
+    apiVersion: platform.k8-platform.io/v1alpha1
+    kind: XPlatformSecret
+  mode: Pipeline
+  pipeline:
+    - step: patch-and-transform
+      functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+          - name: asm-secret
+            base:
+              apiVersion: secretsmanager.aws.upbound.io/v1beta1
+              kind: Secret
+              spec:
+                forProvider:
+                  region: us-east-1
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.uid
+                toFieldPath: spec.forProvider.name
+                transforms:
+                  - type: string
+                    # BUG: missing the inner `.string.type` discriminator.
+                    # The function rejects this and every claim stays
+                    # Ready=False forever (the PR #61 failure mode).
+                    string:
+                      fmt: "k8-platform/%s"

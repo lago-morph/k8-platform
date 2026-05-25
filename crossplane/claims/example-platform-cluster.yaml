@@ -1,3 +1,8 @@
+# kubeconform-skip — `subnet-REPLACE-ME-AZ*` placeholders are
+# documentation; this example is a copy/paste starting point that the
+# user edits with real subnet IDs before applying. The XRD's
+# `^subnet-[a-z0-9]+$` regex remains the load-bearing admission gate.
+# SPEC-S6 §5.4 allowlist.
 # Example PlatformCluster claim — copy/paste starting point.
 #
 # WARNING: applying this `kubectl apply -f` will create a REAL EKS

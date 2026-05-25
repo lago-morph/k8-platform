@@ -1,0 +1,37 @@
+# Fixture: SHOULD PASS. A minimal valid Crossplane Composition with a
+# function-patch-and-transform input whose every `type: string` transform
+# carries `.string.type`. SPEC-S6 §6.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: fixture-valid-string-transform
+spec:
+  compositeTypeRef:
+    apiVersion: platform.k8-platform.io/v1alpha1
+    kind: XPlatformSecret
+  mode: Pipeline
+  pipeline:
+    - step: patch-and-transform
+      functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+          - name: asm-secret
+            base:
+              apiVersion: secretsmanager.aws.upbound.io/v1beta1
+              kind: Secret
+              spec:
+                forProvider:
+                  region: us-east-1
+                  recoveryWindowInDays: 0
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.uid
+                toFieldPath: spec.forProvider.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "k8-platform/%s"

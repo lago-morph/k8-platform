@@ -316,6 +316,41 @@ test before the fix.
   on PATH. The GitHub-hosted runner provides all three; local
   contributors must install them.
 
+### The kubeconform schema store (`kubeconform-schemas/`)
+
+Static schema validation runs as
+`tests/unit/test_kubeconform_manifests.sh` (SPEC-S6) and scans every
+YAML under `crossplane/`, `argocd/`, `clusters/`, `policies/` on every
+push. It catches the silent-schema-mismatch bug class — fields rejected
+at admission time but accepted by `kubectl apply` — at commit time.
+
+The lint reads schemas from `kubeconform-schemas/`, a committed JSON
+schema store. CI runners cannot reach the EKS cluster, so the schemas
+are pre-fetched locally and checked in. Regenerate with:
+
+```bash
+bash scripts/fetch-crds-for-kubeconform.sh
+```
+
+The script auto-detects a live cluster (preferred) and falls back to
+fetching pinned upstream CRD YAMLs when no cluster is reachable. It
+also extracts `platform.k8-platform.io` schemas from the repo's own
+XRDs and the `pt.fn.crossplane.io` function-input schema from the
+`function-patch-and-transform` OCI package (SPEC-S6 §5.3).
+
+**Regenerate after** bumping any Crossplane / Kyverno / ESO / ArgoCD /
+provider-aws version pin in `tests/chainsaw/versions.env` or
+`terraform/management/variables.tf`, after adding or modifying an XRD,
+or after adding a new CRD group used by a new repo manifest. Commit
+the diff in the same PR.
+
+**Allowlist syntax.** A YAML file may opt out by carrying
+`# kubeconform-skip` in its first 5 lines. The fallback exists for
+documentation placeholders (e.g. `subnet-REPLACE-ME-AZ*` in example
+claims); the bias is **fix the manifest, not add a skip**. Every skip
+must be accompanied by a comment naming the load-bearing reason — see
+`kubeconform-schemas/README.md` for the current allowlist + rationales.
+
 ---
 
 ## 9. Last-Profile Outage — Handoff Fallback
