@@ -38,6 +38,11 @@ run_suite tests/unit/test_platform_secret_composition.sh
 run_suite tests/unit/test_platform_cluster_xrd.sh
 run_suite tests/unit/test_platform_cluster_composition.sh
 run_suite tests/unit/test_composition_string_transform_type.sh
+run_suite tests/unit/test_composition_render_fixtures.sh
+run_suite tests/unit/test_composition_render_catches_bug4.sh
+run_suite tests/unit/test_composition_render_diff_detected.sh
+run_suite tests/unit/test_composition_render_no_golden_exit0.sh
+run_suite tests/unit/test_composition_render_version_pin.sh
 run_suite tests/unit/test_argocd_app_revision_pinned.sh
 run_suite tests/unit/test_argocd_bootstrap.sh
 run_suite tests/unit/test_diag_component.sh

@@ -299,6 +299,18 @@ coverage independent of the AWS-touching paths.
 - The unit suite is also run locally with `tests/unit/run.sh` — no env
   required.
 
+### Composition render fixtures (SPEC-S9)
+
+Every Composition in `crossplane/compositions/` MUST have a
+`render-fixtures/` directory under its XRD subdirectory
+(`crossplane/xrds/<name>/render-fixtures/`) containing `input.yaml`
+(the probe claim, with a pinned `metadata.uid`) and `expected.yaml`
+(the golden rendered output). Use `scripts/composition-render.sh` to
+bootstrap and verify. The `tests/unit/test_composition_render_fixtures.sh`
+unit test enforces presence; the pre-commit hook fires on every
+Composition or fixture edit. See SPEC-S9 in
+`ai/brainstorming/specs/SPEC-S9-composition-render-dryrun.md`.
+
 ### Adding coverage
 
 The fixture-driven shape (`(phase, action)` tuples for gate tests)

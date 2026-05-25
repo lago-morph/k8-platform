@@ -1,0 +1,32 @@
+# Probe XPlatformCluster used by `crossplane render` for SPEC-S9 dry-run.
+#
+# Renders 8 managed resources: 2 IAM roles + 4 RolePolicyAttachments +
+# 1 EKS Cluster + 1 NodeGroup.
+#
+# metadata.uid is pinned for deterministic render output (see SPEC-S9
+# §5 "Diff strategy"). subnetIds use plausible test values — the
+# render is fully offline so no real subnets are queried.
+apiVersion: platform.k8-platform.io/v1alpha1
+kind: XPlatformCluster
+metadata:
+  name: render-probe-cluster
+  uid: "00000000-0000-0000-0000-000000000002"
+spec:
+  claimRef:
+    apiVersion: platform.k8-platform.io/v1alpha1
+    kind: PlatformCluster
+    name: render-probe
+    namespace: default
+  name: render-probe
+  region: us-east-1
+  version: "1.32"
+  vpc:
+    subnetIds:
+      - subnet-00000000000000001
+      - subnet-00000000000000002
+  nodeGroup:
+    instanceTypes:
+      - t3.medium
+    desiredSize: 2
+    minSize: 1
+    maxSize: 3
