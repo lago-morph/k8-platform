@@ -12,186 +12,164 @@ and writes back to it after every workflow run. See
 
 ## NEW SESSION QUICKSTART (read this first)
 
-You are picking up a 2026-05-23/24 session that:
+**Resume context: late-2026-05-24 session, account `413117505476`.**
 
-- Verified phases 0 + 1 on AWS account `309191981509` (now being torn down)
-- Stacked phase 2a (PlatformSecret XRD) and phase 2b (PlatformCluster XRD) into main
-- Got `phase=management apply-and-verify` green ([run 26346784628](https://github.com/lago-morph/k8-platform/actions/runs/26346784628))
-- Authored an `integration-tests.yml` workflow that proved phase 2 was **NOT** actually working — silent PASS hiding 4 real failures
-- Root-caused four bugs (two script, one Composition, one Kyverno-vs-ArgoCD drift)
-- Shipped fixes for the script bugs (PRs #59, #60) and the Composition bug (PR #61)
-- Did NOT ship the Kyverno-drift fix or re-verify on a live cluster
+You are picking up a session that root-caused the long-standing "PlatformSecret claim never Ready=True" bug to **two cascading misconfigs**, fixed the first half, and was mid-iteration on the second half when the sandbox capabilities were upgraded.
 
-**Then the AWS account was changed.** Everything from `309191981509` is being torn down. You are starting on a new account.
+### Session capabilities you now have (NEW — not available in prior sessions)
 
-### Before you even start
+The new sandbox grants you:
 
-If you are reading a `main`-checkout version of this file, **verify PR #62 (the rewrite of this NEW SESSION QUICKSTART) is already merged**. If not, the doc on main is stale — work from branch `chore/handoff-resume-here` or ask the user to merge #62 first.
+1. **`aws` CLI with full admin** on test account `413117505476` (env vars `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION=us-east-1` pre-loaded).
+2. **Unlimited outbound network** — no jentic bridge needed for AWS / kubectl / curl / ArgoCD API.
+3. **Direct `kubectl` against the live management cluster** via `aws eks update-kubeconfig --name k8-platform-mgmt --region us-east-1`.
 
-### What "continue" means right now
+**This changes the inner debug loop fundamentally.** The prior 2026-05-23/24 sessions had to dispatch a workflow + wait 3 minutes + parse a 170 KB log just to read one MR's `.status.conditions`. You can now:
 
-Run these steps in order. Where I say "dispatch X", I mean via the `mcp__560280ab...__execute` jentic bridge calling `op_2acb005c9f3704ad` (workflow_dispatch); poll via `op_e5f9dfd148ed5018` (list_workflow_runs); fetch job logs via `op_2064ead94c9950bc` (list_jobs_for_workflow_run) + `op_c08d23e5bd6966cb` (download_job_logs). Pattern is documented in `.claude/skills/ext-github/SKILL.md`.
+- Read MR status: `kubectl get secret.secretsmanager.aws.upbound.io <name> -o yaml`
+- Verify IRSA trust subject: `aws iam get-role --role-name k8-platform-mgmt-crossplane --query Role.AssumeRolePolicyDocument`
+- Check who actually authed: `aws sts get-caller-identity` (when proxying via the role)
+- Force ArgoCD sync: hit `argocd.management.413117505476.realhandsonlabs.net/api/v1/applications/<name>/sync` directly (with a token — the ArgoCD admin password is in a secret on the cluster, `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d`)
 
-**Critical behavioral rule (added this session):** verify every action by examining unambiguous evidence — read the actual log lines, query the actual status block, call the actual API. Do NOT trust wrapper exit codes alone. See `## Behavioral rules from 2026-05-24 session` below for the full table.
+**Do not author one-off diagnose workflows for things you can now check directly.** `phase-2-diagnose.yml` is still the right tool for **capturing a reproducible snapshot before opening a PR** — not for ad-hoc lookups during a debug loop.
 
-**Step 0 — verify the new account + secrets + creds + merge PR #61.** Dispatch nothing yet. Confirm with the user:
+The `ext-aws` / `ext-argocd` / `ext-kubernetes` skill requests in the older "APIs you want" section are no longer needed for THIS session. Keep them on the radar for future sandboxes that lose this access.
 
-1. **The new AWS account ID.**
-2. **The three GitHub Actions repo secrets are rotated to the new account's keys**: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`. Every workflow dispatched below reads them; if they still hold the torn-down account's keys, every dispatch fails at `aws sts get-caller-identity`. If they're not yet rotated, **STOP** — ask the user to rotate them in repo Settings → Secrets and variables → Actions, and re-confirm before continuing. Do not dispatch Step 1 otherwise.
-3. **A public Route53 hosted zone exists in the new account, named `<new-account-id>.realhandsonlabs.net.`** (trailing dot). We don't auto-provision the zone. The sandbox can't run `aws-creds-check.sh` directly (no AWS creds outside CI) — ask the user to run `bash scripts/aws-creds-check.sh` locally and paste the `hosted zone discovery` section. **Read the output, don't trust the exit code** — the script only WARNs on mismatch and still returns 0. Pass criterion: exactly one zone whose Name matches the new-account pattern.
-4. **Merge PR #61 (Bug 4 fix) before Step 1.** Without it, phase 2's PlatformSecret Composition is rejected at function-input validation and every claim stays `Ready=False` — Steps 1–3 (~25 min of CI) would be wasted before Step 4 surfaces the problem. Confirm `merged: true` at the right SHA via `mcp__github__pull_request_read` (read-only — it cannot trigger the merge). If still open: either ask the user to click merge, or in throughput mode call `mcp__github__merge_pull_request` after CI is green. Do NOT proceed to Step 1 with #61 unmerged.
+### What was just done (PRs #64–#68 — chronological)
 
-A new account should be treated as a hard stop condition (re-confirm scope with the user before continuing) even if AGENTS §6.6 throughput mode was previously granted. AGENTS §6.6 does NOT currently enumerate account-change as a stop condition; recommend adding it (separate small PR).
+Cascading failure chain rooted in `terraform/management/helm.tf`'s `terraform_data.crossplane_aws_provider`. Each PR fixed one layer of the onion:
 
-**Step 1 — bring up phase 0 (~5 min).** Dispatch `terraform-test.yml` on `main` with `phase=base action=apply-and-verify`. Poll `list_workflow_runs` until `status=completed`. Then read the job's log; look for the exact line `Apply complete! Resources: 25 added, 0 changed, 0 destroyed.` and `aws_acm_certificate_validation.cert: Creation complete`. Then read the `Verify base outputs` step for the issued ACM ARN. Do NOT just trust `conclusion=success`.
+| PR | Merged | Fix |
+|---|---|---|
+| **#64** | ✅ | **Bug 3** (Kyverno-vs-ArgoCD drift): set `spec.admission: true` + `pod-policies.kyverno.io/autogen-controllers: none` on `crossplane/policies/09-platform-secret-namespace-allowed.yaml`. Kyverno was defaulting these fields onto every ClusterPolicy, surfacing as eternal `crossplane-resources` OutOfSync. Extended `tests/unit/test_kyverno_policy_lint.sh` to assert all three fields. |
+| **#65** | ✅ | **Enhanced `phase-2-diagnose.yml`**: dump XR yaml in full (was `head -120` truncated), walk every `XR.spec.resourceRefs` and yaml each, print events, grep crossplane core logs filtered to the XR name. Plus a YAML-literal-block fix because the first attempt embedded a Python heredoc whose unindented body terminated the `run: |` block (GitHub silently refused to register `workflow_dispatch` until merged — error message was `Workflow does not have 'workflow_dispatch' trigger`). |
+| **#66** | ✅ | **Bug 5 / root cause of composite-not-Ready**: pin `serviceAccountTemplate.metadata.name: upbound-provider-family-aws` in the `DeploymentRuntimeConfig`. Without it Crossplane generates a hash-suffixed SA name (e.g. `provider-family-aws-24aaab54a3a0`) that doesn't match the IRSA trust subject in `terraform/management/irsa.tf:98` (`namespace_service_accounts = ["crossplane-system:upbound-provider-family-aws"]`). AssumeRoleWithWebIdentity → 403 → ASM Secret MR never reconciles → XR Ready=False → claim Waiting. |
+| **#67** | ✅ | **`triggers_replace` miss**: PR #66's YAML edit was a no-op at apply time. `terraform_data.crossplane_aws_provider.triggers_replace` only watched the IRSA arn + provider version, not the manifest body. Extracted manifest into `local.crossplane_aws_provider_manifest` and added `sha256(local....)` to triggers. Same pattern as `terraform_data.argocd_bootstrap` (helm.tf:360–363). |
+| **#68** | **OPEN** (draft) | **Provider Deployment not rolled**: after #67's apply ran (`terraform_data` replaced, `deploymentruntimeconfig configured`), diagnose run [26355033199](https://github.com/lago-morph/k8-platform/actions/runs/26355033199) showed the new SA `upbound-provider-family-aws` exists with the correct IRSA annotation BUT the running provider pod is still mounted on the OLD hash-suffixed SA. Crossplane's Provider controller only re-renders its Deployment when the Provider object itself changes — a `DeploymentRuntimeConfig` edit alone doesn't flip `serviceAccountName`. PR #68 adds `kubectl delete deploy -l pkg.crossplane.io/provider=provider-family-aws --wait=false` after the apply so Crossplane recreates the Deployment from the current config. Includes a `"provisioner-command-v2"` sentinel in `triggers_replace` since the command-body edit lives outside the manifest local that's hashed. |
 
-**Step 2 — bring up phase 1 (~15 min).** Dispatch `terraform-test.yml` `phase=management action=apply-and-verify`. Read the log: `Apply complete! Resources: 51 added`, five `helm_release.<argocd|external-dns|crossplane|external-secrets|kyverno>: Creation complete after` lines, plus the `terraform_data.argocd_bootstrap` local-exec output line `application.argoproj.io/bootstrap created`. Then read the workflow's `Verify ArgoCD URL` step — its last line should be `argocd reachable at https://argocd.management.<new-account>.realhandsonlabs.net (HTTP 200|307)`.
+### Where this leaves us — what to do FIRST
 
-**Step 3 — wait at least 3 minutes for ArgoCD to sync phase 2.** Phase 2's XRDs, Compositions, ClusterPolicy 09, and ClusterSecretStore are GitOps-only now. The bootstrap App syncs `argocd/apps/` → which materializes `management-cluster-config` (wave -10) + `crossplane-resources` (wave 0) → which sync `clusters/management/eso/` + `crossplane/{xrds,compositions,policies}/`. ArgoCD's default refresh interval is 3 min and the wave cascade is serial; jumping to step 4 too early shows `OutOfSync` from race rather than from Bug 3. When in doubt dispatch `phase-2-diagnose.yml` and re-read.
+**Step 0 — read this whole quickstart**, then `mcp__github__pull_request_read` PR #68 to confirm CI is green. Last check status (07:29 UTC): unit ✅, base validate ✅, management validate **in progress**. If still in_progress: poll.
 
-**Step 4 — diagnose first, then verify.** Dispatch `.github/workflows/phase-2-diagnose.yml` (read-only, no inputs; ships on main since PR #60). Read the output. Specifically:
-- Are all ArgoCD apps `Synced+Healthy`? **Bug 3 below means `crossplane-resources` will be `OutOfSync`** because Kyverno mutates ClusterPolicy 09 after apply. Fix Bug 3 (Step 5) before proceeding past this point.
-- Does the diagnostic's probe `PlatformSecret` claim reach `Ready=True`? If not, read the XR's `status.conditions[].message`. With PR #61 merged (per Step 0) the bug 4 message should NOT appear — if it does, #61 didn't actually land; re-verify via `pull_request_read`.
+**Step 1 — merge PR #68.** Either ask the user, or in throughput mode merge via `mcp__github__merge_pull_request` once green.
 
-**If `phase-2-diagnose.yml` itself fails** (workflow errors before producing output), read its failed step's log. Common modes: `aws eks update-kubeconfig` failure (= phase 1 wasn't actually green, re-do Step 2 evidence with attention); missing `yq`/`kubectl` install (workflow regression); IAM perms missing on the rotated creds (re-check Step 0 #2).
+**Step 2 — `terraform-test phase=management action=apply` on `main`.** Watch the apply log for:
+- `terraform_data.crossplane_aws_provider must be replaced`
+- `Plan: 1 to add, 0 to change, 1 to destroy`
+- `deploymentruntimeconfig.pkg.crossplane.io/aws-provider-config configured`
+- `deployment.apps "provider-family-aws-..." deleted`
+- `Apply complete! Resources: 1 added, 0 changed, 1 destroyed.`
 
-**Step 5 — fix Bug 3 (Kyverno-vs-ArgoCD drift).** Not yet fixed. Diagnostic output proves `ClusterPolicy/platform-secret-namespace-allowed` drifts OutOfSync after each ArgoCD sync. Kyverno's admission/background controller injects defaults that ArgoCD didn't apply. The complete list of fields to defend against (verify against your fresh `phase-2-diagnose` run before authoring):
+The `deployment ... deleted` line is the key new evidence — it didn't appear in run [26354934978](https://github.com/lago-morph/k8-platform/actions/runs/26354934978).
 
-- `spec.background: true` (auto-defaulted when absent — set explicitly in source)
-- `spec.admission: true` (auto-defaulted when absent — set explicitly in source)
-- annotation `pod-policies.kyverno.io/autogen-controllers: none` (autogen adds rules for Pod controllers unless suppressed)
-- `spec.validationFailureAction` (set explicitly — already is, per existing source)
+**Step 3 — verify directly with `kubectl` (NEW: no diagnose workflow needed).**
 
-Two fix paths:
-1. **Preferred (GitOps-clean):** add every field above explicitly in `crossplane/policies/09-platform-secret-namespace-allowed.yaml` so Kyverno has nothing to add. Note: the file already sets `spec.background: true` — confirm against your diagnose-run that it's specifically `spec.admission` and the annotation that drift. If the diagnose's "describe Application" output names different fields, defend those instead.
-2. **Fallback:** add `ignoreDifferences` on `argocd/apps/crossplane-resources.yaml` for `kyverno.io/ClusterPolicy` on the drifting JSON paths. Hides legitimate diffs in future — only use if option 1 doesn't take.
+```bash
+aws eks update-kubeconfig --name k8-platform-mgmt --region us-east-1
+# Wait for Crossplane to respawn the deployment
+kubectl -n crossplane-system get deploy -l pkg.crossplane.io/provider=provider-family-aws \
+  -o jsonpath='{.items[0].spec.template.spec.serviceAccountName}{"\n"}'
+# Expected: upbound-provider-family-aws  (not provider-family-aws-<hash>)
+```
 
-TDD before fixing: write `tests/unit/test_kyverno_policy_no_drift.sh` that scans `crossplane/policies/*.yaml`; assert each of the four known drift fields is explicitly set on every ClusterPolicy. **Note**: this lint defends against re-introducing the four known drift fields — it does NOT detect new drift fields Kyverno might inject in future. The re-dispatch of `phase-2-diagnose.yml` and verifying `.status.sync.status` on `crossplane-resources` reads `Synced` is the only real loop-closer; the lint is the regression net.
+If serviceAccountName is correct, create a probe claim and watch it directly:
 
-**Step 6 — run integration tests for real.** Dispatch `integration-tests.yml` with **just `test_filter=11`** (the workflow on main has only the `test_filter` input; the `mode` input is added by PR #58, still draft). Read the log: every `wait_for` line ends with `✓ … (after Ns)` NOT `✗ … gave up after Ns`; explicit `PASS:` lines correspond to actual passes (PR #59 made the script fail loud — it can be trusted now, but still read it).
+```bash
+NS=verify-irsa-$(date +%s)
+kubectl create ns "$NS"
+kubectl apply -n "$NS" -f - <<YAML
+apiVersion: platform.k8-platform.io/v1alpha1
+kind: PlatformSecret
+metadata: { name: verify-claim, namespace: $NS }
+spec: { refreshInterval: 30s, region: us-east-1, description: "post-#68 verify" }
+YAML
+kubectl wait --for=condition=Ready --timeout=180s -n "$NS" platformsecret/verify-claim
+# Cleanup:
+kubectl delete platformsecret -n "$NS" verify-claim
+kubectl delete ns "$NS"
+```
 
-**Step 7 — full integration bundle.** Dispatch `integration-tests.yml` with `test_filter` empty (no `mode` field on main). Phase 0/1/2 components should all pass green or `SKIP:` cleanly.
+**Step 4 — if the claim still does NOT go Ready=True, investigate the SECONDARY bug.** Diagnose run 26355033199 showed that *even with the SA name fixed*, the XR had **zero `status.conditions`** and the composed managed resources (ASM Secret + ExternalSecret) were **NotFound**. The Crossplane composition reconciler appears not to be producing the MR objects at all — `XR.spec.resourceRefs` is populated (composition function ran) but the MRs themselves don't exist.
 
-**Step 8 — merge PR #58 (lifecycle tooling).** That PR adds the `mode` input + `test` / `teardown-phase-2` / `verify-absent` / `rebuild` modes to `integration-tests.yml` (the `test` mode is the default and preserves current single-input behaviour) AND ships `ai/PHASE-2-LIFECYCLE-PLAN.md` (currently only on its branch). Hold until step 7 is green. After merge, the next steps require those modes.
+Top hypotheses, in order:
+1. **Crossplane v2.0.1 composition-reconciler bug** — see "Crossplane 2.2 upgrade" task in Pending follow-ups (item 8). v2.2 has the unified composite reconciler / realtime compositions that may fix this directly. **DO NOT upgrade yet** — first finish phase 2 on 2.0.1, then upgrade (per user instruction).
+2. **Provider CRD missing or stale.** Check `kubectl get crd secrets.secretsmanager.aws.upbound.io` and `provider.pkg.crossplane.io/provider-aws-secretsmanager`'s Healthy condition.
+3. **Composition function input rejected.** Look at `kubectl -n crossplane-system logs deploy/function-patch-and-transform-* --tail=200` filtered to the XR name; v2.0.1 strict-decoding has bitten us before (Bug 4 in PR #61).
 
-**Step 9 — exercise the full lifecycle.** Per `ai/PHASE-2-LIFECYCLE-PLAN.md` sections B → C → D → E (only available after #58 merges). The lifecycle dispatches `integration-tests.yml mode=teardown-phase-2`, then `mode=verify-absent`, then `mode=rebuild`, then `mode=test` again. This is the user's actual phase-2 completion criterion: GitOps tear-down + rebuild cycle closes.
+**Step 5 — secondary bug, if any, fixed and verified — then phase 2 is GREEN.** Update Phase states below.
 
-**Step 10 — unit-test coverage audit (mandatory before phase 3).** See item 8 in `## Pending follow-ups` (the "Audit procedure (when started)" subsection). Walk past PR failures, classify, author lints. Phase 3's live EKS-via-Crossplane work is ~15 min per iteration; silent failures are expensive.
-
-**Step 11 — phase 3.** Per `ai/DESIGN.md` §3.2 Iteration 3 + REQ-PLAT-01..06. Scaffolding is in `clusters/platform/` (PR #55, merged). Two prerequisites before syncing the `platform-cluster-claim` ArgoCD app:
-1. **Substitute the TODO subnet placeholders** in `clusters/platform/platform-cluster-claim.yaml` (currently `subnet-REPLACE-ME-AZ1/2`). The `private_subnet_ids` output already exists in `terraform/base/outputs.tf` — it's a **list**, so use `terraform output -json private_subnet_ids | jq -r '.[0]'` and `'.[1]'` for the two AZs (NOT `-raw`, which doesn't work on list outputs). The sandbox has no `terraform` or AWS state access — run this inside a one-off `workflow_dispatch` job (author a `phase-3-subnet-discover.yml` calling `terraform init && terraform output` against the base module state) OR ask the user to paste the two IDs.
-2. **Verify** the AppProject `k8-platform` allows `platform.k8-platform.io/PlatformCluster` claims by reading the spec: `grep -A4 namespaceResourceWhitelist argocd/projects/*.yaml` — must include `platform.k8-platform.io`. (Don't trust PR-history alone — see Behavioral rules: evidence not exit codes.)
-
-Then sync. Preferred order (cheapest path first):
-- **If `ext-argocd` is installed**, call `POST /api/v1/applications/platform-cluster-claim/sync`.
-- **Else if you want a workflow trigger**, author `clusters/platform/sync-claim.yml` (one-shot `kubectl patch application platform-cluster-claim -n argocd --type merge -p '{"operation":{"sync":{}}}'`). NB: this workflow does NOT exist yet — needs authoring.
-- **Else** ask the user to click sync in the ArgoCD UI.
-
-Wait ~15 min for EKS provisioning, then layer on ingress-nginx + ExternalDNS + cert-manager + Let's Encrypt + hello.platform.<domain>.
-
-### Open PRs at session end
+### Open PRs at session end (2026-05-24 late)
 
 | PR | What | State |
 |---|---|---|
-| #58 | Phase-2 lifecycle tooling (mode input + teardown/verify-absent/rebuild) + `ai/PHASE-2-LIFECYCLE-PLAN.md` | **draft** — hold until phase 2 verified end-to-end after fresh-account bring-up (Step 8) |
-| #61 | Bug 4 fix: `type: Format` on every string transform | **ready for review** — MUST be in main before phase 2 will work; merge before Step 1 if possible, definitely before Step 4 |
-| #62 | This handoff rewrite (what you're reading) | **ready for review** — purely docs, can merge anytime |
+| #58 | Phase-2 lifecycle tooling (mode input + teardown/verify-absent/rebuild) + `ai/PHASE-2-LIFECYCLE-PLAN.md` | **draft** — still held pending phase 2 end-to-end green. After Step 5 above, this is the next thing to land. |
+| #68 | Force provider Deployment rebuild after DeploymentRuntimeConfig change | **draft / CI in progress** — see Steps 1–3 |
 
-Anything else open is from another session.
+Older PRs from this session — #64, #65, #66, #67 — are all merged.
 
-### Known caveats (NOT bugs, but will trip you)
-
-- **Chainsaw ESO webhook cert (kind-only).** The `tests/chainsaw/` kind-based harness's ESO install (`tests/chainsaw/run.sh`) sometimes fails to mint its webhook cert, producing `invalid certs. retrying...` / `stat /tmp/certs/tls.crt: no such file`. This breaks chainsaw scenarios that create ClusterSecretStore. It does NOT affect the live management cluster (where ESO is installed by `terraform/management/helm.tf` and IRSA-bound). If chainsaw on a PR turns red with this signature, it's not a regression — note and proceed. Separate cleanup item; not blocking phase 2 or 3.
-- **`tests/unit/test_helm_render.sh` (pre-existing tolerated red).** 4 ArgoCD Ingress assertions fail. Tolerated via `continue-on-error: true` in `.github/workflows/unit-tests.yml`. Fix would be to switch yq selectors from `metadata.name=="argocd-server"` to label `app.kubernetes.io/component=server`. Listed in pending-followups; not blocking.
-
-### Session retrospective queued
-
-Many session-level findings (PR-state-as-signal, verify-then-PR pattern, evidence-not-exit-code, the unit-test coverage audit precedent) deserve to land in `retrospective/2026-05-24-*/` and as AGENTS.md edits. Trigger the `self-retrospective` skill when convenient — the chat trace from this session is the source material.
-
-### APIs you want — request via the external-api-bridge skill
-
-You currently rely on jentic + `ext-github` for everything cross-sandbox. The verification rule is much harder to enforce without direct kubectl/AWS/ArgoCD reads — every check today requires authoring a one-off workflow and reading its log. Ask the user to install these via the `external-api-bridge` meta-skill (read `.claude/skills/external-api-bridge/SKILL.md`):
-
-| Service | What you'd actually use it for | Sample endpoints |
-|---|---|---|
-| **ext-aws** | Verify EKS cluster status, IAM role existence, ASM secret presence, Route53 record state, without dispatching a workflow | `eks DescribeCluster`, `iam GetRole`, `secretsmanager DescribeSecret`, `route53 ListResourceRecordSets`, `sts GetCallerIdentity` |
-| **ext-argocd** | Confirm Application sync/health state directly; force-sync from session; read live cluster diff | `GET /api/v1/applications/{name}`, `POST /api/v1/applications/{name}/sync`, `GET /api/v1/applications/{name}/managed-resources` |
-| **ext-kubernetes** (lower priority — auth is complex) | Direct read of any cluster resource without proxying through workflow logs | `GET /api/v1/namespaces/{ns}/pods`, `GET /apis/apps/v1/namespaces/{ns}/deployments` — needs cluster CA + token, EKS would need IAM auth bridge |
-| **ext-github extension** | Re-run failed workflow runs, get full workflow run logs in one call (current bridge has 500 on `/logs` endpoint and uses per-job substitute) | `POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun-failed-jobs`, `GET .../runs/{run_id}/logs` if jentic adds 302-follow |
-
-When proposing these to the user, name the exact endpoints (table above), then run `external-api-bridge` per its SKILL.md procedure. Trigger phrases that load the meta-skill include `create ext-aws`, `add an endpoint to ext-github`, `jentic`, or `egress blocked`. Each new `ext-{service}` ships as a self-contained child skill with per-endpoint recordings.
-
-### Behavioral rules from 2026-05-24 session
-
-Bugs found this session were almost all caused by trusting wrapper exit codes instead of evidence. Going forward:
+### Critical behavioral rules (carried forward from prior sessions, reinforced this session)
 
 | Action | Evidence to check (not just `success`) |
 |---|---|
-| `workflow_dispatch` | poll `list_workflow_runs` until `status=completed`; download the **relevant step's log**; quote a verbatim PASS-evidence line |
-| `git push` | grep the push output for the branch line OR re-resolve `HEAD` and confirm |
-| PR merge | `pull_request_read` returns `merged: true` for the exact SHA you intended |
-| `kubectl apply` (via workflow) | follow up by reading `.status` of the applied object via a diagnostic workflow or `ext-argocd` (preferred near-term; `ext-kubernetes` is lower priority due to EKS IAM-auth complexity) |
-| ArgoCD sync | call ArgoCD API (`ext-argocd`) or `kubectl get application … -o jsonpath='{.status.sync.status}/{.status.health.status}'` and confirm `Synced/Healthy` |
-| AWS resource expected to exist | call AWS API (`ext-aws`) or `aws … describe-… --query`; quote the result |
-| Bash script run in CI | read the log for the script's own PASS/FAIL lines, not the workflow's "step succeeded" badge — scripts can pass-on-fail if not strict (PRs #59 was the example) |
+| `terraform apply` on management | `Plan: N to add ...` line confirms a replace fired. A `0 added, 0 changed, 0 destroyed` after a manifest edit means `triggers_replace` is missing a hash — PR #67 added the manifest sha256 idiom. |
+| `kubectl apply` on a DeploymentRuntimeConfig | `kubectl -n crossplane-system get deploy -l ... -o jsonpath='{.items[0].spec.template.spec.serviceAccountName}'` reflects the NEW name. Crossplane does NOT roll the Deployment on RuntimeConfig changes alone (PR #68's whole point). |
+| IRSA trust | `aws iam get-role --role-name <role> --query 'Role.AssumeRolePolicyDocument.Statement[*].Condition'` shows the `StringEquals` clause; the SA's pod-projected token's `sub` claim must match. |
+| Claim Ready | `kubectl wait --for=condition=Ready --timeout=180s ...` is the unambiguous signal. Don't trust step exit codes. |
+| ArgoCD app | `kubectl get application <name> -n argocd -o jsonpath='{.status.sync.status}/{.status.health.status}'` must be `Synced/Healthy`. |
 
-Also:
-- **PR state = signal.** Open a PR as **draft** while you're still iterating. Mark **ready for review** ONLY when CI is green AND you want it merged. Don't open PRs before push-triggered checks complete — leave the commit on the branch, wait for green, then open.
-- **Verify-then-PR.** Per AGENTS §6.7 for chainsaw, but generalize: any manual check (chainsaw, integration-tests, phase-2-diagnose) should be dispatched against the branch SHA and read green BEFORE opening the PR.
-- **The unit-test gap.** Many failures this session would have been caught by a one-liner lint. The pending-followups item 8 captures the audit task; don't skip it before phase 3.
+### Behavioral rule additions this session
 
-### Pointers (not the whole quickstart)
+- **"It applied successfully" ≠ "the change reached the cluster".** Three times this session a green apply did not produce the intended cluster state: PR #66's YAML edit was no-op'd by `triggers_replace`; PR #67's apply ran but didn't roll the Deployment; the very first apply (run 26354235231) reported "Apply complete! Resources: 0 added" but I initially read that as success. Always trace from PR diff → terraform plan diff → kubectl object diff → behavior in cluster.
+- **`workflow_dispatch` against a non-default-branch ref** silently fails with `"Workflow does not have 'workflow_dispatch' trigger"` when the workflow file is malformed on that branch. PR #65's first push had an unindented Python heredoc that broke the YAML literal block; Actions wouldn't register the workflow until it parsed clean. Validate workflow YAML with `python -c "yaml.safe_load(open(...))"` before push if you've changed anything that looks like a heredoc, multi-line string, or inline script.
+- **Crossplane version awareness.** This cluster runs **v2.0.1** (`terraform/management/variables.tf:78`). Several behaviors I assumed (composition reconciler producing MRs reliably, RuntimeConfig propagation) may be v2.0-specific. v2.2 is current stable. See pending-followups item 8 for the planned upgrade.
 
-- `ai/PHASE-2-LIFECYCLE-PLAN.md` — the A → E checklist this session built
-- `.claude/skills/ext-github/SKILL.md` — the existing ext bridge example to copy
-- `.claude/skills/external-api-bridge/SKILL.md` — the meta-skill for adding new ext-* services
-- `AGENTS.md` §3 / §5.1 / §6.2 / §6.3 / §6.4 / §6.5 / §6.6 / §6.7 — house rules
-- `ai/DESIGN.md` §3.2 — phase 3 design
+### Pointers
 
----
+- `ai/PHASE-2-LIFECYCLE-PLAN.md` — phase 2 A → E checklist
+- `terraform/management/{helm.tf,irsa.tf,variables.tf}` — the files this session touched
+- `crossplane/policies/09-platform-secret-namespace-allowed.yaml` — Bug 3 fix
+- `.github/workflows/phase-2-diagnose.yml` — the diagnose script (enhanced PRs #64+#65+#67)
+- `AGENTS.md` §6.6 (throughput mode), §6.7 (verify-then-PR)
+- `retrospective/` — prior session retros; consider running `/self-retrospective` at end of this session
+
+
 
 ## Environment State
 
 | Field | Value |
 |---|---|
-| Active phase | **none — AWS account `309191981509` torn down 2026-05-24, new account TBD.** Need fresh phase 0/1/2 bring-up per QUICKSTART above. |
-| Last update | 2026-05-24 — end of session that ran phase-2 verify-then-tear-down → bug-hunt → fix-but-not-re-verify (account changed mid-session) |
-| AWS account | **TBD — ask user.** Was `309191981509`. |
-| Route53 zone | **TBD — derived from new account.** Was `309191981509.realhandsonlabs.net.` |
-| EKS cluster | Will be `k8-platform-mgmt` in `us-east-1` again (cluster name is fixed by `terraform/management/variables.tf`) |
-| Cluster URL | Will be `https://argocd.management.<new-account-id>.realhandsonlabs.net` after phase 1 apply-and-verify |
-| State backend | Will be s3 `k8-platform-tfstate-<new-account-id>`, lock table `k8-platform-tfstate-lock` (auto-bootstrapped by terraform-test.yml) |
+| Active phase | **Phase 2 — mid-verification.** Phases 0 + 1 applied and live on account `413117505476`. Phase 2 (PlatformSecret XRD) was end-to-end broken at start of this session; PRs #64+#66+#67 merged, PR #68 open. Next: merge #68, apply, verify claim Ready. See QUICKSTART above. |
+| Last update | 2026-05-24 late — end of IRSA-root-cause session |
+| AWS account | **`413117505476`** |
+| Route53 zone | `413117505476.realhandsonlabs.net.` |
+| EKS cluster | `k8-platform-mgmt` in `us-east-1` |
+| Cluster URL | `https://argocd.management.413117505476.realhandsonlabs.net` |
+| State backend | s3 `k8-platform-tfstate-413117505476`, lock table `k8-platform-tfstate-lock` |
 
 ### Phase states
 
-| Phase | State | Last action | Run URL |
+| Phase | State | Last action | Reference |
 |---|---|---|---|
-| 0 base | **needs fresh apply** (account changed) — code is good | 2026-05-23 verified on prior account | [run 26340162917](https://github.com/lago-morph/k8-platform/actions/runs/26340162917) |
-| 1 management | **needs fresh apply** (account changed) — code is good | 2026-05-23 verified on prior account | [run 26340615326](https://github.com/lago-morph/k8-platform/actions/runs/26340615326) |
-| 2 xrds | **PR #61 must merge first** (Bug 4 root-cause); also Bug 3 (Kyverno-vs-ArgoCD drift) unfixed. Code partially correct, NOT yet end-to-end verified on a live cluster. | 2026-05-24 silent-PASS uncovered, fix authored | [diagnose run 26348711132 — prior account, historical only](https://github.com/lago-morph/k8-platform/actions/runs/26348711132), [PR #61](https://github.com/lago-morph/k8-platform/pull/61) |
-| 3 platform | scaffolding only (PR #55 merged: `clusters/platform/platform-cluster-claim.yaml` + ArgoCD app, manual sync) | — | — |
+| 0 base | **applied + verified** on `413117505476` | 2026-05-24 earlier in session | (visible in state s3 bucket; not re-applied this session) |
+| 1 management | **applied** on `413117505476`. Several re-applies this session updated `terraform_data.crossplane_aws_provider` (PRs #66/#67/#68 cycle). | 2026-05-24 [run 26354934978](https://github.com/lago-morph/k8-platform/actions/runs/26354934978) (PR #67 apply: `1 added, 0 changed, 1 destroyed`) | helm.tf:142+ |
+| 2 xrds | **half-fixed**: SA-name pin via DeploymentRuntimeConfig landed; **provider Deployment still on old SA** (PR #68 pending merge). Secondary issue suspected: XR has zero `.status.conditions` even after SA fix lands — possibly a Crossplane v2.0.1 composition-reconciler bug. | 2026-05-24 [diagnose run 26355033199](https://github.com/lago-morph/k8-platform/actions/runs/26355033199) | PRs #64/#66/#67 merged, #68 open |
+| 3 platform | scaffolding only (PR #55 merged earlier) | — | — |
 | 4 observability | not-coded | — | — |
 | 5 auth | not-coded (spec done 2026-05-10) | — | — |
 | 6 workload | not-coded | — | — |
 
-### Live AWS resources from torn-down account `309191981509` (FOR REFERENCE / SHAPE ONLY — none of these IDs exist anymore; the new account will have analogous resources with different IDs after Step 1/2 brings them up)
+### Live AWS resources on account `413117505476` (current — verify with `aws` CLI before assuming any specific ID is unchanged)
 
 ```
-EKS cluster:        k8-platform-mgmt
-Cluster endpoint:   https://F96592A65D3316DE1EA73CD4C1BC8AF0.gr7.us-east-1.eks.amazonaws.com
-OIDC provider ARN:  arn:aws:iam::309191981509:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/F96592A65D3316DE1EA73CD4C1BC8AF0
-
-IRSA roles:
-  arn:aws:iam::309191981509:role/k8-platform-mgmt-argocd
-  arn:aws:iam::309191981509:role/k8-platform-mgmt-crossplane
-  arn:aws:iam::309191981509:role/k8-platform-mgmt-eso
-  arn:aws:iam::309191981509:role/k8-platform-mgmt-external-dns
-
-ACM cert (issued):  arn:aws:acm:us-east-1:309191981509:certificate/592bdcfa-dbfe-4afe-ba28-aa509c908095
-Cognito user pool:  us-east-1_LOymmhYEF
-Cognito client:     7imdshi763a01upp5fi88k9b4d (Keycloak SSO client)
-Cognito test user:  ci-test@309191981509.realhandsonlabs.net
+EKS cluster:        k8-platform-mgmt  (region us-east-1)
+IRSA role names:    k8-platform-mgmt-{argocd,crossplane,eso,external-dns}
+                    (verify trust subjects via: aws iam get-role --role-name <name> --query Role.AssumeRolePolicyDocument)
+Route53 zone:       413117505476.realhandsonlabs.net.
+ACM wildcard cert:  *.413117505476.realhandsonlabs.net (ISSUED, NLB-bound by ingress-nginx)
+ASM secrets:        k8-platform/<XR-uid>  (created by Crossplane on PlatformSecret claims — none currently expected after diag probes cleaned up)
 ```
+
+Use `aws sts get-caller-identity` first to confirm you're on the right account.
 
 State values: `not-coded`, `code-only`, `plan-green`, `applied`, `verified`,
 `broken`.
@@ -254,7 +232,28 @@ In rough priority order.
 
 7. **Iteration 5 prerequisite.** Per the older 2026-05-10 entry below: base module needs Cognito groups (`k8s-admins`, `k8s-viewers`) before Keycloak realm work. Not yet authored.
 
-8. **Unit-test coverage audit — to be done IMMEDIATELY BEFORE starting phase 3.**
+8. **Crossplane 2.0.1 → 2.2.x upgrade — AFTER phase 2 is fully green and BEFORE starting phase 3.** (Per user instruction, late 2026-05-24 session.)
+
+   **Why this slot, not earlier:**
+   - Doing it during phase 2 conflates "fix didn't work" with "fix worked but upgrade broke something else" — keep the variables separate.
+   - Doing it during phase 3 risks blocking the EKS-via-Crossplane work on an unrelated upgrade-bisect; phase 3 iterations are ~15 min each so a regression discovery is expensive.
+   - Doing it between is the safe slot: phase 2 proves the Composition pipeline works on 2.2; phase 3 inherits a known-good base.
+
+   **Why it's worth doing:**
+   - Current cluster runs `crossplane_version = "2.0.1"` (`terraform/management/variables.tf:78`). 2.2 is current stable.
+   - Late 2026-05-24 session uncovered a symptom (XR with zero `.status.conditions`, MRs in `spec.resourceRefs` but never created on the cluster — diagnose run 26355033199) consistent with v2.0 composite-reconciler limitations that v2.1+ unified reconciler / realtime compositions address. Independent of PR #68's fix.
+   - Provider-family-aws is pinned at `v1.12.0` (compatible with 2.x family). Re-check compatibility matrix before bumping.
+
+   **Upgrade procedure (when started):**
+   1. Read https://docs.crossplane.io/v2.2/whats-new/ and the v2.0 → v2.1 → v2.2 release notes for breaking changes.
+   2. Bump `var.crossplane_version` to `2.2.x`. Re-check `crossplane_provider_family_aws_version` and `crossplane_function_patch_and_transform_version` for compatibility; bump if needed.
+   3. Plan: `terraform-test phase=management action=plan`. Read the plan diff: expect `helm_release.crossplane` to be updated in-place (Helm chart upgrade); the three `terraform_data.crossplane_*` resources may or may not replace depending on their `triggers_replace`. If a Crossplane chart upgrade changes the Provider/Function CRDs, expect the providers to reconcile through a revision bump.
+   4. Apply, then verify with the existing `phase-2-diagnose.yml` and a fresh probe claim. The success criterion is the same: claim reaches Ready=True within 90s and the ASM Secret MR has a real `status.atProvider.arn`.
+   5. If 2.2 changed the DeploymentRuntimeConfig propagation semantics such that PR #68's `kubectl delete deploy` hack is no longer needed, remove it — keep the apply minimal.
+
+   Authoring tip: a small chainsaw or kind-based test that brings up Crossplane + Composition on 2.2 BEFORE the live cluster bump can de-risk significantly. The `tests/chainsaw/` harness already pins versions in `run.sh`.
+
+9. **Unit-test coverage audit — to be done IMMEDIATELY BEFORE starting phase 3.**
 
    **Precedents (failures that prompted this — non-exhaustive):**
    - Integration-tests run 26347839740 silently reported PASS while four `wait_for` calls timed out. Root cause: bash `$UID` shadowing + missing `set -e`. No existing unit test would have caught either — see PR #59 and the new `tests/unit/test_shell_readonly_var_assignment.sh` / `test_integration_scripts_strict_mode.sh`.
