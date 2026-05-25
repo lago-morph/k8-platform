@@ -34,6 +34,12 @@ run_suite tests/unit/test_post_comment.sh
 run_suite tests/unit/test_kyverno_policy_lint.sh
 run_suite tests/unit/test_chainsaw_kind_config.sh
 run_suite tests/unit/test_chainsaw_catch_block.sh
+run_suite tests/unit/test_chainsaw_golden_files_present.sh
+run_suite tests/unit/test_golden_no_volatile_fields.sh
+run_suite tests/unit/test_golden_has_spec_forProvider.sh
+run_suite tests/unit/test_chainsaw_assert_references_golden.sh
+run_suite tests/unit/test_golden_region_uses_binding.sh
+run_suite tests/unit/test_chainsaw_golden_catches_bug4.sh
 run_suite tests/unit/test_platform_secret_xrd.sh
 run_suite tests/unit/test_platform_secret_composition.sh
 run_suite tests/unit/test_platform_cluster_xrd.sh

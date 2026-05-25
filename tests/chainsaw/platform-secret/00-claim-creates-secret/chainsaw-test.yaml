@@ -58,6 +58,21 @@ spec:
                   kind: ClusterSecretStore
                   name: aws-secrets-manager
 
+    - name: assert rendered ASM Secret MR matches golden (SPEC-C4)
+      # Partial match — only fields in expected/asm-secret.yaml are
+      # checked. `($expected_region)` is resolved from the binding.
+      bindings:
+        - name: expected_region
+          value: us-east-1
+      try:
+        - assert:
+            file: expected/asm-secret.yaml
+
+    - name: assert rendered ExternalSecret matches golden (SPEC-C4)
+      try:
+        - assert:
+            file: expected/external-secret.yaml
+
     - name: assert ASM secret exists (out-of-band aws CLI check)
       try:
         - script:
