@@ -27,6 +27,11 @@ All scripts:
 | `route53-records.sh` | List record sets in the discovered hosted zone. |
 | `aws-creds-check.sh` | STS round-trip + Route53 zone discovery (no cluster needed). |
 | `irsa_trust_validator.py` | IRSA trust-policy vs SA fleet sweep; `--all --ci` for gating, `--role <arn>` for targeted triage. |
+| `wait-for-claim.sh` | Polls a Crossplane claim's `Ready=True`; dumps conditions+events on timeout (SPEC-S7). |
+
+Shared helpers (sourced, not executed): `_lib/k8s-helpers.sh` (introduced
+by SPEC-S7) holds read-only kubectl helpers consumed by `wait-for-claim.sh`
+and future scripts (`crossplane-trace.sh`, etc.).
 
 ## Conventions
 

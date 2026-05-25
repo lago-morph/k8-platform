@@ -323,6 +323,17 @@ test before the fix.
   on PATH. The GitHub-hosted runner provides all three; local
   contributors must install them.
 
+### Integration-test wait conventions (SPEC-S7)
+
+Claim waits inside `tests/integration/NN_*.sh` and chainsaw `try.script`
+blocks **must** call `scripts/wait-for-claim.sh <kind> <name> [ns] [timeout]`
+rather than a bespoke `until kubectl get ... | grep True` loop. The
+script exits 1 on timeout and auto-dumps the last-seen `.status.conditions`,
+composition events, and recent cluster events to stdout — eliminating
+the need for per-test dump logic and defending against the
+PR #59 (silent-PASS, missing `-e`) and PR #67 (empty-status false-positive)
+bug classes. See `ai/brainstorming/specs/SPEC-S7-wait-for-claim.md`.
+
 ### Unit-test inventory
 
 | Test file | What it covers | Fixtures |

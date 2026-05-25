@@ -37,8 +37,9 @@ YAML
 
 add_cleanup "kubectl delete bucket.s3.aws.upbound.io $BUCKET --wait=false"
 
-wait_for "Bucket $BUCKET reaches Synced+Ready" 180 5 -- \
-  bash -c "kubectl get bucket.s3.aws.upbound.io $BUCKET -o jsonpath='{.status.conditions[?(@.type==\"Synced\")].status}/{.status.conditions[?(@.type==\"Ready\")].status}' 2>/dev/null | grep -qE '^True/True$'"
+# SPEC-S7: canonical wait + auto-dump on timeout. Bucket is cluster-scoped
+# (raw MR, no claim namespace), so the ns arg is "".
+"$HERE/../../scripts/wait-for-claim.sh" bucket.s3.aws.upbound.io "$BUCKET" "" 180
 
 wait_for "S3 bucket exists in AWS" 60 3 -- \
   bash -c "aws s3api head-bucket --bucket $BUCKET 2>/dev/null"

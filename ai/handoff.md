@@ -141,7 +141,7 @@ Always run `aws sts get-caller-identity` first to confirm what account you're on
 
 | Action | Evidence to check |
 |---|---|
-| `terraform apply` on management | Look for `Plan: N to add`. Zero changes after a manifest edit = `triggers_replace` missing a hash. |
+| `terraform apply` on management | Look for `Plan: N to add`. Zero changes after a manifest edit = `triggers_replace` missing a hash. See `docs/runbooks/runbook-apply-zero-resources.md`. |
 | Provider SA name | `kubectl -n crossplane-system get deploy -l pkg.crossplane.io/provider=provider-family-aws -o jsonpath='{.items[0].spec.template.spec.serviceAccountName}'` must be `upbound-provider-family-aws`. |
 | IRSA trust | `aws iam get-role --role-name k8-platform-mgmt-crossplane --query 'Role.AssumeRolePolicyDocument'` |
 | Claim Ready | `kubectl wait --for=condition=Ready --timeout=180s ...` is the unambiguous signal. |
