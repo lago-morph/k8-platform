@@ -17,6 +17,7 @@ All scripts:
 
 | Script | Purpose |
 |---|---|
+| `whereami.sh` | Session-start probe: account, region, EKS, zone, kubectl ctx, ArgoCD URL, Crossplane version. Use `--json` as an e2e precondition gate; `--cache` to write `/tmp/session.env` for subagents. |
 | `k8s-status.sh` | Overall snapshot: nodes, namespaces, pod summary per ns. |
 | `k8s-logs.sh` | Pull recent logs for a labelled deployment. |
 | `diag-component.sh` | All-in-one dump for one of our components (argocd, external-dns, etc.) — pods, logs, events, the helm release row. |

@@ -505,10 +505,14 @@ is: "does this identifier still resolve to a live resource after the
 account is rotated?" If no, it's ephemeral and doesn't belong in a
 plan or handoff.
 
+Run `scripts/whereami.sh` as the first command of every session; use `--json`
+for machine-readable output. This replaces the manual `aws sts get-caller-identity` /
+`aws eks list-clusters` sequence and surfaces kubectl context, ArgoCD URL, and
+Crossplane version in one call (SPEC-S4).
+
 When picking up a session, the first concrete commands are:
-1. `aws sts get-caller-identity` — confirm what account you're on.
-2. `aws eks list-clusters` (or `update-kubeconfig`) — confirm the cluster exists.
-3. Treat the handoff doc's account-level statements (phase 0+1 "applied" vs "needs apply") as the session-author's belief, not ground truth — verify with the live API.
+1. `scripts/whereami.sh` — one call for account, region, EKS, zone, kubectl ctx, ArgoCD URL, Crossplane version.
+2. Treat the handoff doc's account-level statements (phase 0+1 "applied" vs "needs apply") as the session-author's belief, not ground truth — verify with the live API.
 
 ---
 

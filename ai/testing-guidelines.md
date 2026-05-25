@@ -327,6 +327,16 @@ the need for per-test dump logic and defending against the
 PR #59 (silent-PASS, missing `-e`) and PR #67 (empty-status false-positive)
 bug classes. See `ai/brainstorming/specs/SPEC-S7-wait-for-claim.md`.
 
+### Unit-test inventory
+
+| Test file | What it covers | Fixtures |
+|---|---|---|
+| `test_compute_gates.sh` | `compute-gates.sh` (phase × action gate matrix) | `tests/unit/fixtures/compute-gates/` |
+| `test_whereami.sh` | `scripts/whereami.sh` JSON schema, human fields, credential-absent exit, partial-kubectl exit 0, `--cache` file vars, fixture field match. Adversarial additions: null-value guard, `--help` exit 0, lib direct-exec guard. | `tests/unit/fixtures/whereami/` |
+
+For any new e2e or integration test, confirm the first step invokes
+`scripts/whereami.sh --json` as a precondition gate (SPEC-S4 §5).
+
 ---
 
 ## 9. Last-Profile Outage — Handoff Fallback
