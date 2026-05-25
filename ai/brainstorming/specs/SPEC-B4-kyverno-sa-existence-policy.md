@@ -39,7 +39,7 @@ the whole bug family at runtime.
 - **Does NOT mutate.** No `mutate` rules; the policy is `validate` only.
 - **Does NOT enforce.** `validationFailureAction: Audit` — never blocks
   admission or apply. Promotion to Enforce is explicitly forbidden in
-  §11 Rollout.
+  §12 Rollout.
 - **Does NOT cover non-IRSA SAs.** A SA without `eks.amazonaws.com/role-arn`
   is ignored by `preconditions`. Pod-identity associations (the non-IRSA
   EKS identity path) are out of scope; if/when the cluster adopts them,
@@ -232,7 +232,74 @@ exact same shape. Plan: bake a single canonical shape into both the
 chainsaw setup ConfigMap AND the sync job's `jq` filter; assert the
 shape in the unit test on the CronJob YAML.
 
-## 7. Documentation updates
+## 7. Testing suggestions (unit / integration / e2e)
+
+**Unit** — fast (<10 s), no cluster required.
+
+1. `tests/unit/test_kyverno_policy_lint.sh` — extend existing lint:
+   assert `09-irsa-sa-trust-subject-exists.yaml` passes all three
+   structural checks (`spec.admission == true`,
+   `autogen-controllers: none`, no backtick-literal JMESPath).
+2. `tests/unit/test_irsa_trust_subjects_sync.sh` (new) — static parse
+   of `crossplane/policies/10-irsa-trust-subjects-sync.yaml`: assert
+   `concurrencyPolicy: Forbid`, schedule no finer than `*/5`, and that
+   the CronJob command body contains `aws iam get-role` and writes to
+   ConfigMap `kyverno-irsa-trust-subjects` in namespace `kyverno`.
+3. `tests/unit/test_irsa_trust_subjects_sync.sh` — assert image reference
+   is pinned by digest (`@sha256:`) not a floating tag.
+4. `tests/unit/test_irsa_trust_subjects_sync.sh` — assert the CronJob's
+   ServiceAccount carries an `eks.amazonaws.com/role-arn` annotation
+   (bootstrap IRSA on the sync job itself).
+5. `tests/unit/test_kyverno_policy_lint.sh` — regression guard: confirm
+   `validationFailureAction` is `Audit` not `Enforce` for the new file.
+
+**Integration** — requires a live kind cluster with Kyverno installed;
+runs in tens of seconds.
+
+1. `tests/integration/40_irsa_sa_trust_subject_audit.sh` (new) —
+   pre-create the `kyverno-irsa-trust-subjects` ConfigMap with one
+   role-ARN key → `["system:serviceaccount:test-ns:correct-sa"]`; assert
+   `kubectl apply` of a SA `test-ns/correct-sa` with that annotation
+   produces no PolicyReport `fail` entry within 20 s.
+2. Same script — assert a SA `test-ns/wrong-sa` with the same annotation
+   produces a PolicyReport entry with `result: fail` for policy
+   `irsa-sa-trust-subject-exists` within 30 s.
+3. Same script — assert deleting `test-ns/wrong-sa` clears the
+   PolicyReport entry within one background-scan cycle (≤60 s).
+4. Same script — assert that if the ConfigMap is absent, SA creation
+   succeeds (fail-open audit-mode contract) and Kyverno logs no panic.
+5. `tests/integration/41_irsa_trust_subjects_sync_job.sh` (new) —
+   run the sync-job script locally against a mock `aws iam get-role`
+   stub and assert the resulting ConfigMap patch is valid JSON with
+   the expected key shape (`arn:aws:iam::*:role/*` → JSON array string).
+
+**E2E** — full chainsaw scenarios against a deployed management cluster.
+
+1. `tests/chainsaw/irsa-sa-trust-existence/01-drift-fires-policyreport/chainsaw-test.yaml`
+   (new) — setup: load known-good ConfigMap fixture; apply correct SA;
+   assert no fail entry; apply drifted SA; assert fail entry within 30 s;
+   delete drifted SA; assert entry clears.
+2. `tests/chainsaw/irsa-sa-trust-existence/02-missing-configmap-fails-open/chainsaw-test.yaml`
+   (new) — delete the ConfigMap; apply any IRSA-annotated SA; assert SA
+   is accepted (Audit not Enforce); assert Kyverno is healthy afterward.
+3. `tests/chainsaw/irsa-sa-trust-existence/03-cronjob-populates-configmap/chainsaw-test.yaml`
+   (new) — trigger the CronJob manually (`kubectl create job --from=cronjob`);
+   assert ConfigMap `last-sync-timestamp` is updated within 90 s and at
+   least one key matching `arn:aws:iam::` exists in `.data`.
+
+N/A note: no additional E2E layer beyond chainsaw is needed for this
+spec. The ClusterPolicy has no HTTP surface, no external dependency
+beyond the ConfigMap, and no user-facing UI. A separate browser-driven
+or smoke-test-over-HTTPS scenario would add nothing the chainsaw cases
+do not already cover.
+
+Distinguish from §6: §6 lists the tests without which the implementation
+PR is incomplete (the gate). §7 catalogues the fuller suite a maturing
+system should carry — integration scripts 40–41 and chainsaw scenario 03
+are follow-on additions that add coverage progressively as the cluster
+matures, not blockers for the initial merge.
+
+## 8. Documentation updates
 
 - `policies/audit/README.md` — add row to the "What's caught today"
   list: *"09-irsa-sa-trust-subject-exists.yaml — for every IRSA-annotated
@@ -249,9 +316,9 @@ shape in the unit test on the CronJob YAML.
 - `docs/decisions/` — short ADR (`ADR-NNN-kyverno-trust-subjects-sync.md`)
   recording the option (a) vs (b) choice and the staleness-vs-complexity
   trade-off. One page max.
-- No edits to `AGENTS.md` (skill discoverability is covered by §9 below).
+- No edits to `AGENTS.md` (skill discoverability is covered by §10 below).
 
-## 8. Workflow / auto-invocation wiring
+## 9. Workflow / auto-invocation wiring
 
 - **`argocd/` already syncs `policies/audit/` automatically** via
   `terraform/management/helm.tf:304 terraform_data.kyverno_audit_policies`
@@ -271,7 +338,7 @@ shape in the unit test on the CronJob YAML.
 - No new GitHub Actions workflow. No `terraform-test.yml` dispatch
   required for the policy itself; CronJob lands via ArgoCD on next sync.
 
-## 9. Discoverability for future agents
+## 10. Discoverability for future agents
 
 Four forcing functions:
 
@@ -291,7 +358,7 @@ Four forcing functions:
    `spec.admission` / autogen annotation, the unit suite goes red and
    names the file.
 
-## 10. Verification checklist
+## 11. Verification checklist
 
 Concrete observable checks after the implementation PR lands:
 
@@ -320,7 +387,7 @@ Concrete observable checks after the implementation PR lands:
 - [ ] Chainsaw scenario `tests/chainsaw/irsa-sa-trust-existence/01-*` and
   `02-*` pass under `tests/chainsaw/run.sh`.
 
-## 11. Rollout notes
+## 12. Rollout notes
 
 - **`validationFailureAction: Audit` ONLY — never promote to Enforce.**
   Enforcing this policy would block legitimate cluster operations during
@@ -331,7 +398,7 @@ Concrete observable checks after the implementation PR lands:
   Codified in this spec; the impl PR's policy file MUST hard-code
   `Audit` and the README MUST document the no-Enforce stance.
 - Land on branch `feat/kyverno-irsa-sa-trust` off `main`. Stacked off
-  SPEC-A2 only if SPEC-A2's skill amendment in §8 ships in the same PR;
+  SPEC-A2 only if SPEC-A2's skill amendment in §9 ships in the same PR;
   otherwise independent.
 - No Terraform changes in B4 itself, but the impl PR will need to add
   `iam:GetRole` and `iam:ListRoles` to the CronJob's IRSA role (a new
@@ -347,7 +414,7 @@ Concrete observable checks after the implementation PR lands:
   (B-followup) that fires if `last-sync-timestamp` is older than 1 hour.
   Not in B4 scope.
 
-## 12. Estimated effort
+## 13. Estimated effort
 
 **M** — medium.
 

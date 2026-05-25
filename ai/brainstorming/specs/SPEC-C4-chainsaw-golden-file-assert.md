@@ -71,7 +71,7 @@ block contains a claim that triggers Composition rendering, add:
 `platform-cluster/00-xrd-establishes` is an XRD-establishment scenario
 (no live Composition render — uses `--dry-run=server`); it gets a golden
 file ONLY for the rendered Composition's `spec.pipeline` shape if a
-follow-on render-step is added, otherwise it is exempt and noted in §11
+follow-on render-step is added, otherwise it is exempt and noted in §12
 rollout.
 
 ### Per scenario `chainsaw-test.yaml`
@@ -231,7 +231,86 @@ contains an `apply:` against a `platform.k8-platform.io/v1alpha1` claim,
 assert that `expected/` exists and is non-empty. Catches "author added
 a new scenario, forgot the golden file" at unit-test time.
 
-## 7. Documentation updates
+## 7. Testing suggestions (unit / integration / e2e)
+
+### Unit
+
+Fast (<10 s each). Names follow `tests/unit/test_<name>.sh`.
+
+1. `tests/unit/test_chainsaw_golden_files_present.sh` — for every scenario
+   directory under `tests/chainsaw/<xrd>/<scenario>/` whose
+   `chainsaw-test.yaml` contains an `apply:` against a
+   `platform.k8-platform.io/v1alpha1` claim, assert that `expected/`
+   exists and is non-empty.
+2. `tests/unit/test_golden_no_volatile_fields.sh` — for every
+   `tests/chainsaw/**/expected/*.yaml`, assert the file contains none of
+   `uid:`, `resourceVersion:`, `creationTimestamp:`, `managedFields:`, or
+   `ownerReferences:`; the grep must return non-zero (zero lines matched).
+3. `tests/unit/test_golden_has_spec_forProvider.sh` — each golden file
+   for an ASM-backed MR contains a `spec.forProvider:` block (yq
+   `.spec.forProvider | type` returns `!!map`).
+4. `tests/unit/test_chainsaw_assert_references_golden.sh` — each
+   `chainsaw-test.yaml` under `tests/chainsaw/platform-secret/` contains
+   at least one `file: expected/` reference (`grep -r` returns non-zero
+   count).
+5. `tests/unit/test_golden_region_uses_binding.sh` — golden files for
+   region-bearing MRs reference a binding expression `($` rather than a
+   hardcoded region string such as `us-east-1`.
+
+### Integration
+
+Tests against a live kind cluster. Names follow
+`tests/integration/<NN>_<name>.sh`.
+
+1. `tests/integration/10_golden_assert_passes_on_fresh_render.sh` —
+   applies the PlatformSecret claim to a kind cluster, waits for the MR
+   to reach `Synced=True`, then invokes `chainsaw run` for
+   `00-claim-creates-secret`; asserts exit 0.
+2. `tests/integration/11_golden_assert_fails_on_mutated_composition.sh` —
+   applies a yq-mutated copy of the Composition (wrong region value),
+   runs the same assert step, asserts exit non-zero and that the failure
+   message names `spec.forProvider.region`.
+3. `tests/integration/12_bug4_regression_golden.sh` — loads the frozen
+   pre-PR-#61 Composition from
+   `tests/fixtures/compositions/platform-secret-pre-pr61.yaml`, renders
+   it against a probe claim, runs the assert; expects exit non-zero with
+   the divergent `spec.forProvider.name` field named in output.
+
+E2E is the primary validation surface for this spec; integration tests
+confirm the golden mechanism works in isolation before full-stack
+scenarios run.
+
+### E2E
+
+Full chainsaw scenarios. Names follow
+`tests/chainsaw/<scenario>/chainsaw-test.yaml`.
+
+1. `tests/chainsaw/platform-secret/00-claim-creates-secret/chainsaw-test.yaml`
+   — assert step `assert: { file: expected/asm-secret.yaml }` passes
+   after claim reaches `Ready=True`.
+2. `tests/chainsaw/platform-secret/00-claim-creates-secret/chainsaw-test.yaml`
+   — assert step `assert: { file: expected/external-secret.yaml }` passes
+   for the rendered ExternalSecret.
+3. `tests/chainsaw/platform-secret/01-claim-deletion-cleanup/chainsaw-test.yaml`
+   — same two assert steps pass before the deletion step fires.
+4. `tests/chainsaw/platform-secret/02-data-rotation/chainsaw-test.yaml`
+   — golden `spec.refreshInterval: 10s` is matched after rotation claim
+   is applied.
+5. `tests/chainsaw/_meta/composition-drift/chainsaw-test.yaml` — meta-test
+   confirms that a deliberate Composition mutation is REJECTED by the
+   golden (chainsaw step expected to fail; wrapper asserts non-zero exit).
+
+`platform-cluster/00-xrd-establishes` uses `--dry-run=server` and does
+not trigger a live Composition render; E2E golden-file assertions are
+**not applicable** for that scenario until a live-render step is added
+in a future phase. This is a deliberate scoping decision, not an
+oversight — see §3 "Non-Crossplane chainsaw scenarios".
+
+Distinguish from §6: §6 is the gate (the spec is not done without those
+tests); §7 is the broader catalogue of tests to add as the surrounding
+system matures.
+
+## 8. Documentation updates
 
 ### `ai/testing-guidelines.md` §6.1
 
@@ -266,7 +345,7 @@ Add a one-line cross-link under §6 ("Test discipline"):
 Add bug-class row: "Composition silently renders wrong MR shape →
 golden-file assertion in chainsaw" with Bug 4 as the precedent.
 
-## 8. Workflow / auto-invocation wiring
+## 9. Workflow / auto-invocation wiring
 
 `.github/workflows/chainsaw.yml` already auto-discovers every
 `chainsaw-test.yaml` under `tests/chainsaw/`. The new golden assertions
@@ -280,7 +359,7 @@ The `chainsaw.yml` path-filter already includes `tests/chainsaw/**` and
 the same dispatch requirement. No change to the verifier
 (`chainsaw-verify.yml`).
 
-## 9. Discoverability for future agents
+## 10. Discoverability for future agents
 
 1. **PR diff coupling.** A PR that touches
    `crossplane/compositions/platform-secret.yaml` but not any
@@ -297,7 +376,7 @@ the same dispatch requirement. No change to the verifier
    expected and actual on assert failure — the message itself teaches
    the next agent what changed.
 
-## 10. Verification checklist
+## 11. Verification checklist
 
 - [ ] Every chainsaw scenario under `tests/chainsaw/platform-secret/`
   has an `expected/` directory with one YAML per rendered MR.
@@ -317,7 +396,7 @@ the same dispatch requirement. No change to the verifier
 - [ ] `testing-guidelines.md` §6.1, §6.4, and `AGENTS.md` carry the
   cross-links.
 
-## 11. Rollout notes
+## 12. Rollout notes
 
 **Order matters — golden files MUST be backfilled before the assert
 steps are wired in, or every existing scenario breaks on the first
@@ -350,7 +429,7 @@ default field), the fix is to update the golden file in the same
 commit as the version bump — same discipline as updating snapshots
 in any other test harness.
 
-## 12. Estimated effort
+## 13. Estimated effort
 
 **M** (medium). Bootstrapping the golden files for the three existing
 PlatformSecret scenarios is ~1 hour each (capture, trim, verify). The

@@ -55,7 +55,7 @@ or code.
 - **Derived-FQDN literals** (e.g. `309191981509.realhandsonlabs.net`).
   The 12-digit pattern catches the embedded account ID inside such
   FQDNs as a side effect, but the dedicated FQDN check (`\b[0-9]{12}\.realhandsonlabs\.net\b`)
-  with separate allowlisting is a deliberate follow-up (SPEC-B5.1 — see §11).
+  with separate allowlisting is a deliberate follow-up (SPEC-B5.1 — see §12).
 - **Binary files, lockfiles, vendored manifests, `.git/`.** Excluded by
   scope; lockfile hashes contain incidental 12-digit substrings.
 - **Generated files under `.terraform/`, `node_modules/`, `vendor/`.**
@@ -150,12 +150,49 @@ Per AGENTS.md §6.1 (meta-tests with fixtures) and §6.2 (TDD):
    important to know about than the scan result).
 2. **TDD ordering** (§6.2): write the fixtures first, confirm the
    lint flags them, *then* run against the real repo and clean up
-   real findings (see §11 rollout).
+   real findings (see §12 rollout).
 3. The fixture for the prior-session regression (item 2 above) is the
    §6.2.5 "bug fix commits with its test" coupling — the fixture text
    should mirror the literal that appeared in the rotated handoff.
 
-## 7. Documentation updates
+## 7. Testing suggestions (unit / integration / e2e)
+
+### Unit
+
+Fast bash/script-level tests under `tests/unit/`. Each runs in under 10 s.
+
+1. `tests/unit/test_no_account_id_hardcoded.sh --self-test` — assert `should_fail_bare_id.txt`
+   produces exactly one finding for the bare 12-digit literal `413117505476`.
+2. `tests/unit/test_no_account_id_hardcoded.sh --self-test` — assert `should_fail_in_fqdn.txt`
+   produces exactly one finding for the embedded ID in `309191981509.realhandsonlabs.net`.
+3. `tests/unit/test_no_account_id_hardcoded.sh --self-test` — assert `should_pass_allowlisted.txt`
+   produces zero findings when the marker `# noqa: account-id - <reason>` is present.
+4. `tests/unit/test_no_account_id_hardcoded.sh --self-test` — assert `should_pass_non_id_digits.txt`
+   produces zero findings (unix timestamps, ports, hex SHAs — all non-matching).
+5. `tests/unit/test_no_account_id_hardcoded.sh --self-test` — assert a fixture with a
+   marker but an empty reason emits a "reason required" failure, not a silent pass.
+
+### Integration
+
+Tests against a live or kind cluster are **not applicable** for this spec. The lint
+is a pure static analysis of source files using `git grep`; it has no cluster surface,
+no Kubernetes resources, and no AWS API calls. There is nothing to exercise at the
+integration layer that is not already covered by the unit self-tests above.
+
+### E2E
+
+Full-stack chainsaw / deployed-cluster probes are **not applicable** for this spec.
+The linter runs in CI against the working tree and terminates before any cluster is
+involved. An E2E scenario would require a cluster deployment, but the lint gate fires
+in the `unit-tests` workflow step — before any cluster-facing workflow step runs.
+Conflating the two layers would add infra cost for no coverage gain.
+
+Distinguish from §6: §6 lists the mandatory self-test assertions that gate merging
+this spec; §7 catalogues the broader test surface as the surrounding suite matures
+(e.g. adding a fuzz fixture with randomised 12-digit strings, or a performance
+regression guard that asserts the scan stays under 2 s on a repo of N files).
+
+## 8. Documentation updates
 
 - **`AGENTS.md` §8.1** — add a trailing sentence: *"This rule is
   mechanically enforced by `tests/unit/test_no_account_id_hardcoded.sh`
@@ -166,7 +203,7 @@ Per AGENTS.md §6.1 (meta-tests with fixtures) and §6.2 (TDD):
 - No new top-level docs. The existing AGENTS.md §8.1 paragraph is the
   durable explanation; the spec file is the design record.
 
-## 8. Workflow / auto-invocation wiring
+## 9. Workflow / auto-invocation wiring
 
 - **`tests/unit/run.sh`** — append `run_suite tests/unit/test_no_account_id_hardcoded.sh`.
   Keep the file in alphabetical-ish position next to the other shell
@@ -177,7 +214,7 @@ Per AGENTS.md §6.1 (meta-tests with fixtures) and §6.2 (TDD):
 - **Local dev** — `tests/unit/run.sh` from a clean clone runs the
   test; no extra tooling installed beyond `git`, `bash`, `grep`.
 
-## 9. Discoverability for future agents
+## 10. Discoverability for future agents
 
 On failure, the test emits, per finding:
 
@@ -195,7 +232,7 @@ options, (e) the spec for context. No tribal-knowledge step required.
 The test's banner (first line of its stdout) also names SPEC-B5 so a
 future agent reading CI logs can trace back to this design doc.
 
-## 10. Verification checklist
+## 11. Verification checklist
 
 - [ ] Fixture `should_fail_bare_id.txt` is flagged by `--self-test`.
 - [ ] Fixture `should_fail_in_fqdn.txt` is flagged (regression for
@@ -204,7 +241,7 @@ future agent reading CI logs can trace back to this design doc.
 - [ ] Fixture `should_pass_non_id_digits.txt` is NOT flagged
       (timestamps / ports / SHAs).
 - [ ] Marker without a reason produces a "reason required" failure.
-- [ ] Real-repo scan exits 0 (after rollout audit in §11).
+- [ ] Real-repo scan exits 0 (after rollout audit in §12).
 - [ ] `tests/unit/run.sh` invokes the test and surfaces its result.
 - [ ] `.github/workflows/unit-tests.yml` runs the suite on push
       (existing behavior; verify run log).
@@ -212,7 +249,7 @@ future agent reading CI logs can trace back to this design doc.
 - [ ] `ai/testing-guidelines.md` row added.
 - [ ] Test completes in <2 s on CI runner.
 
-## 11. Rollout notes
+## 12. Rollout notes
 
 **Audit-before-enforce, in this order:**
 
@@ -249,7 +286,7 @@ future agent reading CI logs can trace back to this design doc.
    Marketplace) — orthogonal to this spec. The test is a static lint
    and consumes no AWS quota.
 
-## 12. Estimated effort
+## 13. Estimated effort
 
 **S** (small). Roughly:
 

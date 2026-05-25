@@ -178,7 +178,24 @@ load-bearing surface; if a fixture doesn't match a real
 walker-output shape, the test green-lights a classifier that won't
 work in production.
 
-## 7. Documentation updates
+## 7. Testing suggestions (unit / integration / e2e)
+
+**Unit** (`tests/unit/test_claim_decision_tree.sh`)
+
+1. Pipe `class-a-empty-resourcerefs.yaml` through the classifier; assert stdout contains `CLASS=A` and the phrase `function-patch-and-transform`.
+2. Pipe `class-b-mr-not-ready.yaml`; assert `CLASS=B` and the MR name appears in the gap line.
+3. Pipe `class-c-all-mrs-ready-xr-not.yaml`; assert `CLASS=C` and the phrase `no Ready condition`.
+4. Pipe `class-d-irsa-rejection.yaml` (message contains `AssumeRoleWithWebIdentity`); assert `CLASS=D` and `irsa_check_commands` output references the provider SA.
+5. Pipe a synthetic all-green fixture; assert `CLASS=NONE` and a non-zero exit code — guarantees the classifier never fires on a healthy claim.
+
+**Integration** — not applicable for this spec. The classifier is a pure text transformer over walker-collected YAML; it has no cluster-side runtime contract, no API calls, and no state. The IRSA/SA-name contract it detects is already exercised by `tests/unit/test_irsa_helm_linkage.sh` and the PR #66 manifest-pin assertion. Adding an integration layer would require a live cluster running a deliberately-broken Composition, which is covered instead by the §6 manual smoke check.
+
+**E2E** (`tests/unit/run.sh` orchestrates; no chainsaw scenario added by this spec)
+
+1. Run `bash tests/unit/run.sh`; assert the `test_claim_decision_tree.sh` entry appears in output and the suite exits 0 — proves the new unit file is wired into the runner.
+2. Apply a PlatformSecret claim backed by an intentionally empty `resources:` Composition on a kind cluster; invoke `crossplane-claim-verify`; assert the final output line is `CLASS=A` and references function-pod logs. This can be deferred until the SPEC-A1 walker exists and a kind cluster is available; it is not a gate for this spec's merge.
+
+## 8. Documentation updates
 
 - `.claude/skills/crossplane-claim-verify/SKILL.md` — insert Phase
   4b as described in §4. Update the "Companion skill" section to
@@ -196,7 +213,7 @@ work in production.
 - No edits to `AGENTS.md` — §7 already names this skill; the new
   internal phase is an implementation detail.
 
-## 8. Workflow / auto-invocation wiring
+## 9. Workflow / auto-invocation wiring
 
 AGENTS.md §7 already says: *"After applying a Crossplane Claim,
 XRD, or Composition (whether via kubectl, ArgoCD sync, or CI),
@@ -218,7 +235,7 @@ pure-local — runs anywhere `kubectl` + `yq` are available
 (handoff §"Session capabilities" confirms both are present in the
 current sandbox).
 
-## 9. Discoverability for future agents
+## 10. Discoverability for future agents
 
 Three forcing functions:
 
@@ -238,7 +255,7 @@ Three forcing functions:
    shows up in `tests/unit/run.sh` output every push, keeping the
    contract visible.
 
-## 10. Verification checklist
+## 11. Verification checklist
 
 Concrete observable checks the agent runs after implementing this
 spec:
@@ -264,7 +281,7 @@ spec:
   skill reaches Phase 5 (success) without ever printing a `CLASS=`
   line — the classifier only fires on failure.
 
-## 11. Rollout notes
+## 12. Rollout notes
 
 - Land on branch `feat/claim-decision-tree` stacked off the SPEC-A1
   branch (the walker must exist before the classifier consumes its
@@ -281,7 +298,7 @@ spec:
   multi-hop investigation. If it doesn't, the fixture set is
   incomplete — add the new shape and re-run §6's tests.
 
-## 12. Estimated effort
+## 13. Estimated effort
 
 **S** — small.
 

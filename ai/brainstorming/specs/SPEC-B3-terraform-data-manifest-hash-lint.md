@@ -99,7 +99,7 @@ Modify:
   workflow at `.github/workflows/terraform-test.yml` already calls
   `run.sh`, so no workflow edit is needed).
 - (No edits to `terraform/management/helm.tf` — the post-#67 fix
-  already complies; see §11 for the audit step.)
+  already complies; see §12 for the audit step.)
 
 ## 5. Implementation notes
 
@@ -197,7 +197,47 @@ fixture set against this question — *"is there any HCL shape in
 falsely flag?"* — and add fixtures for any shape the reviewer
 surfaces.
 
-## 7. Documentation updates
+## 7. Testing suggestions (unit / integration / e2e)
+
+**Unit** tests are the primary vehicle here; integration and e2e do
+not apply to a pure static-lint script.
+
+**Unit** (`tests/unit/test_terraform_data_hashes_manifest.sh`):
+
+1. `fixtures/.../pass/pr67_fixed.tf` — lint pointed at the
+   `pass/` subtree exits 0; confirms a compliant resource with
+   `sha256(local.crossplane_aws_provider_manifest)` in
+   `triggers_replace` is not flagged.
+2. `fixtures/.../fail/pr67_repro.tf` — lint pointed at the
+   `fail/` subtree exits non-zero and emits a `FAIL` line that
+   names `crossplane_aws_provider` and the unhashed symbol
+   `local.crossplane_aws_provider_manifest`.
+3. `fixtures/.../fail/multi_manifest.tf` — lint reports exactly
+   one FAIL line for `local.b_manifest` (the unhashed one) and
+   does not emit a FAIL line for `local.a_manifest` (which is
+   hashed).
+4. `fixtures/.../pass/ignored.tf` — resource carries the
+   `# lint:terraform_data_hashes_manifest:ignore` comment; lint
+   exits 0 with no FAIL output regardless of `triggers_replace`
+   content.
+5. Live-repo smoke (`LINT_TARGET_DIR` unset): lint scans the real
+   `terraform/` tree and exits 0, confirming the current repo is
+   compliant after the post-#67 fix.
+
+**Integration** — not applicable. The lint is a pure bash+grep
+static analysis that requires no live cluster, no `terraform init`,
+no network, and no AWS credentials. There is no integration surface
+to exercise; all meaningful variation is captured at the unit layer
+above.
+
+**E2E** — not applicable. The lint never interacts with a deployed
+cluster, a Kubernetes API server, or any cloud resource. Chainsaw
+or other e2e harnesses would add real infrastructure cost for zero
+additional coverage beyond what the unit fixtures already provide.
+The gap between §6 (gate) and this catalogue is intentionally small
+for a pure-lint spec: the unit layer IS the end-to-end surface.
+
+## 8. Documentation updates
 
 - `tests/unit/test_terraform_data_hashes_manifest.sh` header
   comment names PR #67 as the originating bug and documents the
@@ -213,7 +253,7 @@ surfaces.
 - No `ai/TESTING-PLAN.md` edit beyond crossing the relevant TODO
   item if one is open for this lint.
 
-## 8. Workflow / auto-invocation wiring
+## 9. Workflow / auto-invocation wiring
 
 `tests/unit/run.sh` is the single entry point invoked by
 `.github/workflows/terraform-test.yml` at `(phase=test,
@@ -226,7 +266,7 @@ The lint is pure-local: no AWS calls, no `terraform init`, no
 network. Runs in <1 s on the current repo. Safe to include in
 every push.
 
-## 9. Discoverability for future agents
+## 10. Discoverability for future agents
 
 Three forcing functions:
 
@@ -246,7 +286,7 @@ Three forcing functions:
    visible in every code-review diff for the resource, no hidden
    config file.
 
-## 10. Verification checklist
+## 11. Verification checklist
 
 Concrete observable checks the agent runs after implementing this
 spec:
@@ -269,7 +309,7 @@ spec:
 - [ ] `grep -c terraform_data_hashes_manifest tests/unit/run.sh`
   returns ≥ 1.
 
-## 11. Rollout notes
+## 12. Rollout notes
 
 - Land on branch `spec/top-15-immediate-changes` (no separate
   feature branch needed — the spec is doc-only; the
@@ -302,7 +342,7 @@ spec:
   authored), the escape hatch is the per-resource comment, not a
   global skip — keep the suite green.
 
-## 12. Estimated effort
+## 13. Estimated effort
 
 **S** — small.
 

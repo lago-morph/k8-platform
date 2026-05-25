@@ -196,7 +196,7 @@ comment on the first ten lines. Both forms log a `NOTICE:` line so
 the allowlist isn't invisible. Allowlist usage requires a one-line
 reason in a comment immediately above; the lint does not enforce
 that comment's presence (low value, high noise) but the convention
-is documented in `ai/testing-guidelines.md` per §7.
+is documented in `ai/testing-guidelines.md` per §8.
 
 ### Performance
 
@@ -232,7 +232,51 @@ a reviewer is likely to surface bash variants we missed (e.g.
 `set -o pipefail; set -eu` split across two lines, or
 `UID=value command` one-line-export form).
 
-## 7. Documentation updates
+## 7. Testing suggestions (unit / integration / e2e)
+
+### Unit
+
+Fast (<10 s each). File names follow `tests/unit/test_<name>.sh`. All
+five cases run within `tests/unit/test_shell_safety.sh`.
+
+1. `tests/unit/fixtures/shell_safety/should_pass_strict_mode.sh` —
+   assert lint exits 0 and emits no `FAIL:` lines.
+2. `tests/unit/fixtures/shell_safety/should_fail_missing_strict.sh`
+   (the PR #46 pattern: `set -uo pipefail` without `-e`) — assert exit 1
+   and `FAIL:` line names the file and the missing flag.
+3. `tests/unit/fixtures/shell_safety/should_fail_readonly_assign.sh`
+   (`UID=$(...)`) — assert exit 1 and the `FAIL:` line names `UID`.
+4. `tests/unit/fixtures/shell_safety/should_pass_workflow.yml` (adjacent
+   justification comment present) — assert exit 0.
+5. `tests/unit/fixtures/shell_safety/should_fail_workflow.yml` (bare
+   `continue-on-error: true`, no comment) — assert exit 1 and the
+   message names `continue-on-error`.
+
+### Integration
+
+Not applicable. The lint operates purely on static source files via
+grep/awk; there is no live cluster surface, no API call, and no runtime
+state. Spinning up a kind cluster would add 60+ seconds of overhead
+with zero additional signal. Any future rule that requires a running
+binary (e.g. linting generated manifests produced by a Helm chart)
+would warrant an integration test; the current three rules do not.
+
+### E2E
+
+Not applicable. The lint is a local bash script with no network
+dependency, no Kubernetes object, and no deployed phase-N artifact.
+A chainsaw scenario or full-stack probe would exercise nothing beyond
+what the unit fixtures already cover. If SPEC-B1 is later extended to
+scan Helm-rendered YAML in a deployed environment, an e2e layer would
+be warranted at that point.
+
+Distinguish from §6: §6 lists the must-have gate tests without which
+the spec is incomplete. §7 is the broader catalogue of tests one might
+add as the surrounding system matures; the integration and e2e layers
+are consciously deferred here because the lint has no live-system
+surface.
+
+## 8. Documentation updates
 
 - `AGENTS.md` §6.1 — add a row to the test-layers table:
   *"Shell-safety lint | always | `tests/unit/test_shell_safety.sh`"*
@@ -250,7 +294,7 @@ a reviewer is likely to surface bash variants we missed (e.g.
   so the historical context is preserved when the old files are
   deleted.
 
-## 8. Workflow / auto-invocation wiring
+## 9. Workflow / auto-invocation wiring
 
 The wiring is already in place — no new files needed:
 
@@ -264,13 +308,13 @@ The wiring is already in place — no new files needed:
   comment). Removes the two superseded steps.
 
 No `continue-on-error` on the new step — by definition the lint must
-fail loud if it finds violations, and §11 rollout ensures the lint
+fail loud if it finds violations, and §12 rollout ensures the lint
 is green before this step is added.
 
 Fire-and-forget on every push to a non-main branch (the workflow's
 existing trigger). No human dispatch required.
 
-## 9. Discoverability for future agents
+## 10. Discoverability for future agents
 
 Three forcing functions, none requiring agent action:
 
@@ -287,7 +331,7 @@ Three forcing functions, none requiring agent action:
 No new skill, no new doc-link required at session start. The lint is
 infrastructure.
 
-## 10. Verification checklist
+## 11. Verification checklist
 
 - [ ] `bash tests/unit/test_shell_safety.sh` exits 0 on the current
   repo state (after §11 rollout fixes are applied).
@@ -310,7 +354,7 @@ infrastructure.
 - [ ] `grep -rn 'shell-safety-lint:' .` shows zero allowlist usages
   on first landing (no pre-existing escape hatches grandfathered in).
 
-## 11. Rollout notes — CRITICAL
+## 12. Rollout notes — CRITICAL
 
 **The lint will fail against the current repo on day one.** Before
 adding the `test_shell_safety` step to `unit-tests.yml`, complete
@@ -357,7 +401,7 @@ Both PRs are mergeable independently after stacking; PR 2's CI
 gates on the new step being green, which proves the audit was
 complete.
 
-## 12. Estimated effort
+## 13. Estimated effort
 
 **M** — medium.
 

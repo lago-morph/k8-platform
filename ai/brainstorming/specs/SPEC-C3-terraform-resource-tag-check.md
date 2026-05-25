@@ -175,7 +175,69 @@ on a fresh account where the apply just started (race window); (c) does
 it tolerate eventual consistency on the tagging API (≤30 s typical lag
 between resource creation and tag-API visibility — wrap with retry).
 
-## Documentation updates
+## 7. Testing suggestions (unit / integration / e2e)
+
+**This section is mandatory in every spec.** §6 is the gate (the spec
+is not done without those tests); §7 is the broader catalogue of tests
+one might add as the surrounding system matures.
+
+### Unit
+
+Fast (<10 s each), no AWS calls. Names follow `tests/unit/test_<name>.sh`.
+
+1. **`tests/unit/test_terraform_default_tags.sh` — provider block presence.**
+   Asserts every `provider "aws"` block in `terraform/**/*.tf` carries
+   `default_tags { tags = { ... } }` with literal keys `k8platform-phase`
+   and `k8platform-component`, both non-empty. Exercises the aliased-provider
+   path (for future multi-region modules) as a separate fixture.
+2. **`tests/unit/test_tag_assertion_allowlist.sh` — allowlist schema.**
+   Parses `reference/tag-assertion.md` yaml; asserts every entry has
+   `terraform_type` and `justification` keys with no duplicate `terraform_type`
+   values. Catches copy-paste omissions when a new exemption is added.
+3. **`tests/unit/test_tag_assertion_output_budget.sh` — output cap.**
+   Feeds a synthetic 25-offender list through the offender-line formatter
+   and asserts total output is ≤5 KB with the truncation notice present
+   for the 21st+ entry.
+4. **`tests/unit/test_terraform_default_tags.sh` — aliased provider fixture.**
+   Validates that a fixture file containing `provider "aws" { alias = "west" }`
+   also requires a `default_tags` block; prevents a regression when phase-3
+   multi-cluster work introduces regional aliases.
+5. **`tests/unit/test_tag_assertion_allowlist.sh` — no-duplicate guard.**
+   Deliberately injects a duplicate `terraform_type` entry and asserts the
+   test script exits non-zero, proving the guard itself works.
+
+### Integration
+
+Against a live cluster (kind or sandbox EKS). Names follow
+`tests/integration/<NN>_<name>.sh`.
+
+1. **`tests/integration/12_terraform_tag_attribution.sh` — live tag presence.**
+   After `apply-and-verify` on phase 0 or 1, calls
+   `aws resourcegroupstaggingapi get-resources --tag-filters Key=Project,Values=k8-platform`
+   and asserts: (a) response is non-empty; (b) every returned ARN not in
+   the allowlist carries both `k8platform-phase` and `k8platform-component`
+   with non-empty values.
+2. **`tests/integration/12_terraform_tag_attribution.sh` — eventual-consistency retry.**
+   Wraps the API call in a retry loop (≤30 s, 5 s sleep) and asserts the
+   test does not flake on a resource that was tagged but not yet indexed.
+3. **`tests/integration/12_terraform_tag_attribution.sh` — allowlist cross-check.**
+   Sources `reference/tag-assertion.md` allowlist at runtime so the
+   integration test and the skill cannot diverge silently; asserts the
+   sourced list is non-empty (prevents a silent empty-allowlist false-pass).
+4. **`tests/integration/12_terraform_tag_attribution.sh` — empty-account guard.**
+   On a freshly-rotated account where no apply has run yet, the test must
+   exit 0 (zero resources is not a failure) rather than raising a false alarm.
+
+### E2E
+
+Not applicable for this spec. The tag-attribution check runs inside the
+`terraform-ci-watch` skill which is already exercised end-to-end by the
+skill's own chainsaw / workflow scenarios; no additional
+`tests/chainsaw/` or `tests/e2e/` scenario is needed here. If a future
+spec adds a full-stack teardown probe that asserts orphan-free state after
+account rotation, it can include the tag-attribution query as one assertion.
+
+## 8. Documentation updates
 
 - `.claude/skills/terraform-ci-watch/SKILL.md` — new Phase 3.5 section,
   description-line edit for trigger surface.
@@ -190,7 +252,7 @@ between resource creation and tag-API visibility — wrap with retry).
 - `ai/handoff.md` — Pending follow-ups entry pointing at the prerequisite
   PR (default_tags addition) and the skill PR (Phase 3.5 addition).
 
-## Workflow / auto-invocation wiring
+## 9. Workflow / auto-invocation wiring
 
 Per `AGENTS.md §7`, `terraform-ci-watch` is already auto-invoked after
 every push that affects Terraform. The new Phase 3.5 runs inside that
@@ -207,7 +269,7 @@ applies anything live), the skill picks up the apply step's stdout from
 the workflow log it already fetches in Phase 4 — no new log-fetching
 plumbing.
 
-## Discoverability for future agents
+## 10. Discoverability for future agents
 
 - **Failed-check naming.** When tag attribution fails, the offender line
   includes the full ARN, which a downstream agent can resolve via
@@ -226,7 +288,7 @@ plumbing.
 - **Cross-skill reuse.** A future `aws-orphan-sweep` skill can take the
   same tag query as its primary input.
 
-## Verification checklist
+## 11. Verification checklist
 
 - [ ] Prerequisite: `terraform/base/versions.tf` `default_tags` extended
       with `k8platform-phase = "0"` and `k8platform-component = "base"`.
@@ -250,7 +312,7 @@ plumbing.
 - [ ] `ai/handoff.md` Pending follow-ups names both PRs (prerequisite
       and skill enhancement) and their order.
 
-## Rollout notes
+## 12. Rollout notes
 
 Two PRs, strictly ordered:
 
@@ -282,7 +344,7 @@ tag application survives a destroy/apply cycle (per `AGENTS.md §6.3`
 the full test bundle includes `12_terraform_tag_attribution.sh` so the
 clean rerun is the actual quality signal).
 
-## Estimated effort
+## 13. Estimated effort
 
 **S–M.** Prerequisite PR is small (≤4 lines per provider block, two
 new tests, AGENTS.md bullet). Skill PR is medium (one new reference

@@ -220,7 +220,56 @@ red"), the spec authoring sequence is:
    already landed.
 3. Commit fixture + script together (§6.2 step 5).
 
-## 7. Documentation updates
+## 7. Testing suggestions (unit / integration / e2e)
+
+### Unit
+
+Fast (<10 s each). Names follow `tests/unit/test_<name>.sh`.
+
+1. **`tests/unit/test_irsa_sa_pinned.sh` — happy path.** Point at
+   `fixtures/irsa_sa_pinned/passing/`. Assert exit 0 and that the
+   output contains at least one `PASS:` line. Confirms the script
+   does not false-positive on a fully-pinned repo.
+2. **`tests/unit/test_irsa_sa_pinned.sh` — PR #66 reproduction.**
+   Point at `fixtures/irsa_sa_pinned/failing-pr66/`. Assert exit 1
+   and that stdout contains the literal string
+   `crossplane-system:upbound-provider-family-aws`. Confirms the
+   scanner catches a missing `DeploymentRuntimeConfig` pin.
+3. **`tests/unit/test_irsa_sa_pinned.sh` — transposed-name typo.**
+   Point at `fixtures/irsa_sa_pinned/failing-typo/`. Assert exit 1.
+   Confirms exact matching, not prefix/substring/fuzzy matching.
+4. **`tests/unit/test_irsa_sa_pinned.sh` — Helm values source.**
+   Point at `fixtures/irsa_sa_pinned/passing-helm-values/`. Assert
+   exit 0. Confirms pin-source (2) (`serviceAccount.name` in a
+   values file) is recognised independently of source (1).
+5. **`tests/unit/test_irsa_sa_pinned.sh` — allowlist with reason.**
+   Point at `fixtures/irsa_sa_pinned/passing-allowlist/`. Assert
+   exit 0. Then strip the `# reason:` comment from the allowlist
+   entry and re-run; assert exit 1 with a message containing
+   "allowlist entry needs a reason".
+
+### Integration
+
+Tests against a live or kind cluster. Names follow
+`tests/integration/<NN>_<name>.sh`. This spec is a **static lint**
+with no cluster surface — all correctness properties are provable
+from repo content alone (Terraform HCL, YAML manifests, Helm values
+files). No integration tests are warranted at this time. If a future
+iteration adds a live-cluster probe (e.g. comparing the lint's
+expected SA name against the actual SA in `crossplane-system`), add
+integration cases then.
+
+### E2E
+
+Full-stack chainsaw scenarios or end-to-end probes. Names follow
+`tests/chainsaw/<scenario>/chainsaw-test.yaml` or
+`tests/e2e/<name>/`. The IRSA-SA-pin contract is a static authoring-
+time property; by the time a chainsaw scenario runs, the cluster is
+already live and the IRSA trust either works or does not. Runtime
+IRSA trust verification is SPEC-B4's domain (Kyverno audit policy).
+E2E tests are **not applicable** to this spec.
+
+## 8. Documentation updates
 
 - `tests/unit/README.md` (if absent, create with a single table of
   test → contract): add row for `test_irsa_sa_pinned.sh` →
@@ -231,7 +280,7 @@ red"), the spec authoring sequence is:
   test so a future author adding an IRSA role sees the obligation
   without having to read this spec. One sentence; no duplication.
 
-## 8. Workflow / auto-invocation wiring
+## 9. Workflow / auto-invocation wiring
 
 - Add `run_suite tests/unit/test_irsa_sa_pinned.sh` to
   `tests/unit/run.sh`. Position it adjacent to
@@ -244,14 +293,14 @@ red"), the spec authoring sequence is:
 - No new dependencies. `yq` and `grep` are already on the
   unit-tests runner image (used by other tests).
 
-## 9. Discoverability for future agents
+## 10. Discoverability for future agents
 
 - The test fires on every push via `unit-tests.yml`; a failing PR
   check writes one line per unpinned subject:
   `FAIL: <ns>:<sa> declared in irsa.tf has no matching SA pin in
   crossplane/, platform-services/, or DeploymentRuntimeConfig`.
   That message names the exact file class to fix.
-- The cross-reference comment in `irsa.tf` (§7) gives any author
+- The cross-reference comment in `irsa.tf` (§8) gives any author
   adding a new IRSA module a pointer before they push.
 - The fixture directory `tests/unit/fixtures/irsa_sa_pinned/` is
   self-documenting: each subdir name encodes the intent
@@ -259,7 +308,7 @@ red"), the spec authoring sequence is:
 - The retro for PR #66 / #68 should cite this test by path so a
   future bug-class search lands on the spec.
 
-## 10. Verification checklist
+## 11. Verification checklist
 
 - [ ] `tests/unit/test_irsa_sa_pinned.sh` passes against current
       `main` (PR #66 fix is already merged, all current IRSA roles
@@ -281,7 +330,7 @@ red"), the spec authoring sequence is:
 - [ ] Test produces zero output on `pass` cases beyond the standard
       `PASS:` lines from `test-helpers.sh`.
 
-## 11. Rollout notes
+## 12. Rollout notes
 
 Before merging the test, audit every current IRSA role in
 `terraform/management/irsa.tf`:
@@ -305,7 +354,7 @@ If audit reveals any current IRSA role has no pin and no defensible
 allowlist reason, fix it in the same PR — that's a latent PR #66
 recurrence and the test caught it pre-merge, exactly as designed.
 
-## 12. Estimated effort
+## 13. Estimated effort
 
 **S** (small). ~150 lines of bash for the main script, ~6 fixture
 trees of 2–4 files each, one `run.sh` registration, one
