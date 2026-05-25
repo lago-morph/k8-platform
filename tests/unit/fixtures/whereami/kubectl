@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Stub kubectl for whereami unit tests.
+# Returns fixed values that match expected.json.
+# NOTE: The jsonpath in aws_eks_zone uses backslash-escaped dots:
+#   topology\.kubernetes\.io/zone
+# so we match on "topology" as a simpler anchor.
+
+case "$*" in
+  *"config current-context"*)
+    echo "arn:aws:eks:us-east-1:123456789012:cluster/k8-platform-dev"
+    ;;
+  *"get nodes"*"topology"*)
+    echo "us-east-1a"
+    ;;
+  *"get ingress"*"argocd"*)
+    echo "argocd.k8-platform-dev.us-east-1a.realhandsonlabs.net"
+    ;;
+  *"get svc argocd-server"*)
+    # LoadBalancer fallback — should not be reached since Ingress succeeds
+    echo "argocd-lb.us-east-1.elb.amazonaws.com"
+    ;;
+  *"get deployment crossplane"*)
+    echo "crossplane/crossplane:v0.15.1"
+    ;;
+  *)
+    exit 1
+    ;;
+esac
