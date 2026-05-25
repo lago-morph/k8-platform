@@ -27,6 +27,7 @@ run_suite() {
 
 run_suite tests/unit/test_compute_gates.sh
 run_suite tests/unit/test_irsa_helm_linkage.sh
+run_suite tests/unit/test_irsa_trust_validator.sh
 run_suite tests/unit/test_iam_required_actions.sh
 run_suite tests/unit/test_eks_module_defaults.sh
 run_suite tests/unit/test_helm_render.sh

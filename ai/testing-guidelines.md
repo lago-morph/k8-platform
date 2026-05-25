@@ -198,6 +198,13 @@ loop:
    underlying failure was timing-related (DNS propagation, slow image pull,
    IRSA propagation).
 
+### IRSA invariant
+
+- Run `scripts/irsa_trust_validator.py --all --ci` after every
+  `terraform apply` that touches `terraform/management/irsa.tf` or any
+  `DeploymentRuntimeConfig`. A non-zero exit means a new Bug 5
+  (IRSA SA-name drift). See SPEC-S3.
+
 ---
 
 ## 5. Action Wall-Clock Reference

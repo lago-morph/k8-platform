@@ -1,0 +1,9 @@
+{
+  "metadata": {
+    "name": "upbound-provider-family-aws-correct",
+    "namespace": "crossplane-system",
+    "annotations": {
+      "eks.amazonaws.com/role-arn": "arn:aws:iam::123456789012:role/irsa-provider-family-aws"
+    }
+  }
+}
