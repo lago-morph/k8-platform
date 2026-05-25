@@ -1,0 +1,1 @@
+{"account":"123456789012","region":"us-east-1","eksCluster":"k8-platform-dev","zone":"us-east-1a","kubectlCtx":"arn:aws:eks:us-east-1:123456789012:cluster/k8-platform-dev","argoCdUrl":"https://argocd.k8-platform-dev.us-east-1a.realhandsonlabs.net","crossplaneVersion":"v0.15.1"}
