@@ -44,6 +44,7 @@ run_suite tests/unit/test_diag_component.sh
 run_suite tests/unit/test_shell_readonly_var_assignment.sh
 run_suite tests/unit/test_integration_scripts_strict_mode.sh
 run_suite tests/unit/test_whereami.sh
+run_suite tests/unit/test_runbook_apply_zero_resources.sh
 
 echo ""
 if [ "$OVERALL" -eq 0 ]; then
