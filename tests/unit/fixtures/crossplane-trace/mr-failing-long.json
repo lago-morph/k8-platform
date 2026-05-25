@@ -1,0 +1,22 @@
+{
+  "apiVersion": "secretsmanager.aws.upbound.io/v1beta1",
+  "kind": "Secret",
+  "metadata": {
+    "name": "mr-long",
+    "uid": "00000000-0000-0000-0000-0000000000aa"
+  },
+  "spec": {
+    "forProvider": {"region": "us-east-1"}
+  },
+  "status": {
+    "conditions": [
+      {"type": "Synced", "status": "True", "reason": "ReconcileSuccess", "message": "ok"},
+      {"type": "Ready", "status": "False", "reason": "ReconcileError",
+       "message": "cannot create external resource: AccessDenied: User arn:aws:sts::123456789012:assumed-role/wrong-role/session-12345678 is not authorized to perform secretsmanager:CreateSecret on resource arn:aws:secretsmanager:us-east-1:123456789012:secret:k8-platform/xyz-abc because no identity-based policy allows the secretsmanager:CreateSecret action and a really really long padding string here AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+    ],
+    "atProvider": {
+      "arn": "",
+      "tags": {"crossplane-kind": "Secret"}
+    }
+  }
+}

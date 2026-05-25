@@ -47,6 +47,7 @@ run_suite tests/unit/test_integration_scripts_strict_mode.sh
 run_suite tests/unit/test_whereami.sh
 run_suite tests/unit/test_runbook_apply_zero_resources.sh
 run_suite tests/unit/test_wait_for_claim.sh
+run_suite tests/unit/test_crossplane_trace.sh
 
 echo ""
 if [ "$OVERALL" -eq 0 ]; then
