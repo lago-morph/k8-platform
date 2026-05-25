@@ -479,6 +479,37 @@ At the end of every session (or when the user asks to wrap up), update
 Keep it current — it is the first thing a new session reads to orient
 itself without re-reading the full conversation.
 
+### 8.1 The AWS test account is ephemeral — NEVER hardcode account-derived values
+
+The AWS account underneath the test environment is rotated between
+sessions; the prior account is usually torn down in full before the
+next session starts. **The account ID, derived FQDNs, IRSA role ARNs,
+EKS cluster endpoint, OIDC provider ARN, ACM cert ARNs, Cognito pool
+IDs, and any other account-scoped identifier are NOT durable.**
+
+Do NOT write account-derived values into:
+- `ai/handoff.md`, `ai/PLAN.md`, or any other plan/spec/design doc
+- code comments, commit messages, PR descriptions, or skill content
+- Terraform `.tf` files (use variables / data sources / `local.account_id = data.aws_caller_identity.current.account_id`)
+- Test fixtures, scripts, or workflow YAML (read from `${{ secrets.AWS_REGION }}` / `aws sts get-caller-identity`)
+
+Refer to the account abstractly: "the test account", "the account ID (query
+via `aws sts get-caller-identity`)", "the `<account-id>.realhandsonlabs.net`
+zone". When the next session reads a stale hardcoded ID, it wastes a debug
+loop discovering "wait, that resource doesn't exist" before realizing the
+doc lied.
+
+Run URLs (`https://github.com/.../actions/runs/N`) and PR/commit SHAs
+are fine to cite — those are durable audit-trail artifacts. The line
+is: "does this identifier still resolve to a live resource after the
+account is rotated?" If no, it's ephemeral and doesn't belong in a
+plan or handoff.
+
+When picking up a session, the first concrete commands are:
+1. `aws sts get-caller-identity` — confirm what account you're on.
+2. `aws eks list-clusters` (or `update-kubeconfig`) — confirm the cluster exists.
+3. Treat the handoff doc's account-level statements (phase 0+1 "applied" vs "needs apply") as the session-author's belief, not ground truth — verify with the live API.
+
 ---
 
 ## 9. Commit standards
