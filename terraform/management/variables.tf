@@ -75,7 +75,7 @@ variable "argocd_version" {
 variable "crossplane_version" {
   description = "Crossplane Helm chart version (v2.x)"
   type        = string
-  default     = "2.0.1"
+  default     = "2.3.0"
 }
 
 variable "crossplane_provider_family_aws_version" {
