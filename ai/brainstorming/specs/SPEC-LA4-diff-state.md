@@ -1,9 +1,6 @@
 # SPEC-LA4 — `scripts/diff-state.sh phase=N`: on-demand terraform-plan-vs-cluster drift highlighter
 
-Status: DRAFT
-Brainstorm ID: A1-038
-Tier: A (LA4 in `larger-list-preferences.md`)
-Branch: `feat/diff-state-script`
+Status: DRAFT | Brainstorm ID: A1-038 | Tier: A (LA4) | Branch: `feat/diff-state-script`
 
 ---
 
@@ -108,11 +105,11 @@ Modify:
 - `/home/user/k8-platform/scripts/README.md` — add one row for
   `diff-state.sh` in the script inventory table.
 
-- `/home/user/k8-platform/tests/unit/run.sh` — ensure
-  `test_diff_state.sh` is included (if not already auto-discovered).
+- `/home/user/k8-platform/tests/unit/run.sh` — ensure `test_diff_state.sh`
+  is included (if not already auto-discovered by glob).
 
-- `/home/user/k8-platform/ai/testing-guidelines.md` — §3 phase-loop:
-  add `diff-state.sh phase=<module>` as the recommended spot-check after
+- `/home/user/k8-platform/ai/testing-guidelines.md §3` — add
+  `diff-state.sh phase=<module>` as the recommended spot-check after
   any `apply-and-verify` that touches a `terraform_data` resource.
 
 ---
@@ -228,8 +225,8 @@ Before `terraform init`, the script validates in order:
 4. `command -v python3` — if absent, skip the JSON structured table
    and emit raw plan text instead. Still exits 2 on drift.
 
-Exit 3 (SKIP) matches SPEC-C5's convention and allows callers to treat a
-precondition-missing case distinctly from a plan failure.
+Exit 3 (SKIP) matches SPEC-C5's convention; callers treat it
+distinctly from a plan failure.
 
 ---
 
@@ -247,14 +244,13 @@ Per AGENTS.md §6.1 and §6.4.
 | Unit | same | 40-resource fixture: assert output ≤5 KB and truncation footer present. |
 | Unit lint | same | `grep -c 'set -euo pipefail' scripts/diff-state.sh` ≥ 1; `grep -c 'lock=false' scripts/diff-state.sh` ≥ 1. |
 
-Stubs live in a `tests/unit/stubs/diff-state/` directory (executable
-wrappers on `$PATH` during the test). No AWS credentials are required.
+Stubs live in `tests/unit/stubs/diff-state/` (executable wrappers on
+`$PATH`). No AWS credentials required.
 
 Per AGENTS.md §6.4, an adversarial subagent review MUST be dispatched
 before the stub fixtures are finalized. Key probes: "What if
-`terraform init -reconfigure` downloads providers and then exits 1 on
-a lock-file mismatch?" and "What if the state key for `base/terraform.tfstate`
-is missing (phase never applied)?"
+`terraform init -reconfigure` exits 1 on a lock-file mismatch?" and
+"What if the state key is missing (phase never applied)?"
 
 ---
 
@@ -307,11 +303,9 @@ no allowlist, no module sequencing — keeps the script fast and focused.
   `apply-and-verify` step, add: *"Run `scripts/diff-state.sh
   phase=<module>` to confirm the apply changed state. Exit 0 = clean;
   exit 2 = drift (usually a `triggers_replace` gap — see PR #67)."*
-- `/home/user/k8-platform/ai/handoff.md` — the `terraform apply on
-  management` critical behavioral rule row: append *"Confirm with
-  `scripts/diff-state.sh phase=management`."*
-- `AGENTS.md` — no change. §5 and §6 already cover the layers;
-  `diff-state.sh` is one tool within them.
+- `/home/user/k8-platform/ai/handoff.md` — `terraform apply on management`
+  critical rule row: append *"Confirm with `scripts/diff-state.sh`."*
+- `AGENTS.md` — no change. §5 and §6 already cover the layers.
 
 ---
 

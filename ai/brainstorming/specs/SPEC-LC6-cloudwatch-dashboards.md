@@ -40,9 +40,9 @@ sharply at phase 6 when multiple workload clusters feed the same region.
   widgets provide a passive signal for that silent-failure mode.
 
 - **`ai/handoff.md` Bug 3** — provider-family-aws v1.12.0 slow under
-  Crossplane 2.3.0; `CreatedExternalResource` delayed 2+ minutes. An MR-
-  creation-latency widget would have surfaced the 2x reconcile slowdown as
-  a metric deviation rather than requiring a log-grep across chainsaw output.
+  Crossplane 2.3.0; `CreatedExternalResource` delayed 2+ minutes. An MR
+  reconcile-error widget would have surfaced the slowdown as a metric
+  deviation rather than requiring a log-grep across chainsaw output.
 
 ---
 
@@ -255,9 +255,8 @@ done
 terraform -chdir=terraform/management validate
 ```
 
-Container Insights must be enabled on the EKS cluster for the
-`/aws/containerinsights/...` log group queries to populate. Widgets render as
-"no data" until the log group exists — the apply succeeds regardless.
+Widgets that query `/aws/containerinsights/...` render as "no data" until
+Container Insights is enabled — the apply succeeds regardless.
 
 ---
 
@@ -304,15 +303,13 @@ dashboard (see §11 checklist). No new integration test script needed.
 
 1. Post-apply: `aws cloudwatch get-dashboard --dashboard-name k8-platform-mgmt-irsa-debug`
    returns HTTP 200 and body length > 100 bytes.
-2. Post-apply with a deliberate IRSA failure (temporarily remove the trust
-   subject): confirm the CloudTrail Logs Insights widget surfaces the rejection
-   entry within 5 minutes.
-3. Post-apply: `terraform plan` shows 0 changes — confirms the JSON is
-   idempotent (no spurious drift from whitespace or key ordering).
+2. Post-apply: `terraform plan` shows 0 changes (idempotency; no spurious
+   drift from whitespace or key ordering).
+3. Deliberate IRSA failure (temporarily remove trust subject): confirm the
+   CloudTrail Logs Insights widget surfaces the rejection within 5 minutes.
 
 **E2E:** Not applicable. Dashboard creation is an AWS control-plane operation
-with no Kubernetes resource to assert against in a chainsaw scenario. The
-integration tests above cover the end-to-end contract.
+with no Kubernetes resource to assert against in a chainsaw scenario.
 
 ---
 
@@ -324,8 +321,8 @@ integration tests above cover the end-to-end contract.
 - `AGENTS.md §7` (Testing loops): add one bullet noting that after any
   `terraform apply` touching `terraform/management/`, the three CloudWatch
   dashboards should be accessible.
-- `docs/operations.md` (if it exists): add a short "Dashboards" section
-  listing the three dashboard names and their primary use cases.
+- `docs/operations.md`: add a short "Dashboards" section listing the three
+  dashboard names and their primary use cases (if the file exists).
 
 ---
 

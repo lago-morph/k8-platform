@@ -28,24 +28,21 @@ than the authoritative audit record.
 
 ## 2. Retro pain killed
 
-- **PR #66, PR #67, PR #68 — multi-session IRSA SA-name cascade**
-  (`retrospective/2026-05-25-70.md`, Phase 2). The root cause was an
-  OIDC subject mismatch (`crossplane-system:provider-family-aws-24aaab54a3a0`
-  vs. the expected `crossplane-system:upbound-provider-family-aws`). This
-  failure is exactly the class that `authenticator` logs record: every
-  `AssumeRoleWithWebIdentity` call, including failed ones, emits an
-  entry with the OIDC subject. Had control-plane logging been enabled
-  the mismatch would have appeared in the authenticator log stream
-  immediately; instead three PRs and multiple dispatch cycles were
-  required to triangulate it from side-channel evidence.
+- **PR #66, #67, #68 — multi-session IRSA SA-name cascade**
+  (`retrospective/2026-05-25-70.md`, Phase 2). Root cause: OIDC subject
+  mismatch (`crossplane-system:provider-family-aws-24aaab54a3a0` vs.
+  expected `crossplane-system:upbound-provider-family-aws`). The
+  `authenticator` stream records every `AssumeRoleWithWebIdentity` call,
+  including failures, with the OIDC subject. Had logging been enabled, the
+  mismatch would have appeared immediately; instead three PRs and multiple
+  dispatch cycles were needed to triangulate from side-channel evidence.
 
-- **Phase-1 IRSA silent failures — ArgoCD SA wrong, ExternalDNS missing
-  ListHostedZones** (`retrospective/2026-05-23-36.md` line 54). Both
-  failures produced `AccessDenied` in pod logs with no corresponding
-  audit entry visible. The `audit` log stream records every API-server
-  request annotated with the authenticated user and result; RBAC
-  denials appear immediately at the point of rejection rather than
-  surfacing only when pod-side log scraping happens to catch them.
+- **Phase-1 IRSA silent failures — ArgoCD SA on wrong component SA,
+  ExternalDNS missing `ListHostedZones`** (`retrospective/2026-05-23-36.md`
+  line 54). Both produced `AccessDenied` in pod logs with no corresponding
+  audit entry visible. The `audit` stream records every API-server request
+  with authenticated user and result; RBAC denials appear at rejection time
+  rather than surfacing only when pod-side scraping catches them.
 
 - **Phase-1 RBAC propagation race** (`retrospective/2026-05-23-36.md`
   line 50): `serviceaccounts is forbidden` on ingress-nginx's first call.
@@ -112,14 +109,11 @@ than the authoritative audit record.
 
 ### Cost considerations
 
-At sandbox-scale cluster traffic (a single management cluster with
-3–6 nodes, light workload, no real user traffic), all five log types
-combined produce fewer than a few hundred MB of log data per session.
-CloudWatch Logs ingestion costs $0.50/GB; storage costs $0.03/GB/month.
-At sandbox scale, enabling all five log types costs well under $0.01
-per session. The 7-day retention cap prevents any cross-session
-accumulation from turning into meaningful spend. This is the correct
-default for a debug-heavy development environment where postmortem
+At sandbox-scale traffic (one management cluster, 3–6 nodes, no real user
+traffic), all five log types combined produce a few hundred MB per session.
+CloudWatch Logs ingestion is $0.50/GB; combined cost is well under $0.01
+per session. The 7-day retention cap prevents cross-session accumulation.
+This is the correct default for a debug-heavy environment where postmortem
 evidence is the primary deliverable.
 
 ---
@@ -290,11 +284,10 @@ Tests against a live EKS cluster. Lives at
 
 ## 8. Documentation updates
 
-- **`AGENTS.md §5`** — no change needed; control-plane logging is transparent
-  to the phase procedure.
-- **`ai/handoff.md`** (Phase 1 verification checklist) — add one bullet:
-  "EKS control-plane logging all five types:
-  `aws eks describe-cluster --name <cluster> --query
+- **`AGENTS.md §5`** — no change; control-plane logging is transparent to
+  the phase procedure.
+- **`ai/handoff.md`** Phase 1 checklist — add: "EKS control-plane logging
+  all five types: `aws eks describe-cluster --name <cluster> --query
   'cluster.logging.clusterLogging[?enabled].types'`".
 - **`ai/brainstorming/specs/larger-list-preferences.md` §C2** — annotate
   "spec at SPEC-LC2" so future sessions do not re-derive the design.
@@ -303,13 +296,10 @@ Tests against a live EKS cluster. Lives at
 
 ## 9. Workflow / auto-invocation wiring
 
-This change rides on the existing `apply-and-verify` workflow
-(`.github/workflows/terraform-test.yml`, `phase=management`). No new
-workflow, hook, or trigger is needed. The management apply is already the
-canonical bring-up path per `AGENTS.md §5`. Integration assertions from §7
-wire into `tests/integration/run.sh` (already invoked by the full test bundle
-per `AGENTS.md §6.3`). The e2e probe lands in the `[management] e2e-verify`
-step and fires on every CI run automatically.
+Rides on the existing `apply-and-verify` workflow (`phase=management`).
+No new workflow, hook, or trigger needed. Integration assertions wire into
+`tests/integration/run.sh` (full test bundle per `AGENTS.md §6.3`). The
+e2e probe lands in `[management] e2e-verify` and fires on every CI run.
 
 ---
 
@@ -350,22 +340,22 @@ Steps the implementing agent runs after applying the spec.
       `test_eks_controlplane_logging.sh` included and passing.
 
 - [ ] `terraform -chdir=/home/user/k8-platform/terraform/management plan`
-      (after the change, against a live sandbox) shows a diff containing
-      only `~ module.eks` (log type update) and `+ aws_cloudwatch_log_group.eks_cluster`
-      (new resource). No destroy operations, no node group changes.
+      shows only `~ module.eks` (log type update) and
+      `+ aws_cloudwatch_log_group.eks_cluster`. No destroys, no node changes.
 
-- [ ] After `terraform apply`, `aws eks describe-cluster --name $(terraform -chdir=/home/user/k8-platform/terraform/management output -raw cluster_name) --query 'cluster.logging.clusterLogging[?enabled==\`true\`].types'`
-      returns `[["api","audit","authenticator","controllerManager","scheduler"]]`
-      (order may vary).
+- [ ] After `terraform apply`, `aws eks describe-cluster --name <cluster>
+      --query 'cluster.logging.clusterLogging[?enabled==\`true\`].types'`
+      returns all five types (order may vary).
 
-- [ ] `aws logs describe-log-groups --log-group-name-prefix /aws/eks/ --query 'logGroups[?retentionInDays==\`7\`].logGroupName'`
-      includes `/aws/eks/<cluster_name>/cluster`.
+- [ ] `aws logs describe-log-groups --log-group-name-prefix /aws/eks/<cluster>/cluster
+      --query 'logGroups[0].retentionInDays'` returns `7`.
 
-- [ ] After the apply, wait 2 minutes then run `aws logs describe-log-streams --log-group-name /aws/eks/<cluster_name>/cluster --order-by LastEventTime --descending --max-items 5`; confirm at least one log stream exists (proves EKS is writing into the group).
+- [ ] 2 minutes after apply: `aws logs describe-log-streams --log-group-name
+      /aws/eks/<cluster>/cluster --order-by LastEventTime --descending
+      --max-items 5` returns at least one stream (proves EKS writes into the group).
 
-- [ ] The adversarial-reviewer subagent from §6 has been run and its
-      findings either adopted or explicitly dismissed in the implementation
-      PR body.
+- [ ] Adversarial-reviewer subagent from §6 run; findings adopted or
+      dismissed in the implementation PR body.
 
 ---
 
