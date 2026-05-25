@@ -1,0 +1,7 @@
+[
+  {
+    "name": "external-dns-7fd5b6dcb6-abcde",
+    "serviceAccountName": "external-dns",
+    "component": "external-dns"
+  }
+]

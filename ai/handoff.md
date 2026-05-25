@@ -186,3 +186,11 @@ Always run `aws sts get-caller-identity` first to confirm what account you're on
 | TLS (this account) | ACM wildcard + NLB termination | Pre-existing zone, no ACME path |
 | State backend | S3 + DynamoDB | Standard; auto-bootstrapped by CI |
 | Instance sizing | `t3.medium` × 2 | Fits within 9-instance EC2 quota |
+
+---
+
+## Scripts inventory
+
+| Script | One-liner |
+|---|---|
+| `scripts/irsa_trust_validator.py` | IRSA fleet sweep — `--all --ci` for gating, `--role <arn>` for triage. SPEC-S3. |

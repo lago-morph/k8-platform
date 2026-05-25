@@ -192,6 +192,8 @@ runs the full test bundle before reporting "phase verified". The bundle:
    the live cluster.
 4. `scripts/kyverno-policies.sh` and `scripts/kyverno-violations.sh` —
    sanity-check the policy bundle is loaded and no unexpected violations.
+5. `scripts/irsa_trust_validator.py --all` — IRSA trust-policy vs SA
+   fleet sweep. Must report `0 MISMATCH` before phase sign-off.
 
 If any of these report a failure, the TDD discipline in §6.2 applies — the
 agent does not declare "phase verified" until both the original symptom is
