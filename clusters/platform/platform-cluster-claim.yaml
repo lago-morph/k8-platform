@@ -1,3 +1,9 @@
+# kubeconform-skip — spec.vpc.subnetIds carries `subnet-REPLACE-ME-AZ*`
+# placeholders that intentionally fail the XRD's `^subnet-[a-z0-9]+$`
+# pattern so admission rejects this manifest until the operator
+# substitutes real subnet IDs (see the TODO comment further down).
+# The XRD's regex is the load-bearing admission gate; static lint would
+# only flag the same fact. SPEC-S6 §5.4 allowlist.
 # PlatformCluster claim — provisions the platform services cluster.
 #
 # Phase 3 / Iteration 3 (REQ-PLAT-01..06). This is the first real

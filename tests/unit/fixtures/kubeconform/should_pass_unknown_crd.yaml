@@ -1,0 +1,11 @@
+# Fixture: SHOULD PASS (with NOTICE). A manifest whose apiVersion has
+# no schema in either the store or the upstream catalog. With
+# `--ignore-missing-schemas` kubeconform emits a `statusSkipped` result
+# and the meta-test surfaces it as `NOTICE:` but does not fail.
+# Exercises the boundary case in SPEC-S6 §5.4 / §7 case 4.
+apiVersion: fictional.example.com/v1alpha1
+kind: NotARealResource
+metadata:
+  name: fixture-unknown-crd
+spec:
+  anything: goes

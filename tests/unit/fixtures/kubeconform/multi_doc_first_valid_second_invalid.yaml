@@ -1,0 +1,24 @@
+# Fixture: SHOULD FAIL — two documents, first valid, second invalid.
+# Defends the contract that kubeconform scans EVERY document in a
+# multi-doc YAML file (the most common authoring pattern in
+# crossplane/rbac/*.yaml). SPEC-S6 §7 testing suggestion 1.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fixture-valid-cm
+  namespace: default
+data:
+  hello: world
+---
+apiVersion: secretsmanager.aws.upbound.io/v1beta1
+kind: Secret
+metadata:
+  name: fixture-second-doc-bug
+spec:
+  forProvider:
+    name: fixture/asm-second
+    region: us-east-1
+    forceOverwriteReplica: true   # unknown field — must fail
+  deletionPolicy: Delete
+  providerConfigRef:
+    name: default

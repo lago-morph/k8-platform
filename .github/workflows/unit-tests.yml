@@ -60,6 +60,25 @@ jobs:
       - name: Verify python3 (test_post_comment.sh subprocesses use it)
         run: python3 --version
 
+      # PyYAML is required by test_kubeconform_manifests.sh (the
+      # function-input extraction parses Composition YAML).
+      - name: Install PyYAML
+        run: python3 -m pip install --user pyyaml
+
+      # kubeconform — static YAML/CRD-schema lint. Pinned to KUBECONFORM_VERSION
+      # in versions.env. Consumed by test_kubeconform_manifests.sh
+      # (SPEC-S6).
+      - name: Install kubeconform
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC1091
+          . versions.env
+          curl -fsSL \
+            "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin kubeconform
+          sudo chmod +x /usr/local/bin/kubeconform
+          kubeconform -v
+
       # SPEC-S9: install the crossplane CLI so the composition-render
       # dry-run tests can exercise the helper end-to-end. When the CLI
       # is unavailable the render tests skip-with-warning (see
@@ -166,6 +185,18 @@ jobs:
             bash tests/unit/test_argocd_bootstrap.sh
           else
             echo "(test_argocd_bootstrap.sh not on this branch — skipped)"
+          fi
+
+      # SPEC-S6 — static kubeconform lint against the committed
+      # CRD schema store. Catches Bug 4 (PR #61, string-transform
+      # missing inner type) and Bug 1 (PR #74, forceOverwriteReplica
+      # field absent from CRD) at commit time.
+      - name: test_kubeconform_manifests
+        run: |
+          if [ -f tests/unit/test_kubeconform_manifests.sh ]; then
+            bash tests/unit/test_kubeconform_manifests.sh
+          else
+            echo "(test_kubeconform_manifests.sh not on this branch — skipped)"
           fi
 
       # SPEC-S9 composition-render tests — skip gracefully on branches

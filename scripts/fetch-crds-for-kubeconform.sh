@@ -1,0 +1,226 @@
+#!/usr/bin/env bash
+# fetch-crds-for-kubeconform.sh — populate kubeconform-schemas/ from CRDs.
+#
+# Two modes, picked automatically:
+#
+#   1. LIVE CLUSTER MODE — if `kubectl` works and KUBECONFIG points at a
+#      reachable cluster, fetch every installed CRD via
+#      `kubectl get crds -o json` and convert its openAPIV3Schema to a
+#      JSON file under `kubeconform-schemas/<group>/<kind>_<version>.json`
+#      (kubeconform's standard local layout, per SPEC-S6 §5.1).
+#
+#   2. PUBLISHED-CRD MODE — if no cluster is reachable (CI runner, fresh
+#      sandbox, account rotation), fall back to fetching the same CRDs
+#      from upstream GitHub releases. Versions are pinned (see CRD_URLS
+#      below). SPEC-S6 §13 calls this out as the bootstrap path.
+#
+# The function-patch-and-transform input schema (pt.fn.crossplane.io,
+# SPEC-S6 §5.3) is fetched from upstream regardless of mode — it ships
+# in the function's OCI package and is never installed in the cluster
+# as a CRD.
+#
+# Two transformations applied to every emitted schema file:
+#
+#   - `$schema: http://json-schema.org/draft-07/schema#` is injected if
+#     missing. Without this kubeconform treats the file as not-a-schema
+#     and marks the resource statusSkipped even though it loads.
+#
+#   - `additionalProperties: false` is set on every `type: object` node
+#     that carries explicit `properties` and does not opt-out via
+#     `x-kubernetes-preserve-unknown-fields: true`. This is the
+#     load-bearing transformation that lets kubeconform reject unknown
+#     fields like `forceOverwriteReplica` (the PR #74 Bug 1 typo).
+#     Upstream CRD YAMLs ship without it; the API server adds it at
+#     install time, which is why the bug was caught only at admission.
+#
+# Output: writes one JSON file per (group, kind, apiVersion) tuple to
+# $STORE_DIR (default kubeconform-schemas/). Commit the diff in the
+# same PR as the manifest that needs the new schema.
+#
+# Re-run after:
+#   - bumping Crossplane / Kyverno / ESO / ArgoCD / provider-aws versions
+#     in versions.env (or any helm chart pin)
+#   - adding a new CRD group used by repo manifests
+#   - upgrading the function-patch-and-transform pin
+
+set -euo pipefail
+
+STORE_DIR="${STORE_DIR:-kubeconform-schemas}"
+mkdir -p "$STORE_DIR"
+
+cd "$(dirname "$0")/.."  # repo root
+
+# Shared Python converter — both the live-cluster path and the
+# published-CRD path source-include this as a module so the two
+# transformations (above) live in exactly one place.
+CONVERTER_PY=$(cat <<'PY'
+import json, pathlib
+
+DRAFT07 = "http://json-schema.org/draft-07/schema#"
+
+def harden_schema(schema):
+    """Inject $schema, allow K8s envelope keys, recursively forbid extras."""
+    if not isinstance(schema, dict):
+        return schema
+    schema.setdefault("$schema", DRAFT07)
+    # CRD openAPIV3Schema typically declares only spec/status. Allow the
+    # standard K8s envelope keys at the root so apiVersion/kind/metadata
+    # don't trip the recursive additionalProperties=false transformation.
+    schema.setdefault("type", "object")
+    props = schema.setdefault("properties", {})
+    props.setdefault("apiVersion", {"type": "string"})
+    props.setdefault("kind", {"type": "string"})
+    props.setdefault("metadata", {"type": "object"})
+    def _strict(node):
+        if isinstance(node, dict):
+            if (
+                node.get("type") == "object"
+                and "properties" in node
+                and "additionalProperties" not in node
+                and not node.get("x-kubernetes-preserve-unknown-fields")
+            ):
+                node["additionalProperties"] = False
+            for v in node.values():
+                _strict(v)
+        elif isinstance(node, list):
+            for v in node:
+                _strict(v)
+    _strict(schema)
+    return schema
+
+def write_schema(store_dir, group, kind, version, schema):
+    dest = pathlib.Path(store_dir) / group / f"{kind.lower()}_{version}.json"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    schema = harden_schema(schema)
+    dest.write_text(json.dumps(schema, indent=2) + "\n")
+    return dest
+PY
+)
+
+# --- 1. live cluster mode (if kubectl reachable) ---------------------------
+if command -v kubectl >/dev/null 2>&1 && kubectl version --request-timeout=3s >/dev/null 2>&1; then
+  echo "==> live cluster mode (kubectl reachable)"
+  kubectl get crds -o json | STORE_DIR="$STORE_DIR" CONVERTER_PY="$CONVERTER_PY" python3 - <<'PY'
+import json, sys, os
+exec(os.environ["CONVERTER_PY"])
+store = os.environ["STORE_DIR"]
+count = 0
+for item in json.load(sys.stdin).get("items", []):
+    group = item["spec"]["group"]
+    kind = item["spec"]["names"]["kind"]
+    for ver in item["spec"]["versions"]:
+        schema = ver.get("schema", {}).get("openAPIV3Schema")
+        if not schema:
+            continue
+        dest = write_schema(store, group, kind, ver["name"], schema)
+        print(f"  wrote {dest}")
+        count += 1
+print(f"==> {count} schemas written from live cluster")
+PY
+else
+  echo "==> no live cluster reachable; using PUBLISHED-CRD MODE"
+fi
+
+# --- 2. published CRD bootstrap (always run; safe to overlay live mode) ----
+CRD_URLS=(
+  "https://raw.githubusercontent.com/crossplane/crossplane/v2.3.0/cluster/crds/apiextensions.crossplane.io_compositions.yaml"
+  "https://raw.githubusercontent.com/crossplane/crossplane/v2.3.0/cluster/crds/apiextensions.crossplane.io_compositeresourcedefinitions.yaml"
+  "https://raw.githubusercontent.com/external-secrets/external-secrets/v0.10.4/deploy/crds/bundle.yaml"
+  "https://raw.githubusercontent.com/argoproj/argo-cd/v2.13.1/manifests/crds/application-crd.yaml"
+  "https://raw.githubusercontent.com/argoproj/argo-cd/v2.13.1/manifests/crds/appproject-crd.yaml"
+  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v1.12.0/package/crds/secretsmanager.aws.upbound.io_secrets.yaml"
+  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v1.12.0/package/crds/ec2.aws.upbound.io_vpcs.yaml"
+  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v1.12.0/package/crds/ec2.aws.upbound.io_subnets.yaml"
+  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v1.12.0/package/crds/eks.aws.upbound.io_clusters.yaml"
+  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v1.12.0/package/crds/eks.aws.upbound.io_nodegroups.yaml"
+  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v1.12.0/package/crds/iam.aws.upbound.io_roles.yaml"
+  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v1.12.0/package/crds/iam.aws.upbound.io_rolepolicyattachments.yaml"
+)
+
+KYVERNO_BUNDLE_URL="https://github.com/kyverno/kyverno/raw/v1.13.0/config/install-latest-testing.yaml"
+FUNCTION_PT_URL="https://raw.githubusercontent.com/crossplane-contrib/function-patch-and-transform/v0.8.2/package/input/pt.fn.crossplane.io_resources.yaml"
+
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+convert_one() {
+  local yaml_path="$1"
+  STORE_DIR="$STORE_DIR" CONVERTER_PY="$CONVERTER_PY" python3 - "$yaml_path" <<'PY'
+import yaml, sys, os
+exec(os.environ["CONVERTER_PY"])
+store = os.environ["STORE_DIR"]
+count = 0
+with open(sys.argv[1]) as fh:
+    for doc in yaml.safe_load_all(fh):
+        if not doc or doc.get("kind") != "CustomResourceDefinition":
+            continue
+        group = doc["spec"]["group"]
+        kind = doc["spec"]["names"]["kind"]
+        for ver in doc["spec"]["versions"]:
+            schema = ver.get("schema", {}).get("openAPIV3Schema")
+            if not schema:
+                continue
+            dest = write_schema(store, group, kind, ver["name"], schema)
+            print(f"  wrote {dest}")
+            count += 1
+print(f"  ({count} schemas from {sys.argv[1]})")
+PY
+}
+
+for url in "${CRD_URLS[@]}"; do
+  out="$TMP/$(basename "$url")"
+  echo "==> fetching $url"
+  if curl -fsSL "$url" -o "$out"; then
+    convert_one "$out"
+  else
+    echo "  WARN: failed to fetch $url" >&2
+  fi
+done
+
+echo "==> fetching $KYVERNO_BUNDLE_URL"
+kyv_out="$TMP/kyverno-install.yaml"
+if curl -fsSL "$KYVERNO_BUNDLE_URL" -o "$kyv_out"; then
+  convert_one "$kyv_out"
+else
+  echo "  WARN: failed to fetch kyverno install bundle" >&2
+fi
+
+echo "==> fetching $FUNCTION_PT_URL"
+fpt_out="$TMP/function-pt.yaml"
+if curl -fsSL "$FUNCTION_PT_URL" -o "$fpt_out"; then
+  convert_one "$fpt_out"
+else
+  echo "  WARN: failed to fetch function-patch-and-transform schema" >&2
+fi
+
+# --- 3. extract schemas from this repo's own XRDs --------------------------
+echo "==> extracting schemas from repo XRDs (platform.k8-platform.io)"
+STORE_DIR="$STORE_DIR" CONVERTER_PY="$CONVERTER_PY" python3 - <<'PY'
+import yaml, os, pathlib
+exec(os.environ["CONVERTER_PY"])
+store = os.environ["STORE_DIR"]
+count = 0
+for xrd_path in sorted(pathlib.Path("crossplane/xrds").glob("*.yaml")):
+    for doc in yaml.safe_load_all(open(xrd_path)):
+        if not doc or doc.get("kind") != "CompositeResourceDefinition":
+            continue
+        spec = doc["spec"]
+        group = spec["group"]
+        x_kind = spec["names"]["kind"]
+        claim_kind = (spec.get("claimNames") or {}).get("kind") or None
+        for ver in spec["versions"]:
+            schema = ver.get("schema", {}).get("openAPIV3Schema")
+            if not schema:
+                continue
+            for k in (x_kind, claim_kind):
+                if not k:
+                    continue
+                dest = write_schema(store, group, k, ver["name"], schema)
+                print(f"  wrote {dest}")
+                count += 1
+print(f"  ({count} schemas from repo XRDs)")
+PY
+
+echo ""
+echo "==> done. Schema store at $STORE_DIR/"
+find "$STORE_DIR" -type f -name '*.json' | wc -l | xargs -I{} echo "    {} schemas total"
