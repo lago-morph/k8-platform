@@ -130,6 +130,37 @@ resource "helm_release" "crossplane" {
   namespace        = "crossplane-system"
   create_namespace = true
 
+  # Disable the three beta features that v2.3 newly turns on by default.
+  # These caused observable regressions for our v1-XRD-based Composition
+  # pipeline (chainsaw runs 26385090086 / 26385825898 / 26386596063):
+  #   - EnableBetaRealtimeCompositions: aggressive re-render loop (30+
+  #     function invocations per minute per claim) starves the composite
+  #     reconciler so MR creation takes 100+ seconds, well past the ESO
+  #     refresh-interval window.
+  #   - EnableBetaClaimSSA: server-side-apply path enforces strict
+  #     schema validation on rendered MRs and fails with "field not
+  #     declared in schema" for fields permitted by v2.0's permissive
+  #     reconciler.
+  #   - EnableBetaCustomToManagedResourceConversion: unused; off by
+  #     parsimony.
+  # KEPT enabled (still beta in 2.3, but already enabled on 2.0.1 and
+  # depended on by our setup):
+  #   - DeploymentRuntimeConfigs (used by terraform_data.crossplane_aws_provider
+  #     below to pin the upbound-provider-family-aws SA name for IRSA).
+  #   - Usages (not used today but harmless).
+  set {
+    name  = "args[0]"
+    value = "--enable-realtime-compositions=false"
+  }
+  set {
+    name  = "args[1]"
+    value = "--enable-ssa-claims=false"
+  }
+  set {
+    name  = "args[2]"
+    value = "--enable-custom-to-managed-resource-conversion=false"
+  }
+
   depends_on = [module.eks]
 }
 

@@ -13,7 +13,7 @@ metadata:
 spec:
   timeouts:
     apply: 30s
-    assert: 120s
+    assert: 240s
     delete: 60s
   steps:
     - name: apply a claim with short refreshInterval

@@ -131,11 +131,23 @@ helm install crossplane crossplane-stable/crossplane \
   --version "$CROSSPLANE_CHART_VERSION" \
   --namespace crossplane-system \
   --create-namespace \
+  --set 'args[0]=--enable-realtime-compositions=false' \
+  --set 'args[1]=--enable-ssa-claims=false' \
+  --set 'args[2]=--enable-custom-to-managed-resource-conversion=false' \
   --wait \
   --timeout 5m
 
 kubectl wait --for=condition=Available --timeout=300s \
   -n crossplane-system deploy/crossplane
+
+# ---------- grant Crossplane RBAC on ExternalSecret ------------------------
+# Crossplane 2.3's composite reconciler enforces RBAC strictly when
+# applying composed resources. The PlatformSecret Composition renders
+# an ExternalSecret (from ESO, not a Crossplane provider package), so
+# Crossplane has no auto-RBAC for it. See
+# crossplane/rbac/01-crossplane-externalsecrets.yaml for the full
+# rationale; chainsaw mirrors the live-cluster RBAC here.
+kubectl apply -f ../../crossplane/rbac/01-crossplane-externalsecrets.yaml
 
 # ---------- install AWS provider --------------------------------------------
 echo ""
