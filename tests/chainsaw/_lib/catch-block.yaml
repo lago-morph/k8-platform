@@ -1,0 +1,44 @@
+# Canonical chainsaw `catch:` block — pasted verbatim into every
+# `Test.spec.catch` under `tests/chainsaw/`.
+#
+# SPEC-A4 defines this fragment. Drift between this file and any
+# scenario's `.spec.catch` is enforced by
+# `tests/unit/test_chainsaw_catch_block.sh`.
+#
+# The single field a scenario is allowed to override is `describe.kind`
+# (per spec §5 "Per-scenario XR kind override"). The unit test treats
+# that field as a free variable and structurally compares everything
+# else.
+#
+# Output budget (per spec §5 "Output budget — ≤5 KB per failure"):
+#   - XR `describe` truncated with `head -c 1500`
+#   - Each MR `describe` truncated with `head -c 1000`
+#   - `events` uses chainsaw's default ~10m window
+catch:
+  - describe:
+      apiVersion: platform.k8-platform.io/v1alpha1
+      kind: PlatformSecret      # overridden per-scenario when the XR kind differs
+      namespace: ($namespace)
+  - script:
+      content: |
+        set +e
+        # Describe the XR (composite) the claim points at, if any.
+        for claim_kind in platformsecret platformcluster; do
+          for c in $(kubectl get "$claim_kind" -n "$NAMESPACE" -o name 2>/dev/null); do
+            xr=$(kubectl get "$c" -n "$NAMESPACE" -o jsonpath='{.spec.resourceRef.name}' 2>/dev/null)
+            [ -n "$xr" ] && kubectl describe "x${claim_kind}" "$xr" 2>&1 | head -c 1500
+          done
+        done
+        # Describe every MR referenced by every XR in the namespace.
+        for xr in $(kubectl get composite -o name 2>/dev/null); do
+          kubectl get "$xr" -o jsonpath='{range .spec.resourceRefs[*]}{.apiVersion}{" "}{.kind}{" "}{.name}{"\n"}{end}' \
+            | while read -r api kind name; do
+                [ -z "$kind" ] && continue
+                kubectl describe "$kind.$api" "$name" 2>&1 | head -c 1000
+              done
+        done
+      env:
+        - name: NAMESPACE
+          value: ($namespace)
+  - events:
+      namespace: ($namespace)

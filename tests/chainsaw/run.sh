@@ -356,17 +356,101 @@ dump_diagnostics() {
 }
 
 # ---------- run chainsaw scenarios ------------------------------------------
-echo ""
-echo "── running chainsaw ───────────────────────────────────────────"
-SCENARIO_ARG="${CHAINSAW_SCENARIOS:-.}"
-set +e
-chainsaw test "$SCENARIO_ARG" --config chainsaw-config.yaml
-CHAINSAW_RC=$?
-set -e
+#
+# Meta-scenario handling (SPEC-A4):
+#   Scenarios whose directory name begins with `meta-` are exit-inverted —
+#   they deliberately fail to exercise infrastructure (the `catch:` block).
+#   Chainsaw reports one exit code for a whole invocation, so we run meta
+#   scenarios in separate invocations and invert their result.
+#
+#   Pass criteria for a meta scenario:
+#     1. chainsaw exits NON-ZERO (the deliberate failure happened), AND
+#     2. stdout contains the expected catch-block markers
+#        (`Describe Resource:` AND `Events:` AND a line starting `Name:`).
+#
+#   A zero exit means the "deliberate fail" step somehow passed —
+#   regression — and the meta scenario reports FAIL.
 
-if [ "$CHAINSAW_RC" -ne 0 ]; then
-  dump_diagnostics "$CHAINSAW_RC"
-  exit "$CHAINSAW_RC"
+# Discover scenario directories at any depth, then partition.
+ALL_SCENARIO_DIRS=$(
+  find . -type f -name 'chainsaw-test.yaml' \
+    -not -path './_lib/*' \
+    -exec dirname {} \; \
+    | sort -u
+)
+META_DIRS=$(echo "$ALL_SCENARIO_DIRS" | awk -F/ '{ for(i=1;i<=NF;i++) if ($i ~ /^meta-/) { print; next } }')
+NORMAL_DIRS=$(echo "$ALL_SCENARIO_DIRS" | awk -F/ '{ for(i=1;i<=NF;i++) if ($i ~ /^meta-/) next; print }')
+
+echo ""
+echo "── running chainsaw (normal scenarios) ────────────────────────"
+
+# If the user filtered via CHAINSAW_SCENARIOS, honour it directly and
+# skip meta-partitioning — they know what they're after.
+if [ -n "${CHAINSAW_SCENARIOS:-}" ]; then
+  set +e
+  chainsaw test "${CHAINSAW_SCENARIOS}" --config chainsaw-config.yaml
+  CHAINSAW_RC=$?
+  set -e
+  if [ "$CHAINSAW_RC" -ne 0 ]; then
+    dump_diagnostics "$CHAINSAW_RC"
+    exit "$CHAINSAW_RC"
+  fi
+  echo "── all scenarios passed (filtered) ──────────────────────────"
+  exit 0
+fi
+
+OVERALL_RC=0
+
+# 1. Normal scenarios — chainsaw exit == script's pass/fail.
+if [ -n "$NORMAL_DIRS" ]; then
+  set +e
+  # shellcheck disable=SC2086
+  chainsaw test $NORMAL_DIRS --config chainsaw-config.yaml
+  NORMAL_RC=$?
+  set -e
+  if [ "$NORMAL_RC" -ne 0 ]; then
+    dump_diagnostics "$NORMAL_RC"
+    OVERALL_RC=$NORMAL_RC
+  fi
+fi
+
+# 2. Meta scenarios — each runs in its own invocation so we can invert
+#    its exit independently and grep its stdout for catch-block markers.
+if [ -n "$META_DIRS" ]; then
+  echo ""
+  echo "── running chainsaw (meta scenarios — exit-inverted) ──────────"
+  while IFS= read -r meta_dir; do
+    [ -z "$meta_dir" ] && continue
+    echo ""
+    echo "── meta scenario: $meta_dir ───────────────────────────────────"
+    META_LOG="${RUNNER_TEMP:-/tmp}/chainsaw-meta-$(basename "$meta_dir").log"
+    set +e
+    chainsaw test "$meta_dir" --config chainsaw-config.yaml 2>&1 | tee "$META_LOG"
+    META_RC=${PIPESTATUS[0]}
+    set -e
+
+    # Inverted-exit gate: PASS iff chainsaw exited non-zero AND catch
+    # markers are present.
+    if [ "$META_RC" -eq 0 ]; then
+      echo "  ✗ meta-test '$meta_dir' chainsaw RC=0 (expected non-zero — deliberate-fail step passed)"
+      OVERALL_RC=1
+      continue
+    fi
+    MISSING=""
+    grep -q "Describe Resource:" "$META_LOG"  || MISSING="${MISSING} 'Describe Resource:'"
+    grep -q "Events:"            "$META_LOG"  || MISSING="${MISSING} 'Events:'"
+    grep -qE "^Name:[[:space:]]"  "$META_LOG"  || MISSING="${MISSING} 'Name:'"
+    if [ -n "$MISSING" ]; then
+      echo "  ✗ meta-test '$meta_dir' chainsaw RC=$META_RC but catch markers missing:${MISSING}"
+      OVERALL_RC=1
+    else
+      echo "  ✓ meta-test '$meta_dir' PASS (chainsaw RC=$META_RC, all catch markers found)"
+    fi
+  done <<< "$META_DIRS"
+fi
+
+if [ "$OVERALL_RC" -ne 0 ]; then
+  exit "$OVERALL_RC"
 fi
 
 echo ""
