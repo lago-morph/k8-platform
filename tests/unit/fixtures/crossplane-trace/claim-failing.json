@@ -1,0 +1,37 @@
+{
+  "apiVersion": "platform.k8-platform.io/v1alpha1",
+  "kind": "PlatformSecret",
+  "metadata": {
+    "name": "stuck-claim",
+    "namespace": "default",
+    "uid": "00000000-0000-0000-0000-000000000011"
+  },
+  "spec": {
+    "compositionRef": {
+      "name": "platform-secret"
+    },
+    "resourceRef": {
+      "apiVersion": "platform.k8-platform.io/v1alpha1",
+      "kind": "XPlatformSecret",
+      "name": "stuck-claim-xr1"
+    }
+  },
+  "status": {
+    "conditions": [
+      {
+        "type": "Synced",
+        "status": "False",
+        "reason": "ReconcileError",
+        "message": "cannot render composition: AccessDenied for downstream MR",
+        "lastTransitionTime": "2026-05-25T12:00:00Z"
+      },
+      {
+        "type": "Ready",
+        "status": "False",
+        "reason": "Waiting",
+        "message": "claim is waiting for composite to become Ready",
+        "lastTransitionTime": "2026-05-25T12:00:00Z"
+      }
+    ]
+  }
+}

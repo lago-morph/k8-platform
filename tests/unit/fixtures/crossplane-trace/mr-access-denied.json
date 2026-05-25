@@ -1,0 +1,32 @@
+{
+  "apiVersion": "secretsmanager.aws.upbound.io/v1beta1",
+  "kind": "Secret",
+  "metadata": {
+    "name": "stuck-claim-asm",
+    "uid": "00000000-0000-0000-0000-000000000014"
+  },
+  "spec": {
+    "forProvider": {
+      "region": "us-east-1"
+    }
+  },
+  "status": {
+    "conditions": [
+      {
+        "type": "Synced",
+        "status": "True",
+        "reason": "ReconcileSuccess",
+        "message": "ok"
+      },
+      {
+        "type": "Ready",
+        "status": "False",
+        "reason": "ReconcileError",
+        "message": "cannot create external resource: AccessDenied: User arn:aws:sts::123456789012:assumed-role/wrong-role/session is not authorized to perform secretsmanager:CreateSecret on resource"
+      }
+    ],
+    "atProvider": {
+      "tags": {"crossplane-kind": "Secret"}
+    }
+  }
+}

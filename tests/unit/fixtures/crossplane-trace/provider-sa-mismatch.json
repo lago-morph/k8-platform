@@ -1,0 +1,11 @@
+{
+  "apiVersion": "v1",
+  "kind": "ServiceAccount",
+  "metadata": {
+    "name": "provider-family-aws-defaultsa",
+    "namespace": "crossplane-system",
+    "annotations": {
+      "eks.amazonaws.com/role-arn": "arn:aws:iam::123456789012:role/k8-platform-mgmt-crossplane"
+    }
+  }
+}

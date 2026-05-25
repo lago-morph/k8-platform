@@ -464,6 +464,11 @@ need one.)
   `kubectl`, ArgoCD sync, or CI), invoke the
   **`crossplane-claim-verify`** skill to wait for `Synced`/`Ready` and
   verify the underlying cloud resource is healthy.
+- When a claim is stuck or slow, run
+  `scripts/crossplane-trace.sh <kind>/<name> [-n <ns>]` for a one-shot
+  condition walk down claim → XR → managed-resources → IRSA → atProvider;
+  use `--watch` while waiting for reconciliation and `--json` to diff
+  snapshots across runs.
 
 ---
 

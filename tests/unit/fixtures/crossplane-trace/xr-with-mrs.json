@@ -1,0 +1,33 @@
+{
+  "apiVersion": "platform.k8-platform.io/v1alpha1",
+  "kind": "XPlatformSecret",
+  "metadata": {
+    "name": "stuck-claim-xr1",
+    "uid": "00000000-0000-0000-0000-000000000013"
+  },
+  "spec": {
+    "resourceRefs": [
+      {
+        "apiVersion": "secretsmanager.aws.upbound.io/v1beta1",
+        "kind": "Secret",
+        "name": "stuck-claim-asm"
+      }
+    ]
+  },
+  "status": {
+    "conditions": [
+      {
+        "type": "Synced",
+        "status": "False",
+        "reason": "ReconcileError",
+        "message": "downstream MR failed"
+      },
+      {
+        "type": "Ready",
+        "status": "False",
+        "reason": "Creating",
+        "message": "waiting"
+      }
+    ]
+  }
+}
