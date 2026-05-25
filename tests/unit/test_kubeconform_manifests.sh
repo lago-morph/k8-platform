@@ -305,12 +305,23 @@ fi
 echo ""
 echo "── repo audit: scanning crossplane/ argocd/ clusters/ policies/ ──"
 
+# Path-exclude:
+#   - tests/*                — chainsaw scenario YAML uses chainsaw-test schema, not k8s
+#   - */render-fixtures/*    — SPEC-S9 `crossplane render` inputs are XR YAMLs in
+#                              the post-promotion shape (carry spec.claimRef, which
+#                              the XRD schema correctly forbids on user-authored
+#                              input — the Crossplane composite controller sets it
+#                              when promoting a claim). These are offline render
+#                              fixtures, not authored cluster manifests, so they
+#                              are out of scope for this lint by design rather
+#                              than via per-file skip headers.
 AUDIT_FILES=()
 while IFS= read -r -d '' f; do
   AUDIT_FILES+=("$f")
 done < <(find crossplane/ argocd/ clusters/ policies/ \
   \( -name '*.yaml' -o -name '*.yml' \) \
   -not -path 'tests/*' \
+  -not -path '*/render-fixtures/*' \
   -print0 2>/dev/null)
 
 audit_fail_count=0
