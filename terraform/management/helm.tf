@@ -154,7 +154,7 @@ resource "helm_release" "crossplane" {
   }
   set {
     name  = "args[1]"
-    value = "--enable-claim-ssa=false"
+    value = "--enable-ssa-claims=false"
   }
   set {
     name  = "args[2]"
