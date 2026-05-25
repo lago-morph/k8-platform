@@ -131,6 +131,9 @@ helm install crossplane crossplane-stable/crossplane \
   --version "$CROSSPLANE_CHART_VERSION" \
   --namespace crossplane-system \
   --create-namespace \
+  --set 'args[0]=--enable-realtime-compositions=false' \
+  --set 'args[1]=--enable-claim-ssa=false' \
+  --set 'args[2]=--enable-custom-to-managed-resource-conversion=false' \
   --wait \
   --timeout 5m
 
