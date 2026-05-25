@@ -379,3 +379,68 @@ The `ext-github` skill itself is one-shot per call (no in-skill retries
 — see `ai/specs/ext-github-design.md` §4); the re-detection-and-retry
 above happens at the `terraform-ci-watch` outer layer, not inside any
 individual profile.
+
+---
+
+## 10. Diagnosing failing CI checks
+
+**Read the failure log before forming any hypothesis.** When any
+GitHub Actions check on a PR fails, the FIRST action is to fetch the
+job log. Do not read the PR description, the workflow YAML, the spec,
+the test source, or the commit message before reading the log. The log
+contains the actual error in chainsaw / kubectl / terraform / pytest
+output; everything else is a guess about what the log might say.
+
+Procedure:
+
+1. Identify the failed job ID from the check's `details_url` (the last
+   path segment is the job ID, e.g.
+   `…/actions/runs/26418951701/job/77769403164` → job ID `77769403164`).
+2. Fetch the log via the `ext-github` skill's `download_job_logs`
+   operation (`op_c08d23e5bd6966cb`), passing `owner`, `repo`, and
+   `job_id`.
+3. Logs are large (~100k–200k chars). Save to a file and grep / tail
+   for the actual error message — usually near the bottom of the log,
+   after a `FAIL:` or `Error:` or `##[error]` marker.
+4. Quote the relevant log lines verbatim in any commit message, retro
+   entry, or PR comment describing the fix. This keeps the diagnosis
+   auditable and prevents the next session from re-guessing.
+
+**Why this matters.** The autonomous run on 2026-05-25 spent multiple
+turns speculating about PR #91's chainsaw failure ("workflow doesn't
+honor `tests/chainsaw/run.sh`", "meta-test exit-code inversion broken")
+based on the workflow YAML and the spec. None of the hypotheses
+matched what actually happened. The real cause was a marker-string
+mismatch in `tests/chainsaw/run.sh`'s post-test grep — a single
+`grep -q` line — visible immediately in the chainsaw stdout but
+invisible from any other source. The whole speculative arc was
+wasted effort directly addressable by reading the log first.
+
+This rule applies to terraform-test, chainsaw, unit-tests,
+chainsaw-verify, integration-tests, phase-2-diagnose — any failing
+GitHub Actions check.
+
+### 10.1 Verify environmental preconditions before debugging code
+
+Before chasing a "code" hypothesis on a CI failure, check that the
+environmental preconditions still hold:
+
+- **AWS credentials.** Per §8.1, the test account is rotated between
+  sessions. If a CI run shows
+  `InvalidClientTokenId` / `The security token included in the request is invalid` /
+  `403 Forbidden` from STS or any AWS API, the in-repo credentials
+  are stale — the code is fine. Re-rotate credentials before any code
+  change. Symptom in chainsaw: every real-AWS scenario fails with
+  `CannotConnectToProvider`. Workaround for the autonomous-run window:
+  dispatch chainsaw with `scenario_filter: _smoke` so the harness
+  validates itself without requiring AWS.
+- **Cluster reachability.** If `kubectl` returns
+  `connection refused` / `dial tcp: lookup ...: no such host`, the
+  cluster has been torn down or the kubeconfig is stale. See §8.1.
+- **Tool availability.** A missing CLI (helm, kubeconform,
+  crossplane) is environmental, not code. The unit test should
+  skip-with-warning, not fail.
+
+If the failure cause is environmental, document it in the PR body
+and stop debugging code. A code fix on top of an environmental
+failure ships the wrong fix.
