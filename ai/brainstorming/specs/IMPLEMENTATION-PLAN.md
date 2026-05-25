@@ -29,43 +29,72 @@ output soaks in the live system. Bugs found during soak land as
 hotfix PRs on a hotfix branch that merges to `main` — Phase N+1
 rebases when ready.
 
+**How to read the diagram below.** Time runs left-to-right in abstract
+"cycles" (call each cycle a session). For each phase there are two bars:
+
+- **Blue (`implement`)** — author the PRs and merge to main.
+- **Red (`soak`)** — the merged code runs in the live architecture;
+  any bug becomes a hotfix PR. The author doesn't sit idle during soak
+  — they're already in the blue bar of the *next* phase.
+
+The pipelining shows up as **horizontal overlap between Phase N's red
+soak bar and Phase N+1's blue implement bar** — both occupy the same
+column. That's the whole point: while Phase N is being debugged in the
+deployed system, Phase N+1's PRs are already being authored.
+
 ```mermaid
 gantt
-  title 8-phase pipelined rollout
+  title 8-phase pipelined rollout - Phase N soak overlaps Phase N+1 implement
   dateFormat X
-  axisFormat %s
+  axisFormat Cycle %s
+
   section Phase 0
-  Spec authoring (49 SPEC files)  :done, p0, 0, 1
+  Spec authoring (49 specs) :done, 0, 1
+
   section Phase 1
-  Implement S-foundations         :p1, after p0, 2
-  Soak P1 (debug, hotfixes)       :crit, p1s, after p1, 1
+  Implement P1 (S-foundations)  :active, 1, 1
+  Soak P1                       :crit,   2, 1
+
   section Phase 2
-  Implement S-chainsaw+diag       :p2, after p1, 2
-  Soak P2                         :crit, p2s, after p2, 1
+  Implement P2 (S-chainsaw+diag):active, 2, 1
+  Soak P2                       :crit,   3, 1
+
   section Phase 3
-  Implement D-cleanup             :p3, after p2, 2
-  Soak P3                         :crit, p3s, after p3, 1
+  Implement P3 (D-cleanup)      :active, 3, 1
+  Soak P3                       :crit,   4, 1
+
   section Phase 4
-  Implement B-lints (priority)    :p4, after p3, 2
-  Soak P4                         :crit, p4s, after p4, 1
+  Implement P4 (B-lints prio)   :active, 4, 1
+  Soak P4                       :crit,   5, 1
+
   section Phase 5
-  Implement skill enhancements    :p5, after p4, 3
-  Soak P5                         :crit, p5s, after p5, 1
+  Implement P5 (skill enh)      :active, 5, 1
+  Soak P5                       :crit,   6, 1
+
   section Phase 6
-  Implement A-debug-scripts       :p6, after p5, 2
-  Soak P6                         :crit, p6s, after p6, 1
+  Implement P6 (A-scripts)      :active, 6, 1
+  Soak P6                       :crit,   7, 1
+
   section Phase 7
-  Implement drift+regression+B    :p7, after p6, 3
-  Soak P7                         :crit, p7s, after p7, 1
+  Implement P7 (drift+regr+B)   :active, 7, 1
+  Soak P7                       :crit,   8, 1
+
   section Phase 8
-  Implement C-observability       :p8, after p7, 2
-  Soak P8                         :crit, p8s, after p8, 1
+  Implement P8 (C-observability):active, 8, 1
+  Soak P8                       :crit,   9, 1
 ```
 
-**Pipelining rule:** Phase N+1 implementation may start as soon as Phase
-N's PRs are *merged*, even if the soak period for Phase N is ongoing.
-The soak period exists to surface bugs in the deployed architecture;
-those bugs become hotfix PRs that land independently.
+**Reading example.** At cycle 3, two things happen in parallel:
+*Phase 2's code is soaking* (red P2 bar at cycle 3) **and** *Phase 3's
+PRs are being authored* (blue P3 bar at cycle 3). If Phase 2 throws a
+bug during that soak, it gets a hotfix PR that merges to main alongside
+the Phase 3 PRs — Phase 3 rebases if the hotfix touches one of its
+files (use the conflict-zone table in §2 to predict which hotfixes
+collide).
+
+**Pipelining rule:** Phase N+1 implementation may start as soon as
+Phase N's PRs are *merged*, even if the soak period for Phase N is
+ongoing.
 
 **Conflict isolation rule:** Phase N+1's content should be drawn from a
 **different file tree** than the most likely Phase N hotfix surfaces
