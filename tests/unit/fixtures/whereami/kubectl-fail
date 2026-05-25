@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Stub kubectl that always exits 1 (simulates missing kubeconfig / no cluster).
+exit 1
