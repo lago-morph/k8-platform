@@ -148,8 +148,8 @@ Surface these as findings:
 
 | Field | Value |
 |---|---|
-| Active phase | **Phase 2 — code-fixed, needs end-to-end verify on a fresh account.** Prior session shipped fixes via PRs #64+#66+#67 (merged) and #68 (open). The cluster they were verified against has been torn down; the new session must apply phases 0 → 1 → 2 from scratch and re-verify. |
-| Last update | 2026-05-24 late — end of IRSA-root-cause session |
+| Active phase | **Phase 2 — phase 0 and 1 applied this session; phase 2 verification in progress.** Phase 0 base ✅ ([run 26382645677](https://github.com/lago-morph/k8-platform/actions/runs/26382645677)). Phase 1 management ✅ ([run 26382778999](https://github.com/lago-morph/k8-platform/actions/runs/26382778999)). Waiting on ArgoCD sync (≥3 min) before dispatching `integration-tests.yml` `test_filter=11` to probe PlatformSecret end-to-end (post-PR-#68 IRSA chain verify). |
+| Last update | 2026-05-25 — phase 0+1 bring-up on fresh account |
 | AWS account | **ephemeral — derive from `aws sts get-caller-identity`** (see AGENTS.md §8.1) |
 | Route53 zone | `<account-id>.realhandsonlabs.net.` (account-id from `aws sts get-caller-identity`) |
 | EKS cluster | `k8-platform-mgmt` in the region from `$AWS_REGION` (cluster name is fixed by `terraform/management/variables.tf`; region comes from the workflow env / secret) |
@@ -162,9 +162,9 @@ State semantics: `code-only` = source is in the repo, never applied on THIS acco
 
 | Phase | State (this account) | Code notes | Last applied (any account) |
 |---|---|---|---|
-| 0 base | **code-only — needs apply** | Known good. ~25 resources: VPC, IGW, NAT pair, subnets, route tables, ACM ISSUED, Cognito user pool + test user. | 2026-05-24 on prior-account |
-| 1 management | **code-only — needs apply** | Known good. ~51 resources including IRSA roles, helm_release × 5, ArgoCD bootstrap, Crossplane DeploymentRuntimeConfig (post-#64–#68 chain). | 2026-05-24 on prior-account |
-| 2 xrds | **code-fixed — needs apply + verify** | PRs #64+#66+#67 merged. PR #68 still open as of this handoff. Secondary suspected issue: XR with zero `.status.conditions` even after IRSA fix — see Step 7 of QUICKSTART. | n/a (not green on any account yet) |
+| 0 base | **applied** (this account, this session) | ~25 resources: VPC, IGW, NAT pair, subnets, route tables, ACM ISSUED, Cognito user pool + test user. | 2026-05-25 on this account ([run 26382645677](https://github.com/lago-morph/k8-platform/actions/runs/26382645677)) |
+| 1 management | **applied** (this account, this session) | ~51 resources including IRSA roles, helm_release × 5, ArgoCD bootstrap, Crossplane DeploymentRuntimeConfig (post-#64–#68 chain). | 2026-05-25 on this account ([run 26382778999](https://github.com/lago-morph/k8-platform/actions/runs/26382778999)) |
+| 2 xrds | **broken — secondary bug confirmed** | PRs #64+#66+#67+#68 all merged & active (provider SA name correct, IRSA chain healthy, providers/functions Healthy=True). Integration test 11 ([run 26383331006](https://github.com/lago-morph/k8-platform/actions/runs/26383331006)) and diagnose ([run 26383496652](https://github.com/lago-morph/k8-platform/actions/runs/26383496652)) confirm: XR is created and `spec.resourceRefs` is populated (composition function ran) but the referenced MRs (`secrets.secretsmanager.aws.upbound.io`, `externalsecrets.external-secrets.io`) **never get created** in the cluster. XR `.status` is empty. crossplane-core logs filtered to the XR name are silent. Kyverno PolicyViolation events fire (test ns not in allowlist) but the policy is Audit so it's a red herring. **This is the Step 7 secondary bug from QUICKSTART — top suspect remains Crossplane v2.0.1 composition-reconciler limitation; user has explicitly deferred the 2.2 upgrade until phase 2 is green.** | n/a (not green on any account yet) |
 | 3 platform | scaffolding only (PR #55 merged earlier) | — | — |
 | 4 observability | not-coded | — | — |
 | 5 auth | not-coded (spec done 2026-05-10) | — | — |
