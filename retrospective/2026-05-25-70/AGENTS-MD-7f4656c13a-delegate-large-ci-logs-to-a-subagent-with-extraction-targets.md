@@ -1,0 +1,9 @@
+# agent instruction
+
+**Delegate any CI log over 50 KB to a subagent with explicit extraction targets — never with "summarize this".** When a workflow log exceeds ~50 KB, do not read it inline; structural noise (timestamps, setup steps, prefixed lines) will eat the context budget. Save the log to `/tmp/<name>.log`, then dispatch a general-purpose subagent with a brief that names: (a) the exact `jq` query to extract the body from a `{result:{output:...}}` envelope, (b) the verbatim section headers to find, (c) the verbatim error / status strings to quote, (d) a word cap (≤600 words), and (e) what verdict the subagent must return. The subagent returns quoted evidence; the main agent reasons over it. A vague "summarize this log" produces a paraphrase that may lose exact strings the next fix depends on.
+
+*Grounded in: three subagent dispatches against ~75–170 KB diagnose logs this session (composite-not-Ready root-cause, post-IRSA-fix verification, terraform-apply audit) — each returned quoted evidence in <500 words and drove the next concrete fix.*
+
+# justification
+
+The MCP tool result limit (~165 KB) is below the typical phase-2-diagnose log size (~170 KB). Even when the log fits, inlining it consumes context the main agent needs to reason about the *next fix*, not the *current evidence*. Three times this session, a carefully briefed subagent extracted the exact log lines that proved (or disproved) a hypothesis: "did the SA name get pinned?", "did the Deployment roll?", "did the claim go Ready?". Each subagent returned 300–500 words of quoted evidence and a one-sentence verdict. The cost of delegation is one Agent tool call (~30s); the cost of skipping is either a tool-result-size error (forcing re-dispatch) or context exhaustion that derails the working hypothesis. The rule pairs with the existing `subagent-prompting` reference card — this one specializes it for the CI-log case.
