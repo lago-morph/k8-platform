@@ -424,22 +424,28 @@ if [ -n "$META_DIRS" ]; then
     META_RC=${PIPESTATUS[0]}
     set -e
 
-    # Inverted-exit gate: PASS iff chainsaw exited non-zero AND catch
-    # markers are present.
+    # Inverted-exit gate: PASS iff chainsaw exited non-zero AND the
+    # `catch:` handler actually fired. The markers `CATCH | BEGIN` and
+    # `CATCH | END` are chainsaw's own structural-log frames (emitted
+    # unconditionally when a `spec.catch:` block runs); they prove the
+    # post-mortem hook is wired without depending on what the catch
+    # operations actually dumped (the meta scenario's namespace is empty
+    # — there are no crossplane resources for the catch to describe, so
+    # content-based markers like `Name:` from `kubectl describe` will
+    # not appear here even though the hook is firing correctly).
     if [ "$META_RC" -eq 0 ]; then
       echo "  ✗ meta-test '$meta_dir' chainsaw RC=0 (expected non-zero — deliberate-fail step passed)"
       OVERALL_RC=1
       continue
     fi
     MISSING=""
-    grep -q "Describe Resource:" "$META_LOG"  || MISSING="${MISSING} 'Describe Resource:'"
-    grep -q "Events:"            "$META_LOG"  || MISSING="${MISSING} 'Events:'"
-    grep -qE "^Name:[[:space:]]"  "$META_LOG"  || MISSING="${MISSING} 'Name:'"
+    grep -q "CATCH | BEGIN" "$META_LOG"  || MISSING="${MISSING} 'CATCH | BEGIN'"
+    grep -q "CATCH | END"   "$META_LOG"  || MISSING="${MISSING} 'CATCH | END'"
     if [ -n "$MISSING" ]; then
       echo "  ✗ meta-test '$meta_dir' chainsaw RC=$META_RC but catch markers missing:${MISSING}"
       OVERALL_RC=1
     else
-      echo "  ✓ meta-test '$meta_dir' PASS (chainsaw RC=$META_RC, all catch markers found)"
+      echo "  ✓ meta-test '$meta_dir' PASS (chainsaw RC=$META_RC, catch handler fired)"
     fi
   done <<< "$META_DIRS"
 fi
