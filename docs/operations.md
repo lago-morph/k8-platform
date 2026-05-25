@@ -235,6 +235,15 @@ After the run:
 
 ---
 
+## Runbooks
+
+Runbooks document specific failure classes with step-by-step recovery procedures.
+
+- `docs/runbooks/runbook-apply-zero-resources.md` — Apply complete: 0 added
+  silent no-op class (`triggers_replace` pattern, PR #67).
+
+---
+
 ## Where to Find Things
 
 | Question | Where to look |

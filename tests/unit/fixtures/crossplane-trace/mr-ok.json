@@ -1,0 +1,32 @@
+{
+  "apiVersion": "secretsmanager.aws.upbound.io/v1beta1",
+  "kind": "Secret",
+  "metadata": {
+    "name": "happy-claim-asm",
+    "uid": "00000000-0000-0000-0000-000000000003"
+  },
+  "spec": {
+    "forProvider": {
+      "region": "us-east-1"
+    }
+  },
+  "status": {
+    "conditions": [
+      {
+        "type": "Synced",
+        "status": "True",
+        "reason": "ReconcileSuccess",
+        "message": "ok"
+      },
+      {
+        "type": "Ready",
+        "status": "True",
+        "reason": "Available",
+        "message": "ok"
+      }
+    ],
+    "atProvider": {
+      "arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:k8-platform/x-AbCdEf"
+    }
+  }
+}

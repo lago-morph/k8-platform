@@ -137,7 +137,7 @@ delivers the code:
 |---|---|---|
 | Unit | always | `tests/unit/test_*.sh` |
 | Kyverno audit policy | for any new runtime invariant that can be expressed as a cluster-resource pattern | `policies/audit/*.yaml` |
-| Integration | for every end-to-end flow the phase introduces | `tests/integration/NN_*.sh` |
+| Integration | for every end-to-end flow the phase introduces | `tests/integration/NN_*.sh` (claim waits use `scripts/wait-for-claim.sh`; see SPEC-S7) |
 | Chainsaw | for every XRD / Composition added | `tests/chainsaw/` |
 
 The default is **maximal coverage**: if a contract can be expressed as a
@@ -201,6 +201,8 @@ runs the full test bundle before reporting "phase verified". The bundle:
    the live cluster.
 4. `scripts/kyverno-policies.sh` and `scripts/kyverno-violations.sh` —
    sanity-check the policy bundle is loaded and no unexpected violations.
+5. `scripts/irsa_trust_validator.py --all` — IRSA trust-policy vs SA
+   fleet sweep. Must report `0 MISMATCH` before phase sign-off.
 
 If any of these report a failure, the TDD discipline in §6.2 applies — the
 agent does not declare "phase verified" until both the original symptom is
@@ -473,6 +475,11 @@ need one.)
   `kubectl`, ArgoCD sync, or CI), invoke the
   **`crossplane-claim-verify`** skill to wait for `Synced`/`Ready` and
   verify the underlying cloud resource is healthy.
+- When a claim is stuck or slow, run
+  `scripts/crossplane-trace.sh <kind>/<name> [-n <ns>]` for a one-shot
+  condition walk down claim → XR → managed-resources → IRSA → atProvider;
+  use `--watch` while waiting for reconciliation and `--json` to diff
+  snapshots across runs.
 
 ---
 
@@ -514,10 +521,14 @@ is: "does this identifier still resolve to a live resource after the
 account is rotated?" If no, it's ephemeral and doesn't belong in a
 plan or handoff.
 
+Run `scripts/whereami.sh` as the first command of every session; use `--json`
+for machine-readable output. This replaces the manual `aws sts get-caller-identity` /
+`aws eks list-clusters` sequence and surfaces kubectl context, ArgoCD URL, and
+Crossplane version in one call (SPEC-S4).
+
 When picking up a session, the first concrete commands are:
-1. `aws sts get-caller-identity` — confirm what account you're on.
-2. `aws eks list-clusters` (or `update-kubeconfig`) — confirm the cluster exists.
-3. Treat the handoff doc's account-level statements (phase 0+1 "applied" vs "needs apply") as the session-author's belief, not ground truth — verify with the live API.
+1. `scripts/whereami.sh` — one call for account, region, EKS, zone, kubectl ctx, ArgoCD URL, Crossplane version.
+2. Treat the handoff doc's account-level statements (phase 0+1 "applied" vs "needs apply") as the session-author's belief, not ground truth — verify with the live API.
 
 ---
 
@@ -555,6 +566,7 @@ clusters/                # Per-cluster Kubernetes resource overlays
 platform-services/       # Helm values for platform components
 policies/audit/          # Kyverno audit-mode ClusterPolicies
 scripts/                 # Diagnostic helper scripts (read-only)
+scripts/_lib/            # Shared bash helpers sourced by scripts/ executables (SPEC-S7+)
 tests/unit/              # Pre-apply unit tests (helm-render, IRSA linkage, IAM policy completeness, EKS module defaults)
 tests/integration/       # End-to-end smoke tests against the live cluster
 tests/chainsaw/          # Chainsaw scenarios for Crossplane XRDs (phase 2+)

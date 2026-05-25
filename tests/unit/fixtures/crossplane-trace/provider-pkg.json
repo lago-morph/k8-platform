@@ -1,0 +1,13 @@
+{
+  "apiVersion": "pkg.crossplane.io/v1",
+  "kind": "Provider",
+  "metadata": {
+    "name": "upbound-provider-family-aws"
+  },
+  "status": {
+    "conditions": [
+      {"type": "Healthy", "status": "True", "reason": "HealthyPackage"},
+      {"type": "Installed", "status": "True", "reason": "ActivePackageRevision"}
+    ]
+  }
+}
