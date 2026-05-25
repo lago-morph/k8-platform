@@ -1,0 +1,29 @@
+# Probe XPlatformSecret used by `crossplane render` for SPEC-S9 dry-run.
+#
+# This is the composite (XR) shape — not the claim — because
+# `crossplane render` works against the XR. A real user applies a
+# PlatformSecret claim; the Crossplane composite controller would
+# materialize the matching XPlatformSecret. For offline render we
+# write the XR directly.
+#
+# metadata.uid is pinned to a deterministic fake UUID so that
+# transforms which derive values from metadata.uid (e.g. the ASM key
+# name `k8-platform/<uid>`) produce reproducible output across runs.
+# See SPEC-S9 §5 "Diff strategy".
+apiVersion: platform.k8-platform.io/v1alpha1
+kind: XPlatformSecret
+metadata:
+  name: render-probe-secret
+  uid: "00000000-0000-0000-0000-000000000001"
+  # claimRef is required because the Composition's ExternalSecret patches
+  # read spec.claimRef.{name,namespace} to place the ExternalSecret in
+  # the user's namespace.
+spec:
+  claimRef:
+    apiVersion: platform.k8-platform.io/v1alpha1
+    kind: PlatformSecret
+    name: render-probe
+    namespace: default
+  refreshInterval: 1h
+  region: us-east-1
+  description: "Render fixture probe — not a real secret"

@@ -79,6 +79,32 @@ jobs:
           sudo chmod +x /usr/local/bin/kubeconform
           kubeconform -v
 
+      # SPEC-S9: install the crossplane CLI so the composition-render
+      # dry-run tests can exercise the helper end-to-end. When the CLI
+      # is unavailable the render tests skip-with-warning (see
+      # tests/unit/test_composition_render_*), so this install step is
+      # best-effort: a failure here will not red the suite, only
+      # downgrade the render tests to skip mode.
+      - name: Install crossplane CLI (SPEC-S9)
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          # Download to a temp dir so the binary never shadows the repo's
+          # crossplane/ directory. The install.sh script drops `crossplane`
+          # (a binary) in $PWD; if $PWD contains a crossplane/ directory the
+          # shell mv would move the directory, not a binary, to /usr/local/bin.
+          tmp=$(mktemp -d)
+          pushd "$tmp" > /dev/null
+          curl -fsSL "https://raw.githubusercontent.com/crossplane/crossplane/main/install.sh" | sh || true
+          popd > /dev/null
+          if [ -f "$tmp/crossplane" ] && [ -x "$tmp/crossplane" ]; then
+            sudo mv "$tmp/crossplane" /usr/local/bin/crossplane
+            /usr/local/bin/crossplane --version || true
+          else
+            echo "(crossplane CLI install failed — render tests will skip)"
+          fi
+          rm -rf "$tmp"
+
       - name: test_compute_gates
         run: bash tests/unit/test_compute_gates.sh
 
@@ -171,4 +197,47 @@ jobs:
             bash tests/unit/test_kubeconform_manifests.sh
           else
             echo "(test_kubeconform_manifests.sh not on this branch — skipped)"
+          fi
+
+      # SPEC-S9 composition-render tests — skip gracefully on branches
+      # that predate them. The render-dependent ones internally skip
+      # when the crossplane CLI is absent (best-effort install above).
+      - name: test_composition_render_fixtures
+        run: |
+          if [ -f tests/unit/test_composition_render_fixtures.sh ]; then
+            bash tests/unit/test_composition_render_fixtures.sh
+          else
+            echo "(test_composition_render_fixtures.sh not on this branch — skipped)"
+          fi
+
+      - name: test_composition_render_catches_bug4
+        run: |
+          if [ -f tests/unit/test_composition_render_catches_bug4.sh ]; then
+            bash tests/unit/test_composition_render_catches_bug4.sh
+          else
+            echo "(test_composition_render_catches_bug4.sh not on this branch — skipped)"
+          fi
+
+      - name: test_composition_render_diff_detected
+        run: |
+          if [ -f tests/unit/test_composition_render_diff_detected.sh ]; then
+            bash tests/unit/test_composition_render_diff_detected.sh
+          else
+            echo "(test_composition_render_diff_detected.sh not on this branch — skipped)"
+          fi
+
+      - name: test_composition_render_no_golden_exit0
+        run: |
+          if [ -f tests/unit/test_composition_render_no_golden_exit0.sh ]; then
+            bash tests/unit/test_composition_render_no_golden_exit0.sh
+          else
+            echo "(test_composition_render_no_golden_exit0.sh not on this branch — skipped)"
+          fi
+
+      - name: test_composition_render_version_pin
+        run: |
+          if [ -f tests/unit/test_composition_render_version_pin.sh ]; then
+            bash tests/unit/test_composition_render_version_pin.sh
+          else
+            echo "(test_composition_render_version_pin.sh not on this branch — skipped)"
           fi

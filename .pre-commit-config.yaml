@@ -1,0 +1,26 @@
+# Pre-commit hooks for k8-platform.
+#
+# Install (once per dev workstation):
+#   pre-commit install
+#
+# Run on demand:
+#   pre-commit run --all-files
+#
+# Each hook below documents the spec / SPEC-* it implements. Hooks are
+# additive — append new entries; do not reorder or replace existing
+# ones (other PRs may add hooks in parallel and merging is mechanical
+# only if the file is append-only).
+
+repos:
+  # SPEC-S9 — author-time `crossplane render` dry-run.
+  # Fires when a Composition or render-fixture file is staged. Catches
+  # the Bug-4 class (function-input rejection) before the Composition
+  # reaches a cluster or chainsaw.
+  - repo: local
+    hooks:
+      - id: composition-render-dryrun
+        name: Composition render dry-run (SPEC-S9)
+        language: script
+        entry: scripts/composition-render.sh --all
+        pass_filenames: false
+        files: ^crossplane/(compositions|xrds/[^/]+/render-fixtures)/.*\.yaml$

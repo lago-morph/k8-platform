@@ -1,0 +1,54 @@
+# Synthetic Composition used by SPEC-S9 §6.2 meta-test.
+#
+# DELIBERATELY BUGGY: the patches[0].transforms[0].string block omits
+# the `type` field. function-patch-and-transform's input validator
+# rejects this with `Required value: string transform type is required`
+# — the same fatal-result message that surfaced as Bug 4 across nine
+# patches in the real Compositions.
+#
+# DO NOT FIX. The meta-test asserts the helper exits non-zero against
+# this file. A "fix" here would silently turn the regression detector
+# into a no-op.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: platform-secret-aws-BROKEN
+  labels:
+    platform.k8-platform.io/abstraction: PlatformSecret
+    platform.k8-platform.io/backend: aws-broken
+spec:
+  compositeTypeRef:
+    apiVersion: platform.k8-platform.io/v1alpha1
+    kind: XPlatformSecret
+  writeConnectionSecretsToNamespace: crossplane-system
+  mode: Pipeline
+  pipeline:
+    - step: patch-and-transform
+      functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+          - name: asm-secret
+            base:
+              apiVersion: secretsmanager.aws.upbound.io/v1beta1
+              kind: Secret
+              spec:
+                forProvider:
+                  recoveryWindowInDays: 0
+                  region: us-east-1
+                deletionPolicy: Delete
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.uid
+                toFieldPath: spec.forProvider.name
+                transforms:
+                  - type: string
+                    string:
+                      # BUG: missing `type: Format`. This is the exact
+                      # shape that produced retro 2026-05-24-62 Phase 6's
+                      # "string transform type is required" rejection.
+                      fmt: "k8-platform/%s"
