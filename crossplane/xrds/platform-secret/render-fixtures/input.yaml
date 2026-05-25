@@ -1,3 +1,10 @@
+# kubeconform-skip: render-probe XR fixture; carries spec.claimRef (normally
+# set by Crossplane composite controller, not authored manually) so
+# `crossplane render` can resolve the Composition's
+# spec.claimRef.{name,namespace} patches without a live cluster. The XRD
+# schema correctly forbids claimRef on user-authored input; this fixture
+# is offline-render-only.
+#
 # Probe XPlatformSecret used by `crossplane render` for SPEC-S9 dry-run.
 #
 # This is the composite (XR) shape — not the claim — because
