@@ -36,10 +36,19 @@ spec:
     targetRevision: main
     path: clusters/platform
     directory:
-      include: 'platform-cluster-claim.yaml'
+      # v2 migration (SEG-1 step 1a) — clusters/platform/ now ships TWO
+      # manifests: 00-namespace.yaml (the `platform` namespace this
+      # Application's destination references) and platform-cluster-
+      # claim.yaml (the v2 namespaced XPlatformCluster XR).
+      include: '{00-namespace.yaml,platform-cluster-claim.yaml}'
   destination:
     server: https://kubernetes.default.svc
-    namespace: default
+    # v2 migration (SEG-1 step 1a) — XPlatformCluster is a namespaced
+    # XR (v2 scope: Namespaced) and lives in the `platform` namespace;
+    # this Application's destination namespace must match the XR's
+    # metadata.namespace. The Namespace object itself is also synced by
+    # this Application (00-namespace.yaml above).
+    namespace: platform
   # No syncPolicy.automated — manual sync only. See header.
   syncPolicy:
     syncOptions:

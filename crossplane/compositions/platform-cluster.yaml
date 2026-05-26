@@ -44,11 +44,27 @@ metadata:
   labels:
     platform.k8-platform.io/abstraction: PlatformCluster
     platform.k8-platform.io/backend: aws
+  annotations:
+    # v2 migration (SEG-1 step 1c) — wave 0 lands AFTER the v2 XRDs
+    # (wave -1) so the compositeTypeRef binds against the v2 XRD.
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   compositeTypeRef:
     apiVersion: platform.k8-platform.io/v1alpha1
     kind: XPlatformCluster
-  writeConnectionSecretsToNamespace: crossplane-system
+  # v2 migration (SEG-1 step 1c) — `writeConnectionSecretsToNamespace`
+  # is removed in v2. End-to-end routing for the EKS kubeconfig:
+  #   1. eks-cluster MR (below) emits `kubeconfig` in its provider
+  #      connection-secret.
+  #   2. This Composition's `connectionDetails` block (preserved
+  #      unchanged at the bottom of each step's resources) re-exports
+  #      those keys to the XR's own connection-detail set.
+  #   3. The XPlatformCluster XR (clusters/platform/platform-cluster-
+  #      claim.yaml) carries `spec.writeConnectionSecretToRef.name:
+  #      platform-cluster-kubeconfig`, which writes the merged secret
+  #      to the XR's namespace (`platform`) — NOT crossplane-system.
+  #   4. Phase 3 consumers must read platform/platform-cluster-
+  #      kubeconfig (was crossplane-system/...); see plan §3 Open Q #7.
   mode: Pipeline
   pipeline:
     - step: patch-and-transform
@@ -60,9 +76,18 @@ spec:
         resources:
 
           # ---------- 1. Control-plane IAM role ---------------------
+          # v2 migration (SEG-1 step 1c) applied uniformly to every MR
+          # base in this Composition (8 total):
+          #   - apiVersion: *.aws.upbound.io/v1beta1
+          #       → *.aws.m.upbound.io/v1beta1 (Upbound v2.x "modern" CRDs)
+          #   - deletionPolicy: Delete → removed; replaced by
+          #     managementPolicies: [Observe, Create, Update, Delete]
+          #     which preserves prior full-lifecycle semantics.
+          #   - providerConfigRef now carries `kind: ClusterProviderConfig`
+          #     (cluster-scoped variant; single shared IRSA config).
           - name: cluster-role
             base:
-              apiVersion: iam.aws.upbound.io/v1beta1
+              apiVersion: iam.aws.m.upbound.io/v1beta1
               kind: Role
               metadata:
                 labels:
@@ -81,8 +106,9 @@ spec:
                   tags:
                     ManagedBy: crossplane
                     PlatformAbstraction: PlatformCluster
-                deletionPolicy: Delete
+                managementPolicies: [Observe, Create, Update, Delete]
                 providerConfigRef:
+                  kind: ClusterProviderConfig
                   name: default
             patches:
               - type: FromCompositeFieldPath
@@ -103,13 +129,14 @@ spec:
           # ---------- 2. Cluster policy attachment -------------------
           - name: cluster-role-policy
             base:
-              apiVersion: iam.aws.upbound.io/v1beta1
+              apiVersion: iam.aws.m.upbound.io/v1beta1
               kind: RolePolicyAttachment
               spec:
                 forProvider:
                   policyArn: arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
-                deletionPolicy: Delete
+                managementPolicies: [Observe, Create, Update, Delete]
                 providerConfigRef:
+                  kind: ClusterProviderConfig
                   name: default
             patches:
               - type: FromCompositeFieldPath
@@ -124,7 +151,7 @@ spec:
           # ---------- 3. Node-group IAM role -------------------------
           - name: node-role
             base:
-              apiVersion: iam.aws.upbound.io/v1beta1
+              apiVersion: iam.aws.m.upbound.io/v1beta1
               kind: Role
               metadata:
                 labels:
@@ -143,8 +170,9 @@ spec:
                   tags:
                     ManagedBy: crossplane
                     PlatformAbstraction: PlatformCluster
-                deletionPolicy: Delete
+                managementPolicies: [Observe, Create, Update, Delete]
                 providerConfigRef:
+                  kind: ClusterProviderConfig
                   name: default
             patches:
               - type: FromCompositeFieldPath
@@ -165,13 +193,14 @@ spec:
           # ---------- 4. Worker policy attachment --------------------
           - name: node-worker-policy
             base:
-              apiVersion: iam.aws.upbound.io/v1beta1
+              apiVersion: iam.aws.m.upbound.io/v1beta1
               kind: RolePolicyAttachment
               spec:
                 forProvider:
                   policyArn: arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
-                deletionPolicy: Delete
+                managementPolicies: [Observe, Create, Update, Delete]
                 providerConfigRef:
+                  kind: ClusterProviderConfig
                   name: default
             patches:
               - type: FromCompositeFieldPath
@@ -186,13 +215,14 @@ spec:
           # ---------- 5. CNI policy attachment -----------------------
           - name: node-cni-policy
             base:
-              apiVersion: iam.aws.upbound.io/v1beta1
+              apiVersion: iam.aws.m.upbound.io/v1beta1
               kind: RolePolicyAttachment
               spec:
                 forProvider:
                   policyArn: arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
-                deletionPolicy: Delete
+                managementPolicies: [Observe, Create, Update, Delete]
                 providerConfigRef:
+                  kind: ClusterProviderConfig
                   name: default
             patches:
               - type: FromCompositeFieldPath
@@ -207,13 +237,14 @@ spec:
           # ---------- 6. ECR read-only attachment --------------------
           - name: node-ecr-policy
             base:
-              apiVersion: iam.aws.upbound.io/v1beta1
+              apiVersion: iam.aws.m.upbound.io/v1beta1
               kind: RolePolicyAttachment
               spec:
                 forProvider:
                   policyArn: arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
-                deletionPolicy: Delete
+                managementPolicies: [Observe, Create, Update, Delete]
                 providerConfigRef:
+                  kind: ClusterProviderConfig
                   name: default
             patches:
               - type: FromCompositeFieldPath
@@ -226,9 +257,17 @@ spec:
                       fmt: "k8-platform-nodegroup-%s"
 
           # ---------- 7. EKS Cluster ---------------------------------
+          # v2 migration (SEG-1 step 1c) plan deviation noted in
+          # commit-message: the v2 .m.upbound.io Cluster CRD changed
+          # `spec.forProvider.vpcConfig` from an array (Crossplane v1
+          # Upbound provider style) to a single object (v2 modern style).
+          # Patches that targeted `vpcConfig[0].subnetIds` are rewritten
+          # to `vpcConfig.subnetIds` to match the v2 schema. Verified
+          # against kubeconform-schemas/eks.aws.m.upbound.io/cluster_
+          # v1beta1.json.
           - name: eks-cluster
             base:
-              apiVersion: eks.aws.upbound.io/v1beta1
+              apiVersion: eks.aws.m.upbound.io/v1beta1
               kind: Cluster
               metadata:
                 labels:
@@ -244,13 +283,14 @@ spec:
                     matchLabels:
                       platform.k8-platform.io/role: cluster-role
                   vpcConfig:
-                    - endpointPrivateAccess: true
-                      endpointPublicAccess: true
+                    endpointPrivateAccess: true
+                    endpointPublicAccess: true
                   tags:
                     ManagedBy: crossplane
                     PlatformAbstraction: PlatformCluster
-                deletionPolicy: Delete
+                managementPolicies: [Observe, Create, Update, Delete]
                 providerConfigRef:
+                  kind: ClusterProviderConfig
                   name: default
             patches:
               - type: FromCompositeFieldPath
@@ -262,9 +302,11 @@ spec:
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.version
                 toFieldPath: spec.forProvider.version
+              # v2 deviation: vpcConfig is now an object (not array);
+              # subnetIds lives directly under vpcConfig.
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.vpc.subnetIds
-                toFieldPath: spec.forProvider.vpcConfig[0].subnetIds
+                toFieldPath: spec.forProvider.vpcConfig.subnetIds
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.name
                 toFieldPath: spec.forProvider.tags.ClusterName
@@ -284,9 +326,16 @@ spec:
                   status: "True"
 
           # ---------- 8. EKS Managed Node Group ----------------------
+          # v2 migration (SEG-1 step 1c) plan deviation noted in
+          # commit-message: the v2 .m.upbound.io NodeGroup CRD changed
+          # `spec.forProvider.scalingConfig` from an array to a single
+          # object. Patches that targeted `scalingConfig[0].*` are
+          # rewritten to `scalingConfig.*` to match the v2 schema.
+          # Verified against kubeconform-schemas/eks.aws.m.upbound.io/
+          # nodegroup_v1beta1.json.
           - name: eks-nodegroup
             base:
-              apiVersion: eks.aws.upbound.io/v1beta1
+              apiVersion: eks.aws.m.upbound.io/v1beta1
               kind: NodeGroup
               spec:
                 forProvider:
@@ -300,16 +349,17 @@ spec:
                     matchLabels:
                       platform.k8-platform.io/role: node-role
                   scalingConfig:
-                    - desiredSize: 2
-                      minSize: 1
-                      maxSize: 3
+                    desiredSize: 2
+                    minSize: 1
+                    maxSize: 3
                   instanceTypes:
                     - t3.medium
                   tags:
                     ManagedBy: crossplane
                     PlatformAbstraction: PlatformCluster
-                deletionPolicy: Delete
+                managementPolicies: [Observe, Create, Update, Delete]
                 providerConfigRef:
+                  kind: ClusterProviderConfig
                   name: default
             patches:
               - type: FromCompositeFieldPath
@@ -329,15 +379,16 @@ spec:
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.nodeGroup.instanceTypes
                 toFieldPath: spec.forProvider.instanceTypes
+              # v2 deviation: scalingConfig is an object (not array).
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.nodeGroup.desiredSize
-                toFieldPath: spec.forProvider.scalingConfig[0].desiredSize
+                toFieldPath: spec.forProvider.scalingConfig.desiredSize
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.nodeGroup.minSize
-                toFieldPath: spec.forProvider.scalingConfig[0].minSize
+                toFieldPath: spec.forProvider.scalingConfig.minSize
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.nodeGroup.maxSize
-                toFieldPath: spec.forProvider.scalingConfig[0].maxSize
+                toFieldPath: spec.forProvider.scalingConfig.maxSize
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.name
                 toFieldPath: spec.forProvider.tags.ClusterName
