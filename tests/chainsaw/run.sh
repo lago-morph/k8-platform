@@ -226,9 +226,14 @@ if [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ]; then
 aws_access_key_id=${AWS_ACCESS_KEY_ID}
 aws_secret_access_key=${AWS_SECRET_ACCESS_KEY}
 " --dry-run=client -o yaml | kubectl apply -f -
+  # Crossplane v2 with provider-family-aws v2.5.0+ replaces the
+  # namespaced ProviderConfig with the cluster-scoped
+  # ClusterProviderConfig (one shared config for all compositions).
+  # No metadata.namespace — the resource is cluster-scoped and
+  # admission rejects a namespace field on a cluster-scoped kind.
   kubectl apply -f - <<MANIFEST
-apiVersion: aws.upbound.io/v1beta1
-kind: ProviderConfig
+apiVersion: aws.m.upbound.io/v1beta1
+kind: ClusterProviderConfig
 metadata:
   name: default
 spec:
