@@ -38,7 +38,8 @@ ES_BASE_KIND=$(yq -r '.spec.pipeline[0].input.resources[] | select(.name == "ext
 
 # ASM secret must be the Upbound provider-family-aws Secret, not the
 # crossplane-contrib equivalent — IRSA scope is for upbound.io ARN.
-assert_eq "composition_asm_apiVersion" "secretsmanager.aws.upbound.io/v1beta1" "$ASM_BASE_API"
+# v2 uses the namespaced .m.upbound.io group (was .aws.upbound.io in v1).
+assert_eq "composition_asm_apiVersion" "secretsmanager.aws.m.upbound.io/v1beta1" "$ASM_BASE_API"
 assert_eq "composition_asm_kind"       "Secret"                                 "$ASM_BASE_KIND"
 assert_eq "composition_es_apiVersion"  "external-secrets.io/v1beta1"            "$ES_BASE_API"
 assert_eq "composition_es_kind"        "ExternalSecret"                          "$ES_BASE_KIND"
@@ -76,17 +77,23 @@ esac
 ASM_RECOVERY=$(yq -r '.spec.pipeline[0].input.resources[] | select(.name == "asm-secret") | .base.spec.forProvider.recoveryWindowInDays' "$COMP")
 assert_eq "composition_asm_recovery_window_zero" "0" "$ASM_RECOVERY"
 
-# ---- 5. ASM secret deletionPolicy is Delete (not Orphan) -----------------
-ASM_DELETION=$(yq -r '.spec.pipeline[0].input.resources[] | select(.name == "asm-secret") | .base.spec.deletionPolicy' "$COMP")
-assert_eq "composition_asm_deletionPolicy_Delete" "Delete" "$ASM_DELETION"
-
-# ---- 6. ExternalSecret targets claim's namespace, not composite's -------
+# ---- 5. ASM secret has NO deletionPolicy (v2 namespaced MR contract) ----
 #
-# Defends contract: composites are cluster-scoped — using
-# composite.metadata.namespace patches to nothing. The ExternalSecret
-# must derive namespace from claimRef.namespace.
+# v2 removed `spec.deletionPolicy` for namespaced managed resources;
+# the field is no longer in the schema. Positive guard: any
+# re-introduction in the Composition (regression to the v1 pattern)
+# trips this assertion.
+ASM_DELETION=$(yq -r '.spec.pipeline[0].input.resources[] | select(.name == "asm-secret") | .base.spec.deletionPolicy' "$COMP")
+assert_eq "composition_asm_no_deletionPolicy" "null" "$ASM_DELETION"
+
+# ---- 6. ExternalSecret targets the XR's namespace ------------------------
+#
+# Defends contract: in v2 the XR is namespaced (lives in the user's
+# namespace directly — there is no claim/composite split). The
+# ExternalSecret must derive its namespace from the XR's own
+# metadata.namespace, not from the v1 spec.claimRef.namespace pointer.
 ES_NS_FROM=$(yq -r '.spec.pipeline[0].input.resources[] | select(.name == "external-secret") | .patches[] | select(.toFieldPath == "metadata.namespace") | .fromFieldPath' "$COMP")
-assert_eq "composition_es_namespace_from_claim" "spec.claimRef.namespace" "$ES_NS_FROM"
+assert_eq "composition_es_namespace_from_xr_metadata" "metadata.namespace" "$ES_NS_FROM"
 
 # ---- 7. ExternalSecret.secretStoreRef matches the ClusterSecretStore ----
 #
@@ -141,5 +148,38 @@ PIPE_INPUT_API=$(yq -r '.spec.pipeline[0].input.apiVersion' "$COMP")
 PIPE_INPUT_KIND=$(yq -r '.spec.pipeline[0].input.kind' "$COMP")
 assert_eq "composition_pipeline_input_apiVersion" "pt.fn.crossplane.io/v1beta1" "$PIPE_INPUT_API"
 assert_eq "composition_pipeline_input_kind"       "Resources"                  "$PIPE_INPUT_KIND"
+
+# ---- 11. Every providerConfigRef uses ClusterProviderConfig (v2) ---------
+#
+# Cross-segment hard pin: v2 with provider-family-aws v2.5.0 ships
+# both ProviderConfig (namespaced) and ClusterProviderConfig (cluster-
+# scoped). The migration pre-committed to a single shared
+# ClusterProviderConfig named `default`. Any base block that declares
+# a providerConfigRef MUST use kind: ClusterProviderConfig — using
+# kind: ProviderConfig (or omitting kind) is a regression that surfaces
+# only at apply time with a cryptic "could not get ProviderConfig
+# default" error.
+PCR_KINDS=$(yq -r '.spec.pipeline[0].input.resources[].base.spec.providerConfigRef.kind // empty' "$COMP")
+if [ -z "$PCR_KINDS" ]; then
+  _fail "composition_providerConfigRef_kinds_present" \
+        "no providerConfigRef.kind found on any base; v2 requires explicit kind: ClusterProviderConfig"
+else
+  PCR_BAD=$(printf '%s\n' "$PCR_KINDS" | grep -v -x ClusterProviderConfig || true)
+  if [ -z "$PCR_BAD" ]; then
+    _pass "composition_providerConfigRef_kind_ClusterProviderConfig"
+  else
+    _fail "composition_providerConfigRef_kind_ClusterProviderConfig" \
+          "non-ClusterProviderConfig values: $(printf '%s' "$PCR_BAD" | tr '\n' ',' )"
+  fi
+fi
+
+# ---- 12. ASM base.apiVersion matches v2 .m.upbound.io group (positive) --
+#
+# Redundant with the assertion in §2 above (composition_asm_apiVersion)
+# but kept as a single-purpose positive guard so the failure message
+# is unambiguous when SEG-1's manifest is reverted to the v1 group.
+ASM_API_GUARD=$(yq -r '.spec.pipeline[0].input.resources[] | select(.name == "asm-secret") | .base.apiVersion' "$COMP")
+assert_eq "composition_asm_apiVersion_v2_m_group" \
+  "secretsmanager.aws.m.upbound.io/v1beta1" "$ASM_API_GUARD"
 
 assert_summary

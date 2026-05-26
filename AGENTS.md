@@ -139,7 +139,7 @@ delivers the code:
 | kubeconform | for any YAML touched under `crossplane/`, `argocd/`, `clusters/`, `policies/` | `tests/unit/test_kubeconform_manifests.sh` (SPEC-S6) |
 | Kyverno audit policy | for any new runtime invariant that can be expressed as a cluster-resource pattern | `policies/audit/*.yaml` |
 | Integration | for every end-to-end flow the phase introduces | `tests/integration/NN_*.sh` (claim waits use `scripts/wait-for-claim.sh`; see SPEC-S7) |
-| Chainsaw | for every XRD / Composition added | `tests/chainsaw/` |
+| Chainsaw | for every XRD / Composition added (every scenario inherits the shared catch block — see testing-guidelines §6.4) | `tests/chainsaw/` |
 
 **kubeconform is the first line of schema defense.** It runs on every
 push and catches the silent-schema-mismatch bug class (Bug 4 PR #61,

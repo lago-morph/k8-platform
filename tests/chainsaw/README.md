@@ -67,6 +67,29 @@ CHAINSAW_SCENARIOS=_smoke tests/chainsaw/run.sh
    unit tests for the XRD / Composition under `tests/unit/`.
 4. Run locally before pushing.
 
+## Authoring a new scenario (SPEC-A4 catch-block requirement)
+
+Every chainsaw scenario MUST inherit the canonical `catch:` block from
+[`_lib/catch-block.yaml`](./_lib/catch-block.yaml). The block runs on
+any step failure and emits the XR `describe`, every referenced MR's
+`describe`, and recent reconcile events — inline in the chainsaw log
+so a red CI run is self-diagnostic without re-running locally.
+
+To add a scenario:
+
+1. Copy the contents of `_lib/catch-block.yaml` into your new
+   scenario's `Test.spec.catch:` list.
+2. Edit only the first `describe.kind` to match your XR
+   (`PlatformSecret`, `PlatformCluster`, etc.).
+3. The unit test `tests/unit/test_chainsaw_catch_block.sh` enforces
+   block presence + structural equality on every push.
+
+The [`meta-catch-fires/`](./meta-catch-fires/) scenario is the
+exemplar — its single step deliberately fails so the catch block
+fires every CI run, proving the diagnostic plumbing still works.
+`run.sh` inverts the exit-code expectation for any scenario whose
+directory begins with `meta-`.
+
 ## Why pinned versions matter
 
 kind, the kindest/node image, Crossplane chart, and the AWS provider

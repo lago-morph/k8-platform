@@ -63,10 +63,12 @@ spec:
         - script:
             content: |
               set -euo pipefail
-              # The Composition derives the ASM name from XR UID — fetch
-              # the XR (composite) name to find the ASM key.
-              xr=$(kubectl get platformsecret ${CLAIM_NAME} -n default -o jsonpath='{.spec.resourceRef.name}')
-              uid=$(kubectl get xplatformsecret "$xr" -o jsonpath='{.metadata.uid}')
+              # The Composition derives the ASM name from XR UID.
+              # In Crossplane v2 the XR is namespaced and its name
+              # equals the user-created resource name (no separate
+              # claim → XR promotion), so we look it up directly.
+              xr="${CLAIM_NAME}"
+              uid=$(kubectl get xplatformsecret -n default "$xr" -o jsonpath='{.metadata.uid}')
               key="k8-platform/${uid}"
               echo "Looking up ASM secret: $key"
               aws secretsmanager describe-secret \
@@ -77,3 +79,33 @@ spec:
             env:
               - name: CLAIM_NAME
                 value: scenario00
+  # SPEC-A4 canonical catch block — keep in sync with
+  # tests/chainsaw/_lib/catch-block.yaml (enforced by
+  # tests/unit/test_chainsaw_catch_block.sh).
+  catch:
+    - describe:
+        apiVersion: platform.k8-platform.io/v1alpha1
+        kind: XPlatformSecret      # overridden per-scenario when the XR kind differs
+        namespace: ($namespace)
+    - script:
+        content: |
+          set +e
+          # Enumerate v2 XR kinds explicitly. When a new XRD is added,
+          # append its XR kind here (e.g. xplatformbucket). v2 namespaced
+          # XRs do NOT reliably register under `kubectl get composite`.
+          for xr_kind in xplatformsecret xplatformcluster; do
+            for xr in $(kubectl get "$xr_kind" -n "$NAMESPACE" -o name 2>/dev/null); do
+              kubectl describe "$xr" -n "$NAMESPACE" 2>&1 | head -c 1500
+              # Describe every MR referenced by this XR.
+              kubectl get "$xr" -n "$NAMESPACE" -o jsonpath='{range .spec.resourceRefs[*]}{.apiVersion}{" "}{.kind}{" "}{.name}{"\n"}{end}' \
+                | while read -r api kind name; do
+                    [ -z "$kind" ] && continue
+                    kubectl describe "$kind.$api" "$name" 2>&1 | head -c 1000
+                  done
+            done
+          done
+        env:
+          - name: NAMESPACE
+            value: ($namespace)
+    - events:
+        namespace: ($namespace)

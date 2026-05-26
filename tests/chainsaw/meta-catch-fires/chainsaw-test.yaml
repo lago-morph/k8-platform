@@ -1,58 +1,41 @@
-# Smoke scenario — proves the chainsaw harness itself works end-to-end
-# (kind up, chainsaw CLI on PATH, cluster reachable) WITHOUT depending on
-# any XRD / Composition. If this fails, the harness is broken, not the
-# Crossplane code under test.
+# SPEC-A4 meta-test — exercises the shared `catch:` block.
 #
-# Stays deliberately minimal: apply a ConfigMap, assert it exists, delete
-# it, assert it's gone. ~5 seconds end-to-end.
+# This scenario's single step DELIBERATELY FAILS (asserts on a
+# ConfigMap that is never created). Chainsaw therefore runs the
+# `spec.catch:` block, emitting the three operations (describe, script,
+# events) into stdout.
+#
+# `tests/chainsaw/run.sh` inverts the exit-code expectation for any
+# scenario whose name begins with `meta-`: a non-zero chainsaw exit
+# combined with the catch markers in stdout is treated as PASS; a zero
+# exit (the deliberate-fail step somehow succeeded) is treated as FAIL.
+#
+# The catch block below is the canonical block from
+# `tests/chainsaw/_lib/catch-block.yaml`, pasted verbatim. The unit
+# test `tests/unit/test_chainsaw_catch_block.sh` enforces that.
 apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
 metadata:
-  name: smoke-harness-works
+  name: meta-catch-fires
+  labels:
+    meta: "true"
 spec:
+  # Short timeout — the assert below is expected to fail; no need to
+  # spend the default 60s waiting.
+  timeouts:
+    assert: 5s
   steps:
-    - name: apply a ConfigMap
-      try:
-        - apply:
-            resource:
-              apiVersion: v1
-              kind: ConfigMap
-              metadata:
-                name: chainsaw-smoke
-                namespace: default
-              data:
-                marker: "harness-is-alive"
-    - name: assert the ConfigMap is present
+    - name: assert a ConfigMap that does not exist (DELIBERATE FAIL)
       try:
         - assert:
             resource:
               apiVersion: v1
               kind: ConfigMap
               metadata:
-                name: chainsaw-smoke
+                name: spec-a4-meta-never-created
                 namespace: default
               data:
-                marker: "harness-is-alive"
-    - name: delete the ConfigMap
-      try:
-        - delete:
-            ref:
-              apiVersion: v1
-              kind: ConfigMap
-              name: chainsaw-smoke
-              namespace: default
-    - name: assert the ConfigMap is gone
-      try:
-        - error:
-            resource:
-              apiVersion: v1
-              kind: ConfigMap
-              metadata:
-                name: chainsaw-smoke
-                namespace: default
-  # SPEC-A4 canonical catch block — keep in sync with
-  # tests/chainsaw/_lib/catch-block.yaml (enforced by
-  # tests/unit/test_chainsaw_catch_block.sh).
+                marker: "this-cm-is-never-applied"
   catch:
     - describe:
         apiVersion: platform.k8-platform.io/v1alpha1

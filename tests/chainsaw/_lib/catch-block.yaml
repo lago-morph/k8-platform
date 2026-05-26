@@ -1,0 +1,53 @@
+# Canonical chainsaw `catch:` block — pasted verbatim into every
+# `Test.spec.catch` under `tests/chainsaw/`.
+#
+# SPEC-A4 defines this fragment. Drift between this file and any
+# scenario's `.spec.catch` is enforced by
+# `tests/unit/test_chainsaw_catch_block.sh`.
+#
+# The single field a scenario is allowed to override is `describe.kind`
+# (per spec §5 "Per-scenario XR kind override"). The unit test treats
+# that field as a free variable and structurally compares everything
+# else.
+#
+# v2 contract:
+#   - Claim CRDs (platformsecret/platformcluster) disappear in v2;
+#     the user-facing kinds are the namespaced XR kinds
+#     (xplatformsecret/xplatformcluster). Iterate them explicitly —
+#     `kubectl get composite -o name` is NOT reliable on v2 because
+#     namespaced XRs may not register under the `composite` category.
+#   - To add a new XRD: append its XR kind to the XR_KINDS list below
+#     AND keep the explicit iteration shape (do not fall back to the
+#     `composite` category query).
+#
+# Output budget (per spec §5 "Output budget — ≤5 KB per failure"):
+#   - XR `describe` truncated with `head -c 1500`
+#   - Each MR `describe` truncated with `head -c 1000`
+#   - `events` uses chainsaw's default ~10m window
+catch:
+  - describe:
+      apiVersion: platform.k8-platform.io/v1alpha1
+      kind: XPlatformSecret      # overridden per-scenario when the XR kind differs
+      namespace: ($namespace)
+  - script:
+      content: |
+        set +e
+        # Enumerate v2 XR kinds explicitly. When a new XRD is added,
+        # append its XR kind here (e.g. xplatformbucket). v2 namespaced
+        # XRs do NOT reliably register under `kubectl get composite`.
+        for xr_kind in xplatformsecret xplatformcluster; do
+          for xr in $(kubectl get "$xr_kind" -n "$NAMESPACE" -o name 2>/dev/null); do
+            kubectl describe "$xr" -n "$NAMESPACE" 2>&1 | head -c 1500
+            # Describe every MR referenced by this XR.
+            kubectl get "$xr" -n "$NAMESPACE" -o jsonpath='{range .spec.resourceRefs[*]}{.apiVersion}{" "}{.kind}{" "}{.name}{"\n"}{end}' \
+              | while read -r api kind name; do
+                  [ -z "$kind" ] && continue
+                  kubectl describe "$kind.$api" "$name" 2>&1 | head -c 1000
+                done
+          done
+        done
+      env:
+        - name: NAMESPACE
+          value: ($namespace)
+  - events:
+      namespace: ($namespace)

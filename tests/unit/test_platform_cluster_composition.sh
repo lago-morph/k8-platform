@@ -61,13 +61,14 @@ for arn in \
 done
 
 # ---- 5. EKS Cluster uses upbound provider, not contrib ------------------
+# v2: namespaced .m.upbound.io group (was .aws.upbound.io in v1).
 CLUSTER_API=$(yq -r \
   '.spec.pipeline[0].input.resources[] | select(.name == "eks-cluster") | .base.apiVersion' "$COMP")
-assert_eq "composition_eks_cluster_api" "eks.aws.upbound.io/v1beta1" "$CLUSTER_API"
+assert_eq "composition_eks_cluster_api" "eks.aws.m.upbound.io/v1beta1" "$CLUSTER_API"
 
 NG_API=$(yq -r \
   '.spec.pipeline[0].input.resources[] | select(.name == "eks-nodegroup") | .base.apiVersion' "$COMP")
-assert_eq "composition_eks_nodegroup_api" "eks.aws.upbound.io/v1beta1" "$NG_API"
+assert_eq "composition_eks_nodegroup_api" "eks.aws.m.upbound.io/v1beta1" "$NG_API"
 
 # ---- 6. Cluster→role selector linkage works -----------------------------
 #
@@ -125,5 +126,28 @@ echo "$CLUSTER_TRUST" | grep -q "eks.amazonaws.com" \
 echo "$NODE_TRUST" | grep -q "ec2.amazonaws.com" \
   && _pass "composition_node_role_trusts_ec2" \
   || _fail "composition_node_role_trusts_ec2" "node-role does not trust ec2.amazonaws.com"
+
+# ---- 9. Every providerConfigRef uses ClusterProviderConfig (v2) ---------
+#
+# Cross-segment hard pin: see test_platform_secret_composition.sh §11
+# for the full rationale. v2 + provider-family-aws v2.5.0 mandates
+# kind: ClusterProviderConfig (cluster-scoped) on every base block
+# that declares a providerConfigRef. The namespaced kind: ProviderConfig
+# is also offered by the provider but the migration pre-committed to a
+# single shared ClusterProviderConfig named `default` — using anything
+# else only fails at apply time.
+PCR_KINDS=$(yq -r '.spec.pipeline[0].input.resources[].base.spec.providerConfigRef.kind // empty' "$COMP")
+if [ -z "$PCR_KINDS" ]; then
+  _fail "composition_providerConfigRef_kinds_present" \
+        "no providerConfigRef.kind found on any base; v2 requires explicit kind: ClusterProviderConfig"
+else
+  PCR_BAD=$(printf '%s\n' "$PCR_KINDS" | grep -v -x ClusterProviderConfig || true)
+  if [ -z "$PCR_BAD" ]; then
+    _pass "composition_providerConfigRef_kind_ClusterProviderConfig"
+  else
+    _fail "composition_providerConfigRef_kind_ClusterProviderConfig" \
+          "non-ClusterProviderConfig values: $(printf '%s' "$PCR_BAD" | tr '\n' ',' )"
+  fi
+fi
 
 assert_summary
