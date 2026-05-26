@@ -45,9 +45,8 @@ spec:
     desiredSize: 2
     minSize: 1
     maxSize: 3
-  # v2: connection secret writes to this name in the XR's own
-  # namespace (above: `default`). Phase 3 consumers (ApplicationSet)
-  # must reference default/workload1-kubeconfig (was crossplane-system
-  # in v1).
-  writeConnectionSecretToRef:
-    name: workload1-kubeconfig
+  # v2 NOTE: XR-level connection secrets aren't supported by
+  # apiextensions.crossplane.io/v2 — `writeConnectionSecretToRef`
+  # on the XR is rejected by the v2 admission webhook. Phase 3
+  # consumers should read kubeconfig from the EKS Cluster MR's
+  # own connection-secret instead.

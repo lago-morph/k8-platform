@@ -33,5 +33,3 @@ spec:
     desiredSize: 2
     minSize: 1
     maxSize: 3
-  writeConnectionSecretToRef:
-    name: platform-cluster-kubeconfig
