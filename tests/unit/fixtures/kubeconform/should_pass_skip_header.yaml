@@ -3,15 +3,17 @@
 # and would normally fail. The skip header above the apiVersion line
 # tells the meta-test to exit 0 and emit a NOTICE about the skip.
 # SPEC-S6 §5.4 / §6.
-apiVersion: secretsmanager.aws.upbound.io/v1beta1
+apiVersion: secretsmanager.aws.m.upbound.io/v1beta1
 kind: Secret
 metadata:
   name: fixture-skip-header
+  namespace: default
 spec:
   forProvider:
     name: fixture/skip
     region: us-east-1
     forceOverwriteReplica: true   # would normally fail
-  deletionPolicy: Delete
+  managementPolicies: [Observe, Create, Update, Delete]
   providerConfigRef:
+    kind: ClusterProviderConfig
     name: default

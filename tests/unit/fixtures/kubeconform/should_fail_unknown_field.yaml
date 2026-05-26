@@ -5,10 +5,11 @@
 # 2.3.0 rejects it with `field not declared in schema`. kubeconform's
 # additionalProperties=false on the provider CRD catches this at commit
 # time. SPEC-S6 §6.
-apiVersion: secretsmanager.aws.upbound.io/v1beta1
+apiVersion: secretsmanager.aws.m.upbound.io/v1beta1
 kind: Secret
 metadata:
   name: fixture-unknown-field
+  namespace: default
 spec:
   forProvider:
     name: fixture/asm
@@ -17,6 +18,7 @@ spec:
     # BUG: `forceOverwriteReplica` is not in the CRD. The intended
     # upstream field is `forceOverwriteReplicaSecret`.
     forceOverwriteReplica: true
-  deletionPolicy: Delete
+  managementPolicies: [Observe, Create, Update, Delete]
   providerConfigRef:
+    kind: ClusterProviderConfig
     name: default
