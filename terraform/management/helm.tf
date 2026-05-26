@@ -219,8 +219,10 @@ resource "terraform_data" "crossplane_aws_provider" {
     # Bump when the local-exec command body changes (kubectl apply +
     # delete-deploy steps) — those live outside the manifest local
     # so the sha256 above doesn't cover them. v2: added rebuild
-    # of the provider Deployment after the apply.
-    "provisioner-command-v2",
+    # of the provider Deployment after the apply. v2-migration: added
+    # rollout-status wait + SA post-check to turn a silent IRSA
+    # misconfiguration into a hard terraform apply failure.
+    "provisioner-command-v2-migration-2026-05-26",
   ]
 
   provisioner "local-exec" {
@@ -242,6 +244,38 @@ MANIFEST
       KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl -n crossplane-system \
         delete deploy -l "pkg.crossplane.io/provider=provider-family-aws" \
         --ignore-not-found --wait=false || true
+
+      # v2-migration: wait for the package-manager-recreated Deployment to
+      # actually roll out before claiming success. Without this, the
+      # delete-deploy line above returns immediately while the new pod is
+      # still being scheduled, and any downstream verification (chainsaw,
+      # e2e-verify) races the pod start. 180s covers a cold provider image
+      # pull on a t3.medium node.
+      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl rollout status deployment \
+        -l pkg.crossplane.io/provider=provider-family-aws \
+        -n crossplane-system \
+        --timeout=180s
+
+      # v2-migration: post-check that the package manager honoured the DRC
+      # SA-name override (spec.serviceAccountTemplate.metadata.name in the
+      # manifest above). If v2.5.0 silently ignores the override and falls
+      # back to the default upbound-provider-aws-<hash> SA name, the IRSA
+      # trust policy pinned in irsa.tf (system:serviceaccount:crossplane-system:
+      # upbound-provider-family-aws) will no longer match the pod's SA
+      # subject claim, every AssumeRoleWithWebIdentity will return
+      # AccessDenied, and every MR will stall Ready=False. This check
+      # turns that silent IRSA misconfiguration into a hard terraform
+      # apply failure caught in CI rather than surfaced as AccessDenied
+      # during chainsaw.
+      SA=$(KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl get sa -n crossplane-system \
+        upbound-provider-family-aws \
+        -o jsonpath='{.metadata.name}' 2>/dev/null || echo "MISSING")
+      if [ "$SA" != "upbound-provider-family-aws" ]; then
+        echo "ERROR: expected SA upbound-provider-family-aws, got: $SA" >&2
+        echo "DRC serviceAccountTemplate.metadata.name override appears ineffective." >&2
+        echo "See ai/crossplane-v1-v2-un-fuckify/20-plan-SEG-2-terraform-infra.md §4 path (b)." >&2
+        exit 1
+      fi
     EOT
   }
 
@@ -252,9 +286,23 @@ MANIFEST
 # uses v2 Pipeline mode with the legacy resources/patches input shape;
 # Crossplane v2 removed `spec.resources` from the v1 Composition schema, so
 # every Composition the platform ships goes through this function.
+#
+# v2 migration note: the Function CR was promoted from `pkg.crossplane.io/v1beta1`
+# to `pkg.crossplane.io/v1` on the Crossplane v1.x line (>= v1.17.1). On
+# Crossplane v2.3 the v1beta1 apiVersion is NOT a served version — there is no
+# conversion webhook, so any pre-existing v1beta1 Function object must be
+# unconditionally deleted before re-applying as v1. The pre-delete is
+# idempotent (`--ignore-not-found`) and tolerates the case where the v1beta1
+# resource type itself is no longer registered (`|| true`).
 resource "terraform_data" "crossplane_function_patch_and_transform" {
   triggers_replace = [
     var.crossplane_function_patch_and_transform_version,
+    # Bump this sentinel when the local-exec command body or the embedded
+    # manifest shape changes (e.g. v1beta1 -> v1 promotion + pre-delete).
+    # The version-variable trigger above does not fire on a manifest-shape
+    # edit alone, so the pre-delete + v1 apply would otherwise no-op on the
+    # next terraform run.
+    "v2-migration-2026-05-26",
   ]
 
   provisioner "local-exec" {
@@ -263,8 +311,15 @@ resource "terraform_data" "crossplane_function_patch_and_transform" {
         --name ${module.eks.cluster_name} \
         --region ${var.aws_region} \
         --kubeconfig /tmp/k8-platform-kubeconfig
+      # Unconditional pre-delete of any pre-existing v1beta1 Function object.
+      # v2.3 does not serve the v1beta1 apiVersion (no conversion webhook),
+      # so applying v1 over an existing v1beta1 object would fail with
+      # "no matches for kind \"Function\" in version \"pkg.crossplane.io/v1beta1\"".
+      # --ignore-not-found handles the "no such object" case; || true handles
+      # the "no such resource type registered" case.
+      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl delete function function-patch-and-transform --ignore-not-found || true
       KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl apply -f - <<'MANIFEST'
-      apiVersion: pkg.crossplane.io/v1beta1
+      apiVersion: pkg.crossplane.io/v1
       kind: Function
       metadata:
         name: function-patch-and-transform
