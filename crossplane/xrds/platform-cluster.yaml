@@ -24,24 +24,38 @@
 # Per DESIGN.md §3.2 (Iteration 2 end state): this XRD defines the
 # pattern; it is not invoked yet. First real invocation is Iteration 3
 # (platform services cluster).
-apiVersion: apiextensions.crossplane.io/v1
+apiVersion: apiextensions.crossplane.io/v2
 kind: CompositeResourceDefinition
 metadata:
   name: xplatformclusters.platform.k8-platform.io
+  annotations:
+    # v2 migration (SEG-1 step 1b) — XRDs land before Compositions
+    # (wave 0). The cluster MUST be empty of v1 claims/XRs before this
+    # wave applies; v1 claim CRDs disappear when the new XRD is
+    # admitted.
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
   group: platform.k8-platform.io
+  # v2 migration (SEG-1 step 1b) — apiextensions.crossplane.io/v2 +
+  # spec.scope: Namespaced replaces the v1 + claimNames model. The
+  # XPlatformCluster XR is now applied directly into its target
+  # namespace (the platform-services cluster claim lives in `platform`,
+  # see clusters/platform/platform-cluster-claim.yaml).
+  scope: Namespaced
   names:
     kind: XPlatformCluster
     plural: xplatformclusters
     listKind: XPlatformClusterList
     singular: xplatformcluster
-  claimNames:
-    kind: PlatformCluster
-    plural: platformclusters
-    listKind: PlatformClusterList
-    singular: platformcluster
   defaultCompositionRef:
     name: platform-cluster-aws
+  # v2 migration (SEG-1 step 1b) — verified against the v2 XRD JSON
+  # schema (kubeconform-schemas/apiextensions.crossplane.io/
+  # compositeresourcedefinition_v2.json): the v2 XRD KEEPS the original
+  # field name `connectionSecretKeys`. The plan's tentative rename to
+  # `connectionDetails` was reverted per plan §3 Open Q #3 contingency.
+  # The list contents (kubeconfig, endpoint, cluster-ca) are unchanged
+  # from v1.
   connectionSecretKeys:
     - kubeconfig
     - endpoint
