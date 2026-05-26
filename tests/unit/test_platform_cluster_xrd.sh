@@ -2,9 +2,13 @@
 # Unit tests for crossplane/xrds/platform-cluster.yaml.
 #
 # Bug class defended: XRD schema drift on the second XRD — same shape
-# of mistakes that bit PlatformSecret (unserved version, missing claim
-# name disambiguation, x-kubernetes-preserve-unknown-fields silently
-# true). Mirrors test_platform_secret_xrd.sh structurally on purpose.
+# of mistakes that bit PlatformSecret (unserved version,
+# x-kubernetes-preserve-unknown-fields silently true, accidental
+# regression to v1 claim/composite split). Mirrors
+# test_platform_secret_xrd.sh structurally on purpose.
+#
+# v2 contract: apiextensions.crossplane.io/v2 + spec.scope: Namespaced
+# + no spec.claimNames.
 
 set -uo pipefail
 cd "$(dirname "$0")/../.."
@@ -20,24 +24,26 @@ if [ ! -f "$XRD" ]; then
 fi
 _pass "xrd_file_exists"
 
-assert_eq "xrd_apiVersion" "apiextensions.crossplane.io/v1" "$(yq -r '.apiVersion' "$XRD")"
+assert_eq "xrd_apiVersion" "apiextensions.crossplane.io/v2" "$(yq -r '.apiVersion' "$XRD")"
 assert_eq "xrd_kind"       "CompositeResourceDefinition"    "$(yq -r '.kind'       "$XRD")"
 assert_eq "xrd_group"      "platform.k8-platform.io"        "$(yq -r '.spec.group' "$XRD")"
 
+# v2 namespaced scope (positive) + no v1 claimNames (regression).
+# See test_platform_secret_xrd.sh §2 for the full rationale.
+SCOPE=$(yq -r '.spec.scope' "$XRD")
+assert_eq "xrd_spec_scope_Namespaced" "Namespaced" "$SCOPE"
+
+CLAIM_NAMES=$(yq -r '.spec.claimNames' "$XRD")
+assert_eq "xrd_spec_claimNames_absent" "null" "$CLAIM_NAMES"
+
 COMPOSITE_KIND=$(yq -r '.spec.names.kind' "$XRD")
-CLAIM_KIND=$(yq -r '.spec.claimNames.kind' "$XRD")
 assert_eq "xrd_composite_kind" "XPlatformCluster" "$COMPOSITE_KIND"
-assert_eq "xrd_claim_kind"     "PlatformCluster"  "$CLAIM_KIND"
 
 for f in plural listKind singular; do
   v=$(yq -r ".spec.names.$f" "$XRD")
   [ -n "$v" ] && [ "$v" != "null" ] \
     && _pass "xrd_composite_names_${f}_present" \
     || _fail "xrd_composite_names_${f}_present" "spec.names.$f missing"
-  vc=$(yq -r ".spec.claimNames.$f" "$XRD")
-  [ -n "$vc" ] && [ "$vc" != "null" ] \
-    && _pass "xrd_claim_names_${f}_present" \
-    || _fail "xrd_claim_names_${f}_present" "spec.claimNames.$f missing"
 done
 
 SERVED=$(yq -r '.spec.versions[] | select(.name == "v1alpha1") | .served' "$XRD")
