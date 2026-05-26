@@ -63,10 +63,12 @@ spec:
         - script:
             content: |
               set -euo pipefail
-              # The Composition derives the ASM name from XR UID — fetch
-              # the XR (composite) name to find the ASM key.
-              xr=$(kubectl get platformsecret ${CLAIM_NAME} -n default -o jsonpath='{.spec.resourceRef.name}')
-              uid=$(kubectl get xplatformsecret "$xr" -o jsonpath='{.metadata.uid}')
+              # The Composition derives the ASM name from XR UID.
+              # In Crossplane v2 the XR is namespaced and its name
+              # equals the user-created resource name (no separate
+              # claim → XR promotion), so we look it up directly.
+              xr="${CLAIM_NAME}"
+              uid=$(kubectl get xplatformsecret -n default "$xr" -o jsonpath='{.metadata.uid}')
               key="k8-platform/${uid}"
               echo "Looking up ASM secret: $key"
               aws secretsmanager describe-secret \
