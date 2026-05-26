@@ -19,7 +19,7 @@ spec:
         - apply:
             resource:
               apiVersion: platform.k8-platform.io/v1alpha1
-              kind: PlatformSecret
+              kind: XPlatformSecret
               metadata:
                 name: scenario00
                 namespace: default
@@ -33,7 +33,7 @@ spec:
         - assert:
             resource:
               apiVersion: platform.k8-platform.io/v1alpha1
-              kind: PlatformSecret
+              kind: XPlatformSecret
               metadata:
                 name: scenario00
                 namespace: default
