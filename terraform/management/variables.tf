@@ -79,9 +79,9 @@ variable "crossplane_version" {
 }
 
 variable "crossplane_provider_family_aws_version" {
-  description = "Upbound provider-family-aws package version (v1.x for Crossplane v2)"
+  description = "Upbound provider-family-aws package version (v2.x for Crossplane v2)"
   type        = string
-  default     = "v1.12.0"
+  default     = "v2.5.4"
 }
 
 variable "crossplane_provider_aws_secretsmanager_version" {
@@ -92,7 +92,7 @@ variable "crossplane_provider_aws_secretsmanager_version" {
     reconcile the ASM Secret managed resource.
   EOT
   type        = string
-  default     = "v1.12.0"
+  default     = "v2.5.4"
 }
 
 variable "crossplane_function_patch_and_transform_version" {
@@ -104,7 +104,7 @@ variable "crossplane_function_patch_and_transform_version" {
     Composition the platform ships goes through this function.
   EOT
   type        = string
-  default     = "v0.8.2"
+  default     = "v0.10.6"
 }
 
 variable "eso_version" {
