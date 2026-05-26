@@ -55,13 +55,14 @@ if [ "$COMPONENT" = "platform-secret" ]; then
 
   echo ""
   echo "── CRDs present? ─────────────────────────────────────────────────"
+  # Crossplane v2: no claim CRD (XR is the user-facing object); the AWS
+  # secretsmanager group is the namespaced `.m.upbound.io` variant.
   for crd in \
-      platformsecrets.platform.k8-platform.io \
       xplatformsecrets.platform.k8-platform.io \
       compositions.apiextensions.crossplane.io \
       externalsecrets.external-secrets.io \
       clustersecretstores.external-secrets.io \
-      secrets.secretsmanager.aws.upbound.io
+      secrets.secretsmanager.aws.m.upbound.io
   do
     if kubectl get crd "$crd" >/dev/null 2>&1; then
       echo "  ✓ $crd"
@@ -78,31 +79,29 @@ if [ "$COMPONENT" = "platform-secret" ]; then
 
   if [ -z "$CLAIM_NS" ] || [ -z "$CLAIM_NAME" ]; then
     echo ""
-    echo "── All PlatformSecret claims (every namespace) ──────────────────"
-    kubectl get platformsecret -A 2>&1 | sed 's/^/  /'
+    echo "── All XPlatformSecret XRs (every namespace) ────────────────────"
+    # Crossplane v2: XR is the user-facing object; no separate claim
+    # type. The "claim namespace" the operator types is the namespace
+    # the XR lives in.
+    kubectl get xplatformsecret -A 2>&1 | sed 's/^/  /'
     echo ""
-    echo "(Pass <namespace> <name> as args 2 and 3 for full per-claim dump.)"
+    echo "(Pass <namespace> <name> as args 2 and 3 for full per-XR dump.)"
     exit 0
   fi
 
   echo ""
-  echo "── Claim: $CLAIM_NS/$CLAIM_NAME ──────────────────────────────────"
-  kubectl get platformsecret -n "$CLAIM_NS" "$CLAIM_NAME" \
+  echo "── XR (composite): $CLAIM_NS/$CLAIM_NAME ───────────────────────"
+  # Crossplane v2: no claim → XR walk needed; the XR is the user-facing
+  # object and lives in the namespace the caller passed.
+  kubectl get xplatformsecret -n "$CLAIM_NS" "$CLAIM_NAME" \
     -o jsonpath='{range .status.conditions[*]}{.type}={.status} ({.reason}: {.message}){"\n"}{end}' \
     2>&1 | sed 's/^/  /'
-
-  XR=$(kubectl get platformsecret -n "$CLAIM_NS" "$CLAIM_NAME" \
-       -o jsonpath='{.spec.resourceRef.name}' 2>/dev/null)
-  if [ -n "$XR" ]; then
-    echo ""
-    echo "── XR (composite): $XR ──────────────────────────────────────"
-    kubectl get xplatformsecret "$XR" \
-      -o jsonpath='{range .status.conditions[*]}{.type}={.status} ({.reason}: {.message}){"\n"}{end}' \
-      2>&1 | sed 's/^/  /'
-    XR_UID=$(kubectl get xplatformsecret "$XR" -o jsonpath='{.metadata.uid}' 2>/dev/null)
+  XR_UID=$(kubectl get xplatformsecret -n "$CLAIM_NS" "$CLAIM_NAME" \
+           -o jsonpath='{.metadata.uid}' 2>/dev/null)
+  if [ -n "$XR_UID" ]; then
     echo ""
     echo "── Underlying AWS-Secret managed resource (k8-platform/$XR_UID) ─"
-    kubectl get secrets.secretsmanager.aws.upbound.io 2>/dev/null \
+    kubectl get secrets.secretsmanager.aws.m.upbound.io -A 2>/dev/null \
       | grep "$XR_UID" | sed 's/^/  /' || echo "  (none)"
   fi
 
