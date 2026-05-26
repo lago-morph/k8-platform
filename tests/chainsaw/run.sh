@@ -280,7 +280,7 @@ MANIFEST
     kubectl apply -f ../../crossplane/xrds/platform-secret.yaml
     kubectl apply -f ../../crossplane/compositions/platform-secret.yaml
     kubectl wait --for=condition=Established --timeout=120s \
-      crd/platformsecrets.platform.k8-platform.io
+      crd/xplatformsecrets.platform.k8-platform.io
   else
     echo "  (no PlatformSecret XRD on disk — skipping XRD apply)"
   fi
@@ -319,9 +319,9 @@ dump_diagnostics() {
   done
 
   echo ""
-  echo "── claims + composites + managed resources ────────────────────"
-  kubectl get platformsecret,xplatformsecret -A 2>&1 | sed 's/^/  /' || true
-  kubectl get platformcluster,xplatformcluster -A 2>&1 | sed 's/^/  /' || true
+  echo "── composites + managed resources ─────────────────────────────"
+  kubectl get xplatformsecret -A 2>&1 | sed 's/^/  /' || true
+  kubectl get xplatformcluster -A 2>&1 | sed 's/^/  /' || true
   kubectl get managed 2>&1 | sed 's/^/  /' || true
 
   echo ""
