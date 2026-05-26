@@ -4,25 +4,43 @@
 # substitutes real subnet IDs (see the TODO comment further down).
 # The XRD's regex is the load-bearing admission gate; static lint would
 # only flag the same fact. SPEC-S6 §5.4 allowlist.
-# PlatformCluster claim — provisions the platform services cluster.
 #
-# Phase 3 / Iteration 3 (REQ-PLAT-01..06). This is the first real
-# invocation of the PlatformCluster XRD authored in phase 2b.
+# XPlatformCluster — provisions the platform-services EKS cluster.
 #
-# WARNING: when this claim is synced by ArgoCD, Crossplane provisions
-# a REAL EKS cluster + managed node group + IAM roles. The
-# corresponding ArgoCD Application
-# (argocd/apps/platform-cluster-claim.yaml) is configured WITHOUT
-# automated sync — sync is a deliberate operator action.
+# v2 migration (SEG-1 step 1f): rewritten from a v1 `PlatformCluster`
+# claim into a v2 namespaced XR (XPlatformCluster, apiextensions.
+# crossplane.io/v2 + scope: Namespaced). The XR lives in the `platform`
+# namespace (Namespace object is in clusters/platform/00-namespace.yaml).
+#
+# Connection-secret routing (v2): the eks-cluster MR publishes
+# `kubeconfig` to its provider connection-secret; the Composition
+# re-exports that key to the XR's connection-details; the XR (this
+# object) writes the merged secret to ref `platform-cluster-kubeconfig`
+# in its OWN namespace (`platform`) — NOT `crossplane-system` as in v1.
+# Phase 3 consumers must read `platform/platform-cluster-kubeconfig`.
+#
+# Phase 3 / Iteration 3 (REQ-PLAT-01..06).
+#
+# WARNING: when this XR is synced by ArgoCD, Crossplane provisions a
+# REAL EKS cluster + managed node group + IAM roles. The corresponding
+# ArgoCD Application (argocd/apps/platform-cluster-claim.yaml) is
+# configured WITHOUT automated sync — sync is a deliberate operator
+# action.
 #
 # Substitute spec.vpc.subnetIds with the actual private subnet IDs
 # from the base module BEFORE syncing. The placeholders below cause
 # admission to fail closed at sync time.
 apiVersion: platform.k8-platform.io/v1alpha1
-kind: PlatformCluster
+kind: XPlatformCluster
 metadata:
   name: platform
-  namespace: default
+  namespace: platform
+  annotations:
+    # Wave 10 — apply after the namespace (wave -1 inside this synced
+    # directory) and well after the parent app's sync wave (`-2` for
+    # crossplane-resources XRDs/Compositions). The XRD must be
+    # Established before this XR can render.
+    argocd.argoproj.io/sync-wave: "10"
 spec:
   name: k8-platform-services
   region: us-east-1
@@ -42,3 +60,10 @@ spec:
     desiredSize: 2
     minSize: 1
     maxSize: 3
+  # v2 migration (SEG-1 step 1f): connection-secret target. The XR
+  # writes its merged connection-details (kubeconfig/endpoint/cluster-
+  # ca, declared on the XRD's spec.connectionDetails) to this Secret
+  # name in the XR's namespace (`platform`). Phase 3 ApplicationSet
+  # reads `platform/platform-cluster-kubeconfig`.
+  writeConnectionSecretToRef:
+    name: platform-cluster-kubeconfig

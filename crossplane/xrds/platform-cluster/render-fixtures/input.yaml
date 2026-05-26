@@ -1,7 +1,14 @@
 # Probe XPlatformCluster used by `crossplane render` for SPEC-S9 dry-run.
 #
+# v2 migration (SEG-1 step 1g): rewritten as a v2 namespaced XR.
+# spec.claimRef is REMOVED — v2 XRs are namespaced and use
+# metadata.{name,namespace} directly. spec.writeConnectionSecretToRef
+# is added because the production XR (clusters/platform/platform-
+# cluster-claim.yaml) carries it; the render output should reflect
+# realistic connection-secret routing.
+#
 # Renders 8 managed resources: 2 IAM roles + 4 RolePolicyAttachments +
-# 1 EKS Cluster + 1 NodeGroup.
+# 1 EKS Cluster + 1 NodeGroup, all under *.aws.m.upbound.io API groups.
 #
 # metadata.uid is pinned for deterministic render output (see SPEC-S9
 # §5 "Diff strategy"). subnetIds use plausible test values — the
@@ -10,13 +17,9 @@ apiVersion: platform.k8-platform.io/v1alpha1
 kind: XPlatformCluster
 metadata:
   name: render-probe-cluster
+  namespace: default
   uid: "00000000-0000-0000-0000-000000000002"
 spec:
-  claimRef:
-    apiVersion: platform.k8-platform.io/v1alpha1
-    kind: PlatformCluster
-    name: render-probe
-    namespace: default
   name: render-probe
   region: us-east-1
   version: "1.32"
@@ -30,3 +33,5 @@ spec:
     desiredSize: 2
     minSize: 1
     maxSize: 3
+  writeConnectionSecretToRef:
+    name: platform-cluster-kubeconfig

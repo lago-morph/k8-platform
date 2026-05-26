@@ -49,8 +49,10 @@ spec:
         - script:
             content: |
               set -euo pipefail
-              xr=$(kubectl get platformsecret ${CLAIM_NAME} -n default -o jsonpath='{.spec.resourceRef.name}')
-              uid=$(kubectl get xplatformsecret "$xr" -o jsonpath='{.metadata.uid}')
+              # v2: XR is namespaced and shares the user's resource
+              # name (no v1 claim → XR promotion pointer).
+              xr="${CLAIM_NAME}"
+              uid=$(kubectl get xplatformsecret -n default "$xr" -o jsonpath='{.metadata.uid}')
               key="k8-platform/${uid}"
               echo "$key" > /tmp/scenario02-asm-key.txt
               aws secretsmanager put-secret-value \
@@ -99,3 +101,33 @@ spec:
               data:
                 # base64 of "rotated"
                 phase: cm90YXRlZA==
+  # SPEC-A4 canonical catch block — keep in sync with
+  # tests/chainsaw/_lib/catch-block.yaml (enforced by
+  # tests/unit/test_chainsaw_catch_block.sh).
+  catch:
+    - describe:
+        apiVersion: platform.k8-platform.io/v1alpha1
+        kind: XPlatformSecret      # overridden per-scenario when the XR kind differs
+        namespace: ($namespace)
+    - script:
+        content: |
+          set +e
+          # Enumerate v2 XR kinds explicitly. When a new XRD is added,
+          # append its XR kind here (e.g. xplatformbucket). v2 namespaced
+          # XRs do NOT reliably register under `kubectl get composite`.
+          for xr_kind in xplatformsecret xplatformcluster; do
+            for xr in $(kubectl get "$xr_kind" -n "$NAMESPACE" -o name 2>/dev/null); do
+              kubectl describe "$xr" -n "$NAMESPACE" 2>&1 | head -c 1500
+              # Describe every MR referenced by this XR.
+              kubectl get "$xr" -n "$NAMESPACE" -o jsonpath='{range .spec.resourceRefs[*]}{.apiVersion}{" "}{.kind}{" "}{.name}{"\n"}{end}' \
+                | while read -r api kind name; do
+                    [ -z "$kind" ] && continue
+                    kubectl describe "$kind.$api" "$name" 2>&1 | head -c 1000
+                  done
+            done
+          done
+        env:
+          - name: NAMESPACE
+            value: ($namespace)
+    - events:
+        namespace: ($namespace)

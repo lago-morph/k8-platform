@@ -226,9 +226,14 @@ if [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ]; then
 aws_access_key_id=${AWS_ACCESS_KEY_ID}
 aws_secret_access_key=${AWS_SECRET_ACCESS_KEY}
 " --dry-run=client -o yaml | kubectl apply -f -
+  # Crossplane v2 with provider-family-aws v2.5.0+ replaces the
+  # namespaced ProviderConfig with the cluster-scoped
+  # ClusterProviderConfig (one shared config for all compositions).
+  # No metadata.namespace — the resource is cluster-scoped and
+  # admission rejects a namespace field on a cluster-scoped kind.
   kubectl apply -f - <<MANIFEST
-apiVersion: aws.upbound.io/v1beta1
-kind: ProviderConfig
+apiVersion: aws.m.upbound.io/v1beta1
+kind: ClusterProviderConfig
 metadata:
   name: default
 spec:
@@ -275,7 +280,7 @@ MANIFEST
     kubectl apply -f ../../crossplane/xrds/platform-secret.yaml
     kubectl apply -f ../../crossplane/compositions/platform-secret.yaml
     kubectl wait --for=condition=Established --timeout=120s \
-      crd/platformsecrets.platform.k8-platform.io
+      crd/xplatformsecrets.platform.k8-platform.io
   else
     echo "  (no PlatformSecret XRD on disk — skipping XRD apply)"
   fi
@@ -314,9 +319,9 @@ dump_diagnostics() {
   done
 
   echo ""
-  echo "── claims + composites + managed resources ────────────────────"
-  kubectl get platformsecret,xplatformsecret -A 2>&1 | sed 's/^/  /' || true
-  kubectl get platformcluster,xplatformcluster -A 2>&1 | sed 's/^/  /' || true
+  echo "── composites + managed resources ─────────────────────────────"
+  kubectl get xplatformsecret -A 2>&1 | sed 's/^/  /' || true
+  kubectl get xplatformcluster -A 2>&1 | sed 's/^/  /' || true
   kubectl get managed 2>&1 | sed 's/^/  /' || true
 
   echo ""
@@ -351,17 +356,109 @@ dump_diagnostics() {
 }
 
 # ---------- run chainsaw scenarios ------------------------------------------
-echo ""
-echo "── running chainsaw ───────────────────────────────────────────"
-SCENARIO_ARG="${CHAINSAW_SCENARIOS:-.}"
-set +e
-chainsaw test "$SCENARIO_ARG" --config chainsaw-config.yaml
-CHAINSAW_RC=$?
-set -e
+#
+# Meta-scenario handling (SPEC-A4):
+#   Scenarios whose directory name begins with `meta-` are exit-inverted —
+#   they deliberately fail to exercise infrastructure (the `catch:` block).
+#   Chainsaw reports one exit code for a whole invocation, so we run meta
+#   scenarios in separate invocations and invert their result.
+#
+#   Pass criteria for a meta scenario:
+#     1. chainsaw exits NON-ZERO (the deliberate failure happened), AND
+#     2. stdout contains the expected catch-block markers
+#        (`Describe Resource:` AND `Events:` AND a line starting `Name:`).
+#
+#   A zero exit means the "deliberate fail" step somehow passed —
+#   regression — and the meta scenario reports FAIL.
 
-if [ "$CHAINSAW_RC" -ne 0 ]; then
-  dump_diagnostics "$CHAINSAW_RC"
-  exit "$CHAINSAW_RC"
+# Discover scenario directories at any depth, then partition.
+ALL_SCENARIO_DIRS=$(
+  find . -type f -name 'chainsaw-test.yaml' \
+    -not -path './_lib/*' \
+    -exec dirname {} \; \
+    | sort -u
+)
+META_DIRS=$(echo "$ALL_SCENARIO_DIRS" | awk -F/ '{ for(i=1;i<=NF;i++) if ($i ~ /^meta-/) { print; next } }')
+NORMAL_DIRS=$(echo "$ALL_SCENARIO_DIRS" | awk -F/ '{ for(i=1;i<=NF;i++) if ($i ~ /^meta-/) next; print }')
+
+echo ""
+echo "── running chainsaw (normal scenarios) ────────────────────────"
+
+# If the user filtered via CHAINSAW_SCENARIOS, honour it directly and
+# skip meta-partitioning — they know what they're after.
+if [ -n "${CHAINSAW_SCENARIOS:-}" ]; then
+  set +e
+  chainsaw test "${CHAINSAW_SCENARIOS}" --config chainsaw-config.yaml
+  CHAINSAW_RC=$?
+  set -e
+  if [ "$CHAINSAW_RC" -ne 0 ]; then
+    dump_diagnostics "$CHAINSAW_RC"
+    exit "$CHAINSAW_RC"
+  fi
+  echo "── all scenarios passed (filtered) ──────────────────────────"
+  exit 0
+fi
+
+OVERALL_RC=0
+
+# 1. Normal scenarios — chainsaw exit == script's pass/fail.
+if [ -n "$NORMAL_DIRS" ]; then
+  set +e
+  # shellcheck disable=SC2086
+  chainsaw test $NORMAL_DIRS --config chainsaw-config.yaml
+  NORMAL_RC=$?
+  set -e
+  if [ "$NORMAL_RC" -ne 0 ]; then
+    dump_diagnostics "$NORMAL_RC"
+    OVERALL_RC=$NORMAL_RC
+  fi
+fi
+
+# 2. Meta scenarios — each runs in its own invocation so we can invert
+#    its exit independently and grep its stdout for catch-block markers.
+if [ -n "$META_DIRS" ]; then
+  echo ""
+  echo "── running chainsaw (meta scenarios — exit-inverted) ──────────"
+  while IFS= read -r meta_dir; do
+    [ -z "$meta_dir" ] && continue
+    echo ""
+    echo "── meta scenario: $meta_dir ───────────────────────────────────"
+    META_LOG="${RUNNER_TEMP:-/tmp}/chainsaw-meta-$(basename "$meta_dir").log"
+    set +e
+    chainsaw test "$meta_dir" --config chainsaw-config.yaml 2>&1 | tee "$META_LOG"
+    META_RC=${PIPESTATUS[0]}
+    set -e
+
+    # Inverted-exit gate: PASS iff chainsaw exited non-zero AND the
+    # `catch:` handler actually fired. Chainsaw emits structural log
+    # frames of the form
+    #   l.go:52: | HH:MM:SS | <scenario> | <step> | CATCH | BEGIN |
+    #   l.go:52: | HH:MM:SS | <scenario> | <step> | CATCH | END   |
+    # whenever any `spec.catch:` block runs. Because chainsaw colors
+    # those frames with ANSI escape codes between the literal tokens,
+    # we use a permissive `.*` regex so the matcher does not depend on
+    # exact whitespace or color sequences. The presence of `CATCH`
+    # followed eventually by `BEGIN` on the same line is unique to
+    # chainsaw's catch frame.
+    if [ "$META_RC" -eq 0 ]; then
+      echo "  ✗ meta-test '$meta_dir' chainsaw RC=0 (expected non-zero — deliberate-fail step passed)"
+      OVERALL_RC=1
+      continue
+    fi
+    MISSING=""
+    grep -qE "CATCH.*BEGIN" "$META_LOG"  || MISSING="${MISSING} 'CATCH...BEGIN'"
+    grep -qE "CATCH.*END"   "$META_LOG"  || MISSING="${MISSING} 'CATCH...END'"
+    if [ -n "$MISSING" ]; then
+      echo "  ✗ meta-test '$meta_dir' chainsaw RC=$META_RC but catch markers missing:${MISSING}"
+      OVERALL_RC=1
+    else
+      echo "  ✓ meta-test '$meta_dir' PASS (chainsaw RC=$META_RC, catch handler fired)"
+    fi
+  done <<< "$META_DIRS"
+fi
+
+if [ "$OVERALL_RC" -ne 0 ]; then
+  exit "$OVERALL_RC"
 fi
 
 echo ""

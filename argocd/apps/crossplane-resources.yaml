@@ -17,7 +17,13 @@ metadata:
   name: crossplane-resources
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "0"
+    # Wave -2 — must apply BEFORE the XRDs themselves (wave -1) so this
+    # Application's tightened include glob takes effect before the first
+    # XRD sync. Without the glob tighten, ArgoCD would slurp
+    # `xrds/*/render-fixtures/input.yaml` as live cluster objects (those
+    # files declare XRs with v1 `claimRef` fields, which v2 admission
+    # rejects). v2 migration: SEG-1 step 1a.
+    argocd.argoproj.io/sync-wave: "-2"
 spec:
   project: k8-platform
   source:
@@ -26,7 +32,15 @@ spec:
     path: crossplane
     directory:
       recurse: true
-      include: '{xrds/*.yaml,compositions/*.yaml,policies/*.yaml,rbac/*.yaml}'
+      # v2 migration (SEG-1 step 1a) — narrowed include glob:
+      #   - `xrds/platform-*.yaml` matches direct children of xrds/ only,
+      #     NOT files under xrds/*/render-fixtures/.
+      #   - `policies/` dropped entirely; the only file there
+      #     (09-platform-secret-namespace-allowed.yaml) was deleted as
+      #     part of SEG-1 because v2 namespaced XRs use standard
+      #     Kubernetes RBAC, not Kyverno ClusterPolicy, for namespace-
+      #     scope enforcement.
+      include: '{xrds/platform-*.yaml,compositions/*.yaml,rbac/*.yaml}'
       # claims/ deliberately excluded — those are example manifests,
       # not platform resources. Users apply them by hand.
   destination:

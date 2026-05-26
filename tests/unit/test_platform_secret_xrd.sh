@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # Unit tests for crossplane/xrds/platform-secret.yaml.
 #
-# Bug class defended: XRD schema drift (silent 404 on claim apply when
-# version not served, type drift on refreshInterval, missing
-# claim/composite name disambiguation). Per adversarial-reviewer A.
+# Bug class defended: XRD schema drift (silent 404 on XR apply when
+# version not served, type drift on refreshInterval, missing namespaced
+# scope, accidental regression to v1 claim/composite split).
+#
+# v2 contract: apiextensions.crossplane.io/v2 + spec.scope: Namespaced
+# + no spec.claimNames. The XR kind (XPlatformSecret) is the user-facing
+# kind; there is no separate claim CRD.
 
 set -uo pipefail
 cd "$(dirname "$0")/../.."   # repo root
@@ -19,36 +23,43 @@ if [ ! -f "$XRD" ]; then
 fi
 _pass "xrd_file_exists"
 
-# ---- 1. Structural basics ------------------------------------------------
-assert_eq "xrd_apiVersion" "apiextensions.crossplane.io/v1" "$(yq -r '.apiVersion' "$XRD")"
+# ---- 1. Structural basics (v2 XRD shape) ---------------------------------
+assert_eq "xrd_apiVersion" "apiextensions.crossplane.io/v2" "$(yq -r '.apiVersion' "$XRD")"
 assert_eq "xrd_kind"       "CompositeResourceDefinition"    "$(yq -r '.kind'       "$XRD")"
 assert_eq "xrd_group"      "platform.k8-platform.io"        "$(yq -r '.spec.group' "$XRD")"
 
-# ---- 2. Composite and claim names disambiguated --------------------------
+# ---- 2. v2 namespaced scope (positive) + no v1 claimNames (regression) --
 #
-# Defends contract: Crossplane requires `kind` differ between composite
-# (cluster-scoped) and claim (namespace-scoped). Otherwise admission
-# rejects the XRD outright.
-COMPOSITE_KIND=$(yq -r '.spec.names.kind' "$XRD")
-CLAIM_KIND=$(yq -r '.spec.claimNames.kind' "$XRD")
-assert_eq "xrd_composite_kind"      "XPlatformSecret" "$COMPOSITE_KIND"
-assert_eq "xrd_claim_kind"          "PlatformSecret"  "$CLAIM_KIND"
+# Defends contract: Crossplane v2 replaces the v1 claim/composite split
+# with a single namespaced XR kind. Two guards:
+#
+#   (a) spec.scope MUST be "Namespaced" — without it, the XRD defaults
+#       to LegacyCluster scope, the namespace on user-created XRs is
+#       silently ignored, and reconciliation fails opaquely.
+#   (b) spec.claimNames MUST be absent — a reverted v1 XRD shape would
+#       re-introduce a claim CRD. Structural absence is the only honest
+#       guard against a partial revert.
+SCOPE=$(yq -r '.spec.scope' "$XRD")
+assert_eq "xrd_spec_scope_Namespaced" "Namespaced" "$SCOPE"
 
-# Plural / listKind / singular all present (Kubernetes API server
-# requires every field; missing one silently produces a CRD with an
-# auto-derived plural that then collides with another XRD).
+CLAIM_NAMES=$(yq -r '.spec.claimNames' "$XRD")
+assert_eq "xrd_spec_claimNames_absent" "null" "$CLAIM_NAMES"
+
+# ---- 3. Composite kind name + composite-names completeness --------------
+#
+# Defends contract: even in v2 the XR kind name must be set, and the
+# Kubernetes API server requires plural / listKind / singular (missing
+# any one silently produces a CRD with an auto-derived plural that then
+# collides with another XRD).
+COMPOSITE_KIND=$(yq -r '.spec.names.kind' "$XRD")
+assert_eq "xrd_composite_kind"      "XPlatformSecret" "$COMPOSITE_KIND"
+
 for f in plural listKind singular; do
   v=$(yq -r ".spec.names.$f" "$XRD")
   if [ -n "$v" ] && [ "$v" != "null" ]; then
     _pass "xrd_composite_names_${f}_present"
   else
     _fail "xrd_composite_names_${f}_present" "spec.names.$f missing"
-  fi
-  vc=$(yq -r ".spec.claimNames.$f" "$XRD")
-  if [ -n "$vc" ] && [ "$vc" != "null" ]; then
-    _pass "xrd_claim_names_${f}_present"
-  else
-    _fail "xrd_claim_names_${f}_present" "spec.claimNames.$f missing"
   fi
 done
 

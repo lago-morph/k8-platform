@@ -1,0 +1,21 @@
+# Namespace `platform` — home of the v2 XPlatformCluster XR that
+# provisions the platform-services EKS cluster.
+#
+# v2 migration (SEG-1 step 1f): with Crossplane v2, XPlatformCluster is
+# a namespaced XR (apiextensions.crossplane.io/v2 + scope: Namespaced).
+# Both the XR itself and the connection-secret (spec.write
+# ConnectionSecretToRef.name: platform-cluster-kubeconfig) land in this
+# namespace.
+#
+# Sync ordering: this Namespace file is sync-wave -1 so it lands
+# slightly before the XPlatformCluster (wave 10) — guarantees the
+# namespace exists when ArgoCD creates the XR. The parent ArgoCD
+# Application (argocd/apps/platform-cluster-claim.yaml) is wave 10 at
+# the Application level, but per-resource waves inside the synced
+# directory order the Namespace before the XR.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
