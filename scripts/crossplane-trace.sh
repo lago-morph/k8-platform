@@ -212,7 +212,7 @@ provider_for_apiversion() {
   local av="$1"
   local group="${av%%/*}"
   case "$group" in
-    secretsmanager.aws.upbound.io|*.aws.upbound.io|aws.upbound.io)
+    *.aws.upbound.io|aws.upbound.io|*.aws.m.upbound.io|aws.m.upbound.io)
       echo "upbound-provider-family-aws" ;;
     *)
       # Best-effort fallback: strip trailing ".upbound.io" → "upbound-provider-<group-prefix>"

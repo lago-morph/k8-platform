@@ -8,7 +8,7 @@
   "spec": {
     "resourceRefs": [
       {
-        "apiVersion": "secretsmanager.aws.upbound.io/v1beta1",
+        "apiVersion": "secretsmanager.aws.m.upbound.io/v1beta1",
         "kind": "Secret",
         "name": "stuck-claim-asm"
       }

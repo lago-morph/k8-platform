@@ -10,15 +10,17 @@ metadata:
 data:
   hello: world
 ---
-apiVersion: secretsmanager.aws.upbound.io/v1beta1
+apiVersion: secretsmanager.aws.m.upbound.io/v1beta1
 kind: Secret
 metadata:
   name: fixture-second-doc-bug
+  namespace: default
 spec:
   forProvider:
     name: fixture/asm-second
     region: us-east-1
     forceOverwriteReplica: true   # unknown field — must fail
-  deletionPolicy: Delete
+  managementPolicies: [Observe, Create, Update, Delete]
   providerConfigRef:
+    kind: ClusterProviderConfig
     name: default

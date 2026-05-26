@@ -32,14 +32,15 @@ spec:
         resources:
           - name: asm-secret
             base:
-              apiVersion: secretsmanager.aws.upbound.io/v1beta1
+              apiVersion: secretsmanager.aws.m.upbound.io/v1beta1
               kind: Secret
               spec:
                 forProvider:
                   recoveryWindowInDays: 0
                   region: us-east-1
-                deletionPolicy: Delete
+                managementPolicies: [Observe, Create, Update, Delete]
                 providerConfigRef:
+                  kind: ClusterProviderConfig
                   name: default
             patches:
               - type: FromCompositeFieldPath

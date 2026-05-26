@@ -7,18 +7,18 @@
   },
   "spec": {
     "resourceRefs": [
-      {"apiVersion": "secretsmanager.aws.upbound.io/v1beta1", "kind": "Secret", "name": "mr01"},
-      {"apiVersion": "secretsmanager.aws.upbound.io/v1beta1", "kind": "Secret", "name": "mr02"},
-      {"apiVersion": "secretsmanager.aws.upbound.io/v1beta1", "kind": "Secret", "name": "mr03"},
-      {"apiVersion": "secretsmanager.aws.upbound.io/v1beta1", "kind": "Secret", "name": "mr04"},
-      {"apiVersion": "secretsmanager.aws.upbound.io/v1beta1", "kind": "Secret", "name": "mr05"},
-      {"apiVersion": "secretsmanager.aws.upbound.io/v1beta1", "kind": "Secret", "name": "mr06"},
-      {"apiVersion": "secretsmanager.aws.upbound.io/v1beta1", "kind": "Secret", "name": "mr07"},
-      {"apiVersion": "secretsmanager.aws.upbound.io/v1beta1", "kind": "Secret", "name": "mr08"},
-      {"apiVersion": "secretsmanager.aws.upbound.io/v1beta1", "kind": "Secret", "name": "mr09"},
-      {"apiVersion": "secretsmanager.aws.upbound.io/v1beta1", "kind": "Secret", "name": "mr10"},
-      {"apiVersion": "secretsmanager.aws.upbound.io/v1beta1", "kind": "Secret", "name": "mr11"},
-      {"apiVersion": "secretsmanager.aws.upbound.io/v1beta1", "kind": "Secret", "name": "mr12"}
+      {"apiVersion": "secretsmanager.aws.m.upbound.io/v1beta1", "kind": "Secret", "name": "mr01"},
+      {"apiVersion": "secretsmanager.aws.m.upbound.io/v1beta1", "kind": "Secret", "name": "mr02"},
+      {"apiVersion": "secretsmanager.aws.m.upbound.io/v1beta1", "kind": "Secret", "name": "mr03"},
+      {"apiVersion": "secretsmanager.aws.m.upbound.io/v1beta1", "kind": "Secret", "name": "mr04"},
+      {"apiVersion": "secretsmanager.aws.m.upbound.io/v1beta1", "kind": "Secret", "name": "mr05"},
+      {"apiVersion": "secretsmanager.aws.m.upbound.io/v1beta1", "kind": "Secret", "name": "mr06"},
+      {"apiVersion": "secretsmanager.aws.m.upbound.io/v1beta1", "kind": "Secret", "name": "mr07"},
+      {"apiVersion": "secretsmanager.aws.m.upbound.io/v1beta1", "kind": "Secret", "name": "mr08"},
+      {"apiVersion": "secretsmanager.aws.m.upbound.io/v1beta1", "kind": "Secret", "name": "mr09"},
+      {"apiVersion": "secretsmanager.aws.m.upbound.io/v1beta1", "kind": "Secret", "name": "mr10"},
+      {"apiVersion": "secretsmanager.aws.m.upbound.io/v1beta1", "kind": "Secret", "name": "mr11"},
+      {"apiVersion": "secretsmanager.aws.m.upbound.io/v1beta1", "kind": "Secret", "name": "mr12"}
     ]
   },
   "status": {

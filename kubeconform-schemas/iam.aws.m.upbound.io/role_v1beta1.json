@@ -15,19 +15,10 @@
     "spec": {
       "description": "RoleSpec defines the desired state of Role",
       "properties": {
-        "deletionPolicy": {
-          "default": "Delete",
-          "description": "DeletionPolicy specifies what will happen to the underlying external\nwhen this managed resource is deleted - either \"Delete\" or \"Orphan\" the\nexternal resource.\nThis field is planned to be deprecated in favor of the ManagementPolicies\nfield in a future release. Currently, both could be set independently and\nnon-default values would be honored if the feature flag is enabled.\nSee the design doc for more information: https://github.com/crossplane/crossplane/blob/499895a25d1a1a0ba1604944ef98ac7a1a71f197/design/design-doc-observe-only-resources.md?plain=1#L223",
-          "enum": [
-            "Orphan",
-            "Delete"
-          ],
-          "type": "string"
-        },
         "forProvider": {
           "properties": {
             "assumeRolePolicy": {
-              "description": "Policy that grants an entity permission to assume the role.",
+              "description": "Policy that grants an entity permission to assume the role. This field is required, but it can be specified in either 'spec.forProvider.assumeRolePolicy' or 'spec.initProvider.assumeRolePolicy'. While it may appear optional in each location individually, the resource requires that it is defined in at least one of them during creation.",
               "type": "string"
             },
             "description": {
@@ -63,6 +54,98 @@
               },
               "type": "array",
               "x-kubernetes-list-type": "set"
+            },
+            "managedPolicyArnsRefs": {
+              "description": "References to Policy in iam to populate managedPolicyArns.",
+              "items": {
+                "description": "A NamespacedReference to a named object.",
+                "properties": {
+                  "name": {
+                    "description": "Name of the referenced object.",
+                    "type": "string"
+                  },
+                  "namespace": {
+                    "description": "Namespace of the referenced object",
+                    "type": "string"
+                  },
+                  "policy": {
+                    "description": "Policies for referencing.",
+                    "properties": {
+                      "resolution": {
+                        "default": "Required",
+                        "description": "Resolution specifies whether resolution of this reference is required.\nThe default is 'Required', which means the reconcile will fail if the\nreference cannot be resolved. 'Optional' means this reference will be\na no-op if it cannot be resolved.",
+                        "enum": [
+                          "Required",
+                          "Optional"
+                        ],
+                        "type": "string"
+                      },
+                      "resolve": {
+                        "description": "Resolve specifies when this reference should be resolved. The default\nis 'IfNotPresent', which will attempt to resolve the reference only when\nthe corresponding field is not present. Use 'Always' to resolve the\nreference on every reconcile.",
+                        "enum": [
+                          "Always",
+                          "IfNotPresent"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "type": "object",
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object",
+                "additionalProperties": false
+              },
+              "type": "array"
+            },
+            "managedPolicyArnsSelector": {
+              "description": "Selector for a list of Policy in iam to populate managedPolicyArns.",
+              "properties": {
+                "matchControllerRef": {
+                  "description": "MatchControllerRef ensures an object with the same controller reference\nas the selecting object is selected.",
+                  "type": "boolean"
+                },
+                "matchLabels": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "MatchLabels ensures an object with matching labels is selected.",
+                  "type": "object"
+                },
+                "namespace": {
+                  "description": "Namespace for the selector",
+                  "type": "string"
+                },
+                "policy": {
+                  "description": "Policies for selection.",
+                  "properties": {
+                    "resolution": {
+                      "default": "Required",
+                      "description": "Resolution specifies whether resolution of this reference is required.\nThe default is 'Required', which means the reconcile will fail if the\nreference cannot be resolved. 'Optional' means this reference will be\na no-op if it cannot be resolved.",
+                      "enum": [
+                        "Required",
+                        "Optional"
+                      ],
+                      "type": "string"
+                    },
+                    "resolve": {
+                      "description": "Resolve specifies when this reference should be resolved. The default\nis 'IfNotPresent', which will attempt to resolve the reference only when\nthe corresponding field is not present. Use 'Always' to resolve the\nreference on every reconcile.",
+                      "enum": [
+                        "Always",
+                        "IfNotPresent"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "type": "object",
+                  "additionalProperties": false
+                }
+              },
+              "type": "object",
+              "additionalProperties": false
             },
             "maxSessionDuration": {
               "description": "Maximum session duration (in seconds) that you want to set for the specified role. If you do not specify a value for this setting, the default maximum of one hour is applied. This setting can have a value from 1 hour to 12 hours.",
@@ -92,7 +175,7 @@
           "description": "THIS IS A BETA FIELD. It will be honored\nunless the Management Policies feature flag is disabled.\nInitProvider holds the same fields as ForProvider, with the exception\nof Identifier and other resource reference fields. The fields that are\nin InitProvider are merged into ForProvider when the resource is created.\nThe same fields are also added to the terraform ignore_changes hook, to\navoid updating them after creation. This is useful for fields that are\nrequired on creation, but we do not desire to update them after creation,\nfor example because of an external controller is managing them, like an\nautoscaler.",
           "properties": {
             "assumeRolePolicy": {
-              "description": "Policy that grants an entity permission to assume the role.",
+              "description": "Policy that grants an entity permission to assume the role. This field is required, but it can be specified in either 'spec.forProvider.assumeRolePolicy' or 'spec.initProvider.assumeRolePolicy'. While it may appear optional in each location individually, the resource requires that it is defined in at least one of them during creation.",
               "type": "string"
             },
             "description": {
@@ -129,6 +212,98 @@
               "type": "array",
               "x-kubernetes-list-type": "set"
             },
+            "managedPolicyArnsRefs": {
+              "description": "References to Policy in iam to populate managedPolicyArns.",
+              "items": {
+                "description": "A NamespacedReference to a named object.",
+                "properties": {
+                  "name": {
+                    "description": "Name of the referenced object.",
+                    "type": "string"
+                  },
+                  "namespace": {
+                    "description": "Namespace of the referenced object",
+                    "type": "string"
+                  },
+                  "policy": {
+                    "description": "Policies for referencing.",
+                    "properties": {
+                      "resolution": {
+                        "default": "Required",
+                        "description": "Resolution specifies whether resolution of this reference is required.\nThe default is 'Required', which means the reconcile will fail if the\nreference cannot be resolved. 'Optional' means this reference will be\na no-op if it cannot be resolved.",
+                        "enum": [
+                          "Required",
+                          "Optional"
+                        ],
+                        "type": "string"
+                      },
+                      "resolve": {
+                        "description": "Resolve specifies when this reference should be resolved. The default\nis 'IfNotPresent', which will attempt to resolve the reference only when\nthe corresponding field is not present. Use 'Always' to resolve the\nreference on every reconcile.",
+                        "enum": [
+                          "Always",
+                          "IfNotPresent"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "type": "object",
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object",
+                "additionalProperties": false
+              },
+              "type": "array"
+            },
+            "managedPolicyArnsSelector": {
+              "description": "Selector for a list of Policy in iam to populate managedPolicyArns.",
+              "properties": {
+                "matchControllerRef": {
+                  "description": "MatchControllerRef ensures an object with the same controller reference\nas the selecting object is selected.",
+                  "type": "boolean"
+                },
+                "matchLabels": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "MatchLabels ensures an object with matching labels is selected.",
+                  "type": "object"
+                },
+                "namespace": {
+                  "description": "Namespace for the selector",
+                  "type": "string"
+                },
+                "policy": {
+                  "description": "Policies for selection.",
+                  "properties": {
+                    "resolution": {
+                      "default": "Required",
+                      "description": "Resolution specifies whether resolution of this reference is required.\nThe default is 'Required', which means the reconcile will fail if the\nreference cannot be resolved. 'Optional' means this reference will be\na no-op if it cannot be resolved.",
+                      "enum": [
+                        "Required",
+                        "Optional"
+                      ],
+                      "type": "string"
+                    },
+                    "resolve": {
+                      "description": "Resolve specifies when this reference should be resolved. The default\nis 'IfNotPresent', which will attempt to resolve the reference only when\nthe corresponding field is not present. Use 'Always' to resolve the\nreference on every reconcile.",
+                      "enum": [
+                        "Always",
+                        "IfNotPresent"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "type": "object",
+                  "additionalProperties": false
+                }
+              },
+              "type": "object",
+              "additionalProperties": false
+            },
             "maxSessionDuration": {
               "description": "Maximum session duration (in seconds) that you want to set for the specified role. If you do not specify a value for this setting, the default maximum of one hour is applied. This setting can have a value from 1 hour to 12 hours.",
               "type": "number"
@@ -157,7 +332,7 @@
           "default": [
             "*"
           ],
-          "description": "THIS IS A BETA FIELD. It is on by default but can be opted out\nthrough a Crossplane feature flag.\nManagementPolicies specify the array of actions Crossplane is allowed to\ntake on the managed and external resources.\nThis field is planned to replace the DeletionPolicy field in a future\nrelease. Currently, both could be set independently and non-default\nvalues would be honored if the feature flag is enabled. If both are\ncustom, the DeletionPolicy field will be ignored.\nSee the design doc for more information: https://github.com/crossplane/crossplane/blob/499895a25d1a1a0ba1604944ef98ac7a1a71f197/design/design-doc-observe-only-resources.md?plain=1#L223\nand this one: https://github.com/crossplane/crossplane/blob/444267e84783136daa93568b364a5f01228cacbe/design/one-pager-ignore-changes.md",
+          "description": "THIS IS A BETA FIELD. It is on by default but can be opted out\nthrough a Crossplane feature flag.\nManagementPolicies specify the array of actions Crossplane is allowed to\ntake on the managed and external resources.\nSee the design doc for more information: https://github.com/crossplane/crossplane/blob/499895a25d1a1a0ba1604944ef98ac7a1a71f197/design/design-doc-observe-only-resources.md?plain=1#L223\nand this one: https://github.com/crossplane/crossplane/blob/444267e84783136daa93568b364a5f01228cacbe/design/one-pager-ignore-changes.md",
           "items": {
             "description": "A ManagementAction represents an action that the Crossplane controllers\ncan take on an external resource.",
             "enum": [
@@ -174,140 +349,37 @@
         },
         "providerConfigRef": {
           "default": {
+            "kind": "ClusterProviderConfig",
             "name": "default"
           },
           "description": "ProviderConfigReference specifies how the provider that will be used to\ncreate, observe, update, and delete this managed resource should be\nconfigured.",
           "properties": {
+            "kind": {
+              "description": "Kind of the referenced object.",
+              "type": "string"
+            },
             "name": {
               "description": "Name of the referenced object.",
               "type": "string"
-            },
-            "policy": {
-              "description": "Policies for referencing.",
-              "properties": {
-                "resolution": {
-                  "default": "Required",
-                  "description": "Resolution specifies whether resolution of this reference is required.\nThe default is 'Required', which means the reconcile will fail if the\nreference cannot be resolved. 'Optional' means this reference will be\na no-op if it cannot be resolved.",
-                  "enum": [
-                    "Required",
-                    "Optional"
-                  ],
-                  "type": "string"
-                },
-                "resolve": {
-                  "description": "Resolve specifies when this reference should be resolved. The default\nis 'IfNotPresent', which will attempt to resolve the reference only when\nthe corresponding field is not present. Use 'Always' to resolve the\nreference on every reconcile.",
-                  "enum": [
-                    "Always",
-                    "IfNotPresent"
-                  ],
-                  "type": "string"
-                }
-              },
-              "type": "object",
-              "additionalProperties": false
             }
           },
           "required": [
-            "name"
-          ],
-          "type": "object",
-          "additionalProperties": false
-        },
-        "publishConnectionDetailsTo": {
-          "description": "PublishConnectionDetailsTo specifies the connection secret config which\ncontains a name, metadata and a reference to secret store config to\nwhich any connection details for this managed resource should be written.\nConnection details frequently include the endpoint, username,\nand password required to connect to the managed resource.",
-          "properties": {
-            "configRef": {
-              "default": {
-                "name": "default"
-              },
-              "description": "SecretStoreConfigRef specifies which secret store config should be used\nfor this ConnectionSecret.",
-              "properties": {
-                "name": {
-                  "description": "Name of the referenced object.",
-                  "type": "string"
-                },
-                "policy": {
-                  "description": "Policies for referencing.",
-                  "properties": {
-                    "resolution": {
-                      "default": "Required",
-                      "description": "Resolution specifies whether resolution of this reference is required.\nThe default is 'Required', which means the reconcile will fail if the\nreference cannot be resolved. 'Optional' means this reference will be\na no-op if it cannot be resolved.",
-                      "enum": [
-                        "Required",
-                        "Optional"
-                      ],
-                      "type": "string"
-                    },
-                    "resolve": {
-                      "description": "Resolve specifies when this reference should be resolved. The default\nis 'IfNotPresent', which will attempt to resolve the reference only when\nthe corresponding field is not present. Use 'Always' to resolve the\nreference on every reconcile.",
-                      "enum": [
-                        "Always",
-                        "IfNotPresent"
-                      ],
-                      "type": "string"
-                    }
-                  },
-                  "type": "object",
-                  "additionalProperties": false
-                }
-              },
-              "required": [
-                "name"
-              ],
-              "type": "object",
-              "additionalProperties": false
-            },
-            "metadata": {
-              "description": "Metadata is the metadata for connection secret.",
-              "properties": {
-                "annotations": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "description": "Annotations are the annotations to be added to connection secret.\n- For Kubernetes secrets, this will be used as \"metadata.annotations\".\n- It is up to Secret Store implementation for others store types.",
-                  "type": "object"
-                },
-                "labels": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "description": "Labels are the labels/tags to be added to connection secret.\n- For Kubernetes secrets, this will be used as \"metadata.labels\".\n- It is up to Secret Store implementation for others store types.",
-                  "type": "object"
-                },
-                "type": {
-                  "description": "Type is the SecretType for the connection secret.\n- Only valid for Kubernetes Secret Stores.",
-                  "type": "string"
-                }
-              },
-              "type": "object",
-              "additionalProperties": false
-            },
-            "name": {
-              "description": "Name is the name of the connection secret.",
-              "type": "string"
-            }
-          },
-          "required": [
+            "kind",
             "name"
           ],
           "type": "object",
           "additionalProperties": false
         },
         "writeConnectionSecretToRef": {
-          "description": "WriteConnectionSecretToReference specifies the namespace and name of a\nSecret to which any connection details for this managed resource should\nbe written. Connection details frequently include the endpoint, username,\nand password required to connect to the managed resource.\nThis field is planned to be replaced in a future release in favor of\nPublishConnectionDetailsTo. Currently, both could be set independently\nand connection details would be published to both without affecting\neach other.",
+          "description": "WriteConnectionSecretToReference specifies the namespace and name of a\nSecret to which any connection details for this managed resource should\nbe written. Connection details frequently include the endpoint, username,\nand password required to connect to the managed resource.",
           "properties": {
             "name": {
               "description": "Name of the secret.",
               "type": "string"
-            },
-            "namespace": {
-              "description": "Namespace of the secret.",
-              "type": "string"
             }
           },
           "required": [
-            "name",
-            "namespace"
+            "name"
           ],
           "type": "object",
           "additionalProperties": false
@@ -335,7 +407,7 @@
               "type": "string"
             },
             "assumeRolePolicy": {
-              "description": "Policy that grants an entity permission to assume the role.",
+              "description": "Policy that grants an entity permission to assume the role. This field is required, but it can be specified in either 'spec.forProvider.assumeRolePolicy' or 'spec.initProvider.assumeRolePolicy'. While it may appear optional in each location individually, the resource requires that it is defined in at least one of them during creation.",
               "type": "string"
             },
             "createDate": {
