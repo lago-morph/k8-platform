@@ -159,7 +159,7 @@ assert_eq "composition_pipeline_input_kind"       "Resources"                  "
 # kind: ProviderConfig (or omitting kind) is a regression that surfaces
 # only at apply time with a cryptic "could not get ProviderConfig
 # default" error.
-PCR_KINDS=$(yq -r '.spec.pipeline[0].input.resources[].base.spec.providerConfigRef.kind // empty' "$COMP")
+PCR_KINDS=$(yq -r '.spec.pipeline[0].input.resources[] | select(.base.spec.providerConfigRef.kind != null) | .base.spec.providerConfigRef.kind' "$COMP")
 if [ -z "$PCR_KINDS" ]; then
   _fail "composition_providerConfigRef_kinds_present" \
         "no providerConfigRef.kind found on any base; v2 requires explicit kind: ClusterProviderConfig"

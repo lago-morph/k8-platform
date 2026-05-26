@@ -136,7 +136,7 @@ echo "$NODE_TRUST" | grep -q "ec2.amazonaws.com" \
 # is also offered by the provider but the migration pre-committed to a
 # single shared ClusterProviderConfig named `default` — using anything
 # else only fails at apply time.
-PCR_KINDS=$(yq -r '.spec.pipeline[0].input.resources[].base.spec.providerConfigRef.kind // empty' "$COMP")
+PCR_KINDS=$(yq -r '.spec.pipeline[0].input.resources[] | select(.base.spec.providerConfigRef.kind != null) | .base.spec.providerConfigRef.kind' "$COMP")
 if [ -z "$PCR_KINDS" ]; then
   _fail "composition_providerConfigRef_kinds_present" \
         "no providerConfigRef.kind found on any base; v2 requires explicit kind: ClusterProviderConfig"
