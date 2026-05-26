@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# 06: Crossplane XRD + Composition + Claim → composite Ready + AWS resource.
+# 06: Crossplane v2 XRD + Composition + XR → composite Ready + AWS resource.
 #
-# Defines a tiny PlatformTestBucket XRD with one parameter (bucketName),
-# a Composition that produces a single S3 Bucket MR, applies a Claim,
-# waits for composite Ready, asserts the underlying S3 bucket exists.
-# Tears everything down on exit.
+# Defines a tiny PlatformTestBucket XRD (apiextensions.crossplane.io/v2,
+# spec.scope: Namespaced, no claimNames) with one parameter (bucketName),
+# a Composition that produces a single S3 Bucket MR, applies the XR
+# directly (no v1 claim → XR promotion), waits for the XR to be Ready,
+# asserts the underlying S3 bucket exists. Tears everything down on exit.
 
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -25,19 +26,21 @@ TEST_NS="integ-${RUN_ID}"
 REGION="${AWS_REGION:-us-east-1}"
 
 cat <<'YAML' | RUN_ID=$RUN_ID BUCKET=$BUCKET REGION=$REGION TEST_NS=$TEST_NS envsubst | trace kubectl apply -f -
-apiVersion: apiextensions.crossplane.io/v1
+apiVersion: apiextensions.crossplane.io/v2
 kind: CompositeResourceDefinition
 metadata:
-  name: platformtestbuckets.test.k8-platform.local
+  name: xplatformtestbuckets.test.k8-platform.local
   labels: { test.k8-platform/integration: "true" }
 spec:
+  # v2: scope MUST be set explicitly. Without it the XRD defaults to
+  # LegacyCluster scope, the namespace on the XR apply is silently
+  # ignored, and wait-for-XR fails. claimNames is REMOVED in v2 —
+  # the user creates the XR directly in their namespace.
+  scope: Namespaced
   group: test.k8-platform.local
   names:
-    kind: PlatformTestBucket
-    plural: platformtestbuckets
-  claimNames:
-    kind: TestBucket
-    plural: testbuckets
+    kind: XPlatformTestBucket
+    plural: xplatformtestbuckets
   versions:
     - name: v1alpha1
       served: true
@@ -59,19 +62,18 @@ metadata:
   name: testbucket-aws
   labels:
     test.k8-platform/integration: "true"
-    crossplane.io/xrd: platformtestbuckets.test.k8-platform.local
+    crossplane.io/xrd: xplatformtestbuckets.test.k8-platform.local
 spec:
   compositeTypeRef:
     apiVersion: test.k8-platform.local/v1alpha1
-    kind: PlatformTestBucket
+    kind: XPlatformTestBucket
   resources:
     - name: bucket
       base:
-        apiVersion: s3.aws.upbound.io/v1beta1
+        apiVersion: s3.aws.m.upbound.io/v1beta1
         kind: Bucket
         spec:
           forProvider: {}
-          deletionPolicy: Delete
       patches:
         - fromFieldPath: spec.bucketName
           toFieldPath: metadata.name
@@ -82,8 +84,9 @@ apiVersion: v1
 kind: Namespace
 metadata: { name: $TEST_NS, labels: { test.k8-platform/integration: "true" } }
 ---
+# v2: apply the XR directly in $TEST_NS (no v1 claim → XR promotion).
 apiVersion: test.k8-platform.local/v1alpha1
-kind: TestBucket
+kind: XPlatformTestBucket
 metadata:
   name: $BUCKET
   namespace: $TEST_NS
@@ -92,13 +95,13 @@ spec:
   region: $REGION
 YAML
 
-add_cleanup "kubectl delete testbucket -n $TEST_NS $BUCKET --wait=true --timeout=60s || true"
+add_cleanup "kubectl delete xplatformtestbucket -n $TEST_NS $BUCKET --wait=true --timeout=60s || true"
 add_cleanup "kubectl delete composition testbucket-aws --wait=false"
-add_cleanup "kubectl delete xrd platformtestbuckets.test.k8-platform.local --wait=false"
+add_cleanup "kubectl delete xrd xplatformtestbuckets.test.k8-platform.local --wait=false"
 add_cleanup "kubectl delete ns $TEST_NS --wait=false"
 
-# SPEC-S7: canonical wait + auto-dump on timeout.
-"$HERE/../../scripts/wait-for-claim.sh" TestBucket "$BUCKET" "$TEST_NS" 240
+# SPEC-S7: canonical wait + auto-dump on timeout. v2 XR kind, namespaced.
+"$HERE/../../scripts/wait-for-claim.sh" XPlatformTestBucket "$BUCKET" "$TEST_NS" 240
 
 wait_for "S3 bucket $BUCKET exists in AWS" 60 3 -- \
   bash -c "aws s3api head-bucket --bucket $BUCKET 2>/dev/null"
