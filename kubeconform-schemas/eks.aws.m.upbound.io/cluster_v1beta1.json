@@ -15,26 +15,17 @@
     "spec": {
       "description": "ClusterSpec defines the desired state of Cluster",
       "properties": {
-        "deletionPolicy": {
-          "default": "Delete",
-          "description": "DeletionPolicy specifies what will happen to the underlying external\nwhen this managed resource is deleted - either \"Delete\" or \"Orphan\" the\nexternal resource.\nThis field is planned to be deprecated in favor of the ManagementPolicies\nfield in a future release. Currently, both could be set independently and\nnon-default values would be honored if the feature flag is enabled.\nSee the design doc for more information: https://github.com/crossplane/crossplane/blob/499895a25d1a1a0ba1604944ef98ac7a1a71f197/design/design-doc-observe-only-resources.md?plain=1#L223",
-          "enum": [
-            "Orphan",
-            "Delete"
-          ],
-          "type": "string"
-        },
         "forProvider": {
           "properties": {
             "accessConfig": {
-              "description": "Configuration block for the access config associated with your cluster, see Amazon EKS Access Entries.",
+              "description": "Configuration block for the access config associated with your cluster, see Amazon EKS Access Entries. Detailed below.",
               "properties": {
                 "authenticationMode": {
                   "description": "The authentication mode for the cluster. Valid values are CONFIG_MAP, API or API_AND_CONFIG_MAP",
                   "type": "string"
                 },
                 "bootstrapClusterCreatorAdminPermissions": {
-                  "description": "Whether or not to bootstrap the access config values to the cluster. Default is false.",
+                  "description": "Whether or not to bootstrap the access config values to the cluster. Default is true.",
                   "type": "boolean"
                 }
               },
@@ -43,6 +34,44 @@
             },
             "bootstrapSelfManagedAddons": {
               "description": "Install default unmanaged add-ons, such as aws-cni, kube-proxy, and CoreDNS during cluster creation. If false, you must manually install desired add-ons. Changing this value will force a new cluster to be created. Defaults to true.",
+              "type": "boolean"
+            },
+            "computeConfig": {
+              "description": "Configuration block with compute configuration for EKS Auto Mode. Detailed below.",
+              "properties": {
+                "enabled": {
+                  "description": "Request to enable or disable the compute capability on your EKS Auto Mode cluster. If the compute capability is enabled, EKS Auto Mode will create and delete EC2 Managed Instances in your Amazon Web Services account.",
+                  "type": "boolean"
+                },
+                "nodePools": {
+                  "description": "Configuration for node pools that defines the compute resources for your EKS Auto Mode cluster. Valid options are general-purpose and system.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array",
+                  "x-kubernetes-list-type": "set"
+                },
+                "nodeRoleArn": {
+                  "description": "The ARN of the IAM Role EKS will assign to EC2 Managed Instances in your EKS Auto Mode cluster. This value cannot be changed after the compute capability of EKS Auto Mode is enabled..",
+                  "type": "string"
+                }
+              },
+              "type": "object",
+              "additionalProperties": false
+            },
+            "controlPlaneScalingConfig": {
+              "description": "Configuration block for the control plane scaling tier. See EKS Provisioned Control Plane for more information. Detailed below.",
+              "properties": {
+                "tier": {
+                  "description": "The control plane scaling tier. Valid values are standard, tier-xl, tier-2xl, or tier-4xl. Defaults to standard. For more information about each tier, see EKS Provisioned Control Plane.",
+                  "type": "string"
+                }
+              },
+              "type": "object",
+              "additionalProperties": false
+            },
+            "deletionProtection": {
+              "description": "Whether to enable deletion protection for the cluster. When enabled, the cluster cannot be deleted unless deletion protection is first disabled. Default: false.",
               "type": "boolean"
             },
             "enabledClusterLogTypes": {
@@ -54,7 +83,7 @@
               "x-kubernetes-list-type": "set"
             },
             "encryptionConfig": {
-              "description": "Configuration block with encryption configuration for the cluster. Only available on Kubernetes 1.13 and above clusters created after March 6, 2020. Detailed below.",
+              "description": "Configuration block with encryption configuration for the cluster. Detailed below.",
               "properties": {
                 "provider": {
                   "description": "Configuration block with provider for encryption. Detailed below.",
@@ -79,9 +108,24 @@
               "type": "object",
               "additionalProperties": false
             },
+            "forceUpdateVersion": {
+              "description": "Force version update by overriding upgrade-blocking readiness checks when updating a cluster.",
+              "type": "boolean"
+            },
             "kubernetesNetworkConfig": {
               "description": "Configuration block with kubernetes network configuration for the cluster. Detailed below.",
               "properties": {
+                "elasticLoadBalancing": {
+                  "description": "Configuration block with elastic load balancing configuration for the cluster. Detailed below.",
+                  "properties": {
+                    "enabled": {
+                      "description": "Whether zonal shift is enabled for the cluster.",
+                      "type": "boolean"
+                    }
+                  },
+                  "type": "object",
+                  "additionalProperties": false
+                },
                 "ipFamily": {
                   "description": "The IP family used to assign Kubernetes pod and service addresses. Valid values are ipv4 (default) and ipv6. You can only specify an IP family when you create a cluster, changing this value will force a new cluster to be created.",
                   "type": "string"
@@ -125,8 +169,45 @@
               "additionalProperties": false
             },
             "region": {
-              "description": "Region is the region you'd like your resource to be created in.",
+              "description": "Region where this resource will be managed. Defaults to the Region set in the provider configuration.\nRegion is the region you'd like your resource to be created in.",
               "type": "string"
+            },
+            "remoteNetworkConfig": {
+              "description": "Configuration block with remote network configuration for EKS Hybrid Nodes. Detailed below.",
+              "properties": {
+                "remoteNodeNetworks": {
+                  "description": "Configuration block with remote node network configuration for EKS Hybrid Nodes. Detailed below.",
+                  "properties": {
+                    "cidrs": {
+                      "description": "List of network CIDRs that can contain hybrid nodes.",
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array",
+                      "x-kubernetes-list-type": "set"
+                    }
+                  },
+                  "type": "object",
+                  "additionalProperties": false
+                },
+                "remotePodNetworks": {
+                  "description": "Configuration block with remote pod network configuration for EKS Hybrid Nodes. Detailed below.",
+                  "properties": {
+                    "cidrs": {
+                      "description": "List of network CIDRs that can contain pods that run Kubernetes webhooks on hybrid nodes.",
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array",
+                      "x-kubernetes-list-type": "set"
+                    }
+                  },
+                  "type": "object",
+                  "additionalProperties": false
+                }
+              },
+              "type": "object",
+              "additionalProperties": false
             },
             "roleArn": {
               "description": "ARN of the IAM role that provides permissions for the Kubernetes control plane to make calls to AWS API operations on your behalf. Ensure the resource configuration includes explicit dependencies on the IAM Role permissions by adding depends_on if using the aws_iam_role_policy resource or aws_iam_role_policy_attachment resource, otherwise EKS cannot delete EKS managed EC2 infrastructure such as Security Groups on EKS Cluster deletion.",
@@ -137,6 +218,10 @@
               "properties": {
                 "name": {
                   "description": "Name of the referenced object.",
+                  "type": "string"
+                },
+                "namespace": {
+                  "description": "Namespace of the referenced object",
                   "type": "string"
                 },
                 "policy": {
@@ -184,6 +269,10 @@
                   "description": "MatchLabels ensures an object with matching labels is selected.",
                   "type": "object"
                 },
+                "namespace": {
+                  "description": "Namespace for the selector",
+                  "type": "string"
+                },
                 "policy": {
                   "description": "Policies for selection.",
                   "properties": {
@@ -212,6 +301,24 @@
               "type": "object",
               "additionalProperties": false
             },
+            "storageConfig": {
+              "description": "Configuration block with storage configuration for EKS Auto Mode. Detailed below.",
+              "properties": {
+                "blockStorage": {
+                  "description": "Configuration block with block storage configuration for the cluster. Detailed below.",
+                  "properties": {
+                    "enabled": {
+                      "description": "Indicates if the block storage capability is enabled on your EKS Auto Mode cluster. If the block storage capability is enabled, EKS Auto Mode will create and delete block storage volumes in your Amazon Web Services account.",
+                      "type": "boolean"
+                    }
+                  },
+                  "type": "object",
+                  "additionalProperties": false
+                }
+              },
+              "type": "object",
+              "additionalProperties": false
+            },
             "tags": {
               "additionalProperties": {
                 "type": "string"
@@ -220,8 +327,19 @@
               "type": "object",
               "x-kubernetes-map-type": "granular"
             },
+            "upgradePolicy": {
+              "description": "Configuration block for the support policy to use for the cluster.  See upgrade_policy for details.",
+              "properties": {
+                "supportType": {
+                  "description": "Support type to use for the cluster. If the cluster is set to EXTENDED, it will enter extended support at the end of standard support. If the cluster is set to STANDARD, it will be automatically upgraded at the end of standard support. Valid values are EXTENDED, STANDARD",
+                  "type": "string"
+                }
+              },
+              "type": "object",
+              "additionalProperties": false
+            },
             "version": {
-              "description": "\u2013  Desired Kubernetes master version. If you do not specify a value, the latest available version at resource creation is used and no upgrades will occur except those automatically triggered by EKS. The value must be configured and increased to upgrade the version when desired. Downgrades are not supported by EKS.",
+              "description": "Desired Kubernetes master version. If you do not specify a value, the latest available version at resource creation is used and no upgrades will occur except those automatically triggered by EKS. The value must be configured and increased to upgrade the version when desired. Downgrades are not supported by EKS.",
               "type": "string"
             },
             "vpcConfig": {
@@ -246,10 +364,14 @@
                 "securityGroupIdRefs": {
                   "description": "References to SecurityGroup in ec2 to populate securityGroupIds.",
                   "items": {
-                    "description": "A Reference to a named object.",
+                    "description": "A NamespacedReference to a named object.",
                     "properties": {
                       "name": {
                         "description": "Name of the referenced object.",
+                        "type": "string"
+                      },
+                      "namespace": {
+                        "description": "Namespace of the referenced object",
                         "type": "string"
                       },
                       "policy": {
@@ -299,6 +421,10 @@
                       "description": "MatchLabels ensures an object with matching labels is selected.",
                       "type": "object"
                     },
+                    "namespace": {
+                      "description": "Namespace for the selector",
+                      "type": "string"
+                    },
                     "policy": {
                       "description": "Policies for selection.",
                       "properties": {
@@ -328,7 +454,7 @@
                   "additionalProperties": false
                 },
                 "securityGroupIds": {
-                  "description": "account elastic network interfaces that Amazon EKS creates to use to allow communication between your worker nodes and the Kubernetes control plane.",
+                  "description": "List of security group IDs for the cross-account elastic network interfaces that Amazon EKS creates to use to allow communication between your worker nodes and the Kubernetes control plane.",
                   "items": {
                     "type": "string"
                   },
@@ -338,10 +464,14 @@
                 "subnetIdRefs": {
                   "description": "References to Subnet in ec2 to populate subnetIds.",
                   "items": {
-                    "description": "A Reference to a named object.",
+                    "description": "A NamespacedReference to a named object.",
                     "properties": {
                       "name": {
                         "description": "Name of the referenced object.",
+                        "type": "string"
+                      },
+                      "namespace": {
+                        "description": "Namespace of the referenced object",
                         "type": "string"
                       },
                       "policy": {
@@ -391,6 +521,10 @@
                       "description": "MatchLabels ensures an object with matching labels is selected.",
                       "type": "object"
                     },
+                    "namespace": {
+                      "description": "Namespace for the selector",
+                      "type": "string"
+                    },
                     "policy": {
                       "description": "Policies for selection.",
                       "properties": {
@@ -420,12 +554,23 @@
                   "additionalProperties": false
                 },
                 "subnetIds": {
-                  "description": "account elastic network interfaces in these subnets to allow communication between your worker nodes and the Kubernetes control plane.",
+                  "description": "List of subnet IDs. Must be in at least two different availability zones. Amazon EKS creates cross-account elastic network interfaces in these subnets to allow communication between your worker nodes and the Kubernetes control plane.",
                   "items": {
                     "type": "string"
                   },
                   "type": "array",
                   "x-kubernetes-list-type": "set"
+                }
+              },
+              "type": "object",
+              "additionalProperties": false
+            },
+            "zonalShiftConfig": {
+              "description": "Configuration block with zonal shift configuration for the cluster. Detailed below.",
+              "properties": {
+                "enabled": {
+                  "description": "Whether zonal shift is enabled for the cluster.",
+                  "type": "boolean"
                 }
               },
               "type": "object",
@@ -442,14 +587,14 @@
           "description": "THIS IS A BETA FIELD. It will be honored\nunless the Management Policies feature flag is disabled.\nInitProvider holds the same fields as ForProvider, with the exception\nof Identifier and other resource reference fields. The fields that are\nin InitProvider are merged into ForProvider when the resource is created.\nThe same fields are also added to the terraform ignore_changes hook, to\navoid updating them after creation. This is useful for fields that are\nrequired on creation, but we do not desire to update them after creation,\nfor example because of an external controller is managing them, like an\nautoscaler.",
           "properties": {
             "accessConfig": {
-              "description": "Configuration block for the access config associated with your cluster, see Amazon EKS Access Entries.",
+              "description": "Configuration block for the access config associated with your cluster, see Amazon EKS Access Entries. Detailed below.",
               "properties": {
                 "authenticationMode": {
                   "description": "The authentication mode for the cluster. Valid values are CONFIG_MAP, API or API_AND_CONFIG_MAP",
                   "type": "string"
                 },
                 "bootstrapClusterCreatorAdminPermissions": {
-                  "description": "Whether or not to bootstrap the access config values to the cluster. Default is false.",
+                  "description": "Whether or not to bootstrap the access config values to the cluster. Default is true.",
                   "type": "boolean"
                 }
               },
@@ -458,6 +603,44 @@
             },
             "bootstrapSelfManagedAddons": {
               "description": "Install default unmanaged add-ons, such as aws-cni, kube-proxy, and CoreDNS during cluster creation. If false, you must manually install desired add-ons. Changing this value will force a new cluster to be created. Defaults to true.",
+              "type": "boolean"
+            },
+            "computeConfig": {
+              "description": "Configuration block with compute configuration for EKS Auto Mode. Detailed below.",
+              "properties": {
+                "enabled": {
+                  "description": "Request to enable or disable the compute capability on your EKS Auto Mode cluster. If the compute capability is enabled, EKS Auto Mode will create and delete EC2 Managed Instances in your Amazon Web Services account.",
+                  "type": "boolean"
+                },
+                "nodePools": {
+                  "description": "Configuration for node pools that defines the compute resources for your EKS Auto Mode cluster. Valid options are general-purpose and system.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array",
+                  "x-kubernetes-list-type": "set"
+                },
+                "nodeRoleArn": {
+                  "description": "The ARN of the IAM Role EKS will assign to EC2 Managed Instances in your EKS Auto Mode cluster. This value cannot be changed after the compute capability of EKS Auto Mode is enabled..",
+                  "type": "string"
+                }
+              },
+              "type": "object",
+              "additionalProperties": false
+            },
+            "controlPlaneScalingConfig": {
+              "description": "Configuration block for the control plane scaling tier. See EKS Provisioned Control Plane for more information. Detailed below.",
+              "properties": {
+                "tier": {
+                  "description": "The control plane scaling tier. Valid values are standard, tier-xl, tier-2xl, or tier-4xl. Defaults to standard. For more information about each tier, see EKS Provisioned Control Plane.",
+                  "type": "string"
+                }
+              },
+              "type": "object",
+              "additionalProperties": false
+            },
+            "deletionProtection": {
+              "description": "Whether to enable deletion protection for the cluster. When enabled, the cluster cannot be deleted unless deletion protection is first disabled. Default: false.",
               "type": "boolean"
             },
             "enabledClusterLogTypes": {
@@ -469,7 +652,7 @@
               "x-kubernetes-list-type": "set"
             },
             "encryptionConfig": {
-              "description": "Configuration block with encryption configuration for the cluster. Only available on Kubernetes 1.13 and above clusters created after March 6, 2020. Detailed below.",
+              "description": "Configuration block with encryption configuration for the cluster. Detailed below.",
               "properties": {
                 "provider": {
                   "description": "Configuration block with provider for encryption. Detailed below.",
@@ -494,9 +677,24 @@
               "type": "object",
               "additionalProperties": false
             },
+            "forceUpdateVersion": {
+              "description": "Force version update by overriding upgrade-blocking readiness checks when updating a cluster.",
+              "type": "boolean"
+            },
             "kubernetesNetworkConfig": {
               "description": "Configuration block with kubernetes network configuration for the cluster. Detailed below.",
               "properties": {
+                "elasticLoadBalancing": {
+                  "description": "Configuration block with elastic load balancing configuration for the cluster. Detailed below.",
+                  "properties": {
+                    "enabled": {
+                      "description": "Whether zonal shift is enabled for the cluster.",
+                      "type": "boolean"
+                    }
+                  },
+                  "type": "object",
+                  "additionalProperties": false
+                },
                 "ipFamily": {
                   "description": "The IP family used to assign Kubernetes pod and service addresses. Valid values are ipv4 (default) and ipv6. You can only specify an IP family when you create a cluster, changing this value will force a new cluster to be created.",
                   "type": "string"
@@ -539,6 +737,43 @@
               "type": "object",
               "additionalProperties": false
             },
+            "remoteNetworkConfig": {
+              "description": "Configuration block with remote network configuration for EKS Hybrid Nodes. Detailed below.",
+              "properties": {
+                "remoteNodeNetworks": {
+                  "description": "Configuration block with remote node network configuration for EKS Hybrid Nodes. Detailed below.",
+                  "properties": {
+                    "cidrs": {
+                      "description": "List of network CIDRs that can contain hybrid nodes.",
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array",
+                      "x-kubernetes-list-type": "set"
+                    }
+                  },
+                  "type": "object",
+                  "additionalProperties": false
+                },
+                "remotePodNetworks": {
+                  "description": "Configuration block with remote pod network configuration for EKS Hybrid Nodes. Detailed below.",
+                  "properties": {
+                    "cidrs": {
+                      "description": "List of network CIDRs that can contain pods that run Kubernetes webhooks on hybrid nodes.",
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array",
+                      "x-kubernetes-list-type": "set"
+                    }
+                  },
+                  "type": "object",
+                  "additionalProperties": false
+                }
+              },
+              "type": "object",
+              "additionalProperties": false
+            },
             "roleArn": {
               "description": "ARN of the IAM role that provides permissions for the Kubernetes control plane to make calls to AWS API operations on your behalf. Ensure the resource configuration includes explicit dependencies on the IAM Role permissions by adding depends_on if using the aws_iam_role_policy resource or aws_iam_role_policy_attachment resource, otherwise EKS cannot delete EKS managed EC2 infrastructure such as Security Groups on EKS Cluster deletion.",
               "type": "string"
@@ -548,6 +783,10 @@
               "properties": {
                 "name": {
                   "description": "Name of the referenced object.",
+                  "type": "string"
+                },
+                "namespace": {
+                  "description": "Namespace of the referenced object",
                   "type": "string"
                 },
                 "policy": {
@@ -595,6 +834,10 @@
                   "description": "MatchLabels ensures an object with matching labels is selected.",
                   "type": "object"
                 },
+                "namespace": {
+                  "description": "Namespace for the selector",
+                  "type": "string"
+                },
                 "policy": {
                   "description": "Policies for selection.",
                   "properties": {
@@ -623,6 +866,24 @@
               "type": "object",
               "additionalProperties": false
             },
+            "storageConfig": {
+              "description": "Configuration block with storage configuration for EKS Auto Mode. Detailed below.",
+              "properties": {
+                "blockStorage": {
+                  "description": "Configuration block with block storage configuration for the cluster. Detailed below.",
+                  "properties": {
+                    "enabled": {
+                      "description": "Indicates if the block storage capability is enabled on your EKS Auto Mode cluster. If the block storage capability is enabled, EKS Auto Mode will create and delete block storage volumes in your Amazon Web Services account.",
+                      "type": "boolean"
+                    }
+                  },
+                  "type": "object",
+                  "additionalProperties": false
+                }
+              },
+              "type": "object",
+              "additionalProperties": false
+            },
             "tags": {
               "additionalProperties": {
                 "type": "string"
@@ -631,8 +892,19 @@
               "type": "object",
               "x-kubernetes-map-type": "granular"
             },
+            "upgradePolicy": {
+              "description": "Configuration block for the support policy to use for the cluster.  See upgrade_policy for details.",
+              "properties": {
+                "supportType": {
+                  "description": "Support type to use for the cluster. If the cluster is set to EXTENDED, it will enter extended support at the end of standard support. If the cluster is set to STANDARD, it will be automatically upgraded at the end of standard support. Valid values are EXTENDED, STANDARD",
+                  "type": "string"
+                }
+              },
+              "type": "object",
+              "additionalProperties": false
+            },
             "version": {
-              "description": "\u2013  Desired Kubernetes master version. If you do not specify a value, the latest available version at resource creation is used and no upgrades will occur except those automatically triggered by EKS. The value must be configured and increased to upgrade the version when desired. Downgrades are not supported by EKS.",
+              "description": "Desired Kubernetes master version. If you do not specify a value, the latest available version at resource creation is used and no upgrades will occur except those automatically triggered by EKS. The value must be configured and increased to upgrade the version when desired. Downgrades are not supported by EKS.",
               "type": "string"
             },
             "vpcConfig": {
@@ -657,10 +929,14 @@
                 "securityGroupIdRefs": {
                   "description": "References to SecurityGroup in ec2 to populate securityGroupIds.",
                   "items": {
-                    "description": "A Reference to a named object.",
+                    "description": "A NamespacedReference to a named object.",
                     "properties": {
                       "name": {
                         "description": "Name of the referenced object.",
+                        "type": "string"
+                      },
+                      "namespace": {
+                        "description": "Namespace of the referenced object",
                         "type": "string"
                       },
                       "policy": {
@@ -710,6 +986,10 @@
                       "description": "MatchLabels ensures an object with matching labels is selected.",
                       "type": "object"
                     },
+                    "namespace": {
+                      "description": "Namespace for the selector",
+                      "type": "string"
+                    },
                     "policy": {
                       "description": "Policies for selection.",
                       "properties": {
@@ -739,7 +1019,7 @@
                   "additionalProperties": false
                 },
                 "securityGroupIds": {
-                  "description": "account elastic network interfaces that Amazon EKS creates to use to allow communication between your worker nodes and the Kubernetes control plane.",
+                  "description": "List of security group IDs for the cross-account elastic network interfaces that Amazon EKS creates to use to allow communication between your worker nodes and the Kubernetes control plane.",
                   "items": {
                     "type": "string"
                   },
@@ -749,10 +1029,14 @@
                 "subnetIdRefs": {
                   "description": "References to Subnet in ec2 to populate subnetIds.",
                   "items": {
-                    "description": "A Reference to a named object.",
+                    "description": "A NamespacedReference to a named object.",
                     "properties": {
                       "name": {
                         "description": "Name of the referenced object.",
+                        "type": "string"
+                      },
+                      "namespace": {
+                        "description": "Namespace of the referenced object",
                         "type": "string"
                       },
                       "policy": {
@@ -802,6 +1086,10 @@
                       "description": "MatchLabels ensures an object with matching labels is selected.",
                       "type": "object"
                     },
+                    "namespace": {
+                      "description": "Namespace for the selector",
+                      "type": "string"
+                    },
                     "policy": {
                       "description": "Policies for selection.",
                       "properties": {
@@ -831,12 +1119,23 @@
                   "additionalProperties": false
                 },
                 "subnetIds": {
-                  "description": "account elastic network interfaces in these subnets to allow communication between your worker nodes and the Kubernetes control plane.",
+                  "description": "List of subnet IDs. Must be in at least two different availability zones. Amazon EKS creates cross-account elastic network interfaces in these subnets to allow communication between your worker nodes and the Kubernetes control plane.",
                   "items": {
                     "type": "string"
                   },
                   "type": "array",
                   "x-kubernetes-list-type": "set"
+                }
+              },
+              "type": "object",
+              "additionalProperties": false
+            },
+            "zonalShiftConfig": {
+              "description": "Configuration block with zonal shift configuration for the cluster. Detailed below.",
+              "properties": {
+                "enabled": {
+                  "description": "Whether zonal shift is enabled for the cluster.",
+                  "type": "boolean"
                 }
               },
               "type": "object",
@@ -850,7 +1149,7 @@
           "default": [
             "*"
           ],
-          "description": "THIS IS A BETA FIELD. It is on by default but can be opted out\nthrough a Crossplane feature flag.\nManagementPolicies specify the array of actions Crossplane is allowed to\ntake on the managed and external resources.\nThis field is planned to replace the DeletionPolicy field in a future\nrelease. Currently, both could be set independently and non-default\nvalues would be honored if the feature flag is enabled. If both are\ncustom, the DeletionPolicy field will be ignored.\nSee the design doc for more information: https://github.com/crossplane/crossplane/blob/499895a25d1a1a0ba1604944ef98ac7a1a71f197/design/design-doc-observe-only-resources.md?plain=1#L223\nand this one: https://github.com/crossplane/crossplane/blob/444267e84783136daa93568b364a5f01228cacbe/design/one-pager-ignore-changes.md",
+          "description": "THIS IS A BETA FIELD. It is on by default but can be opted out\nthrough a Crossplane feature flag.\nManagementPolicies specify the array of actions Crossplane is allowed to\ntake on the managed and external resources.\nSee the design doc for more information: https://github.com/crossplane/crossplane/blob/499895a25d1a1a0ba1604944ef98ac7a1a71f197/design/design-doc-observe-only-resources.md?plain=1#L223\nand this one: https://github.com/crossplane/crossplane/blob/444267e84783136daa93568b364a5f01228cacbe/design/one-pager-ignore-changes.md",
           "items": {
             "description": "A ManagementAction represents an action that the Crossplane controllers\ncan take on an external resource.",
             "enum": [
@@ -867,140 +1166,37 @@
         },
         "providerConfigRef": {
           "default": {
+            "kind": "ClusterProviderConfig",
             "name": "default"
           },
           "description": "ProviderConfigReference specifies how the provider that will be used to\ncreate, observe, update, and delete this managed resource should be\nconfigured.",
           "properties": {
+            "kind": {
+              "description": "Kind of the referenced object.",
+              "type": "string"
+            },
             "name": {
               "description": "Name of the referenced object.",
               "type": "string"
-            },
-            "policy": {
-              "description": "Policies for referencing.",
-              "properties": {
-                "resolution": {
-                  "default": "Required",
-                  "description": "Resolution specifies whether resolution of this reference is required.\nThe default is 'Required', which means the reconcile will fail if the\nreference cannot be resolved. 'Optional' means this reference will be\na no-op if it cannot be resolved.",
-                  "enum": [
-                    "Required",
-                    "Optional"
-                  ],
-                  "type": "string"
-                },
-                "resolve": {
-                  "description": "Resolve specifies when this reference should be resolved. The default\nis 'IfNotPresent', which will attempt to resolve the reference only when\nthe corresponding field is not present. Use 'Always' to resolve the\nreference on every reconcile.",
-                  "enum": [
-                    "Always",
-                    "IfNotPresent"
-                  ],
-                  "type": "string"
-                }
-              },
-              "type": "object",
-              "additionalProperties": false
             }
           },
           "required": [
-            "name"
-          ],
-          "type": "object",
-          "additionalProperties": false
-        },
-        "publishConnectionDetailsTo": {
-          "description": "PublishConnectionDetailsTo specifies the connection secret config which\ncontains a name, metadata and a reference to secret store config to\nwhich any connection details for this managed resource should be written.\nConnection details frequently include the endpoint, username,\nand password required to connect to the managed resource.",
-          "properties": {
-            "configRef": {
-              "default": {
-                "name": "default"
-              },
-              "description": "SecretStoreConfigRef specifies which secret store config should be used\nfor this ConnectionSecret.",
-              "properties": {
-                "name": {
-                  "description": "Name of the referenced object.",
-                  "type": "string"
-                },
-                "policy": {
-                  "description": "Policies for referencing.",
-                  "properties": {
-                    "resolution": {
-                      "default": "Required",
-                      "description": "Resolution specifies whether resolution of this reference is required.\nThe default is 'Required', which means the reconcile will fail if the\nreference cannot be resolved. 'Optional' means this reference will be\na no-op if it cannot be resolved.",
-                      "enum": [
-                        "Required",
-                        "Optional"
-                      ],
-                      "type": "string"
-                    },
-                    "resolve": {
-                      "description": "Resolve specifies when this reference should be resolved. The default\nis 'IfNotPresent', which will attempt to resolve the reference only when\nthe corresponding field is not present. Use 'Always' to resolve the\nreference on every reconcile.",
-                      "enum": [
-                        "Always",
-                        "IfNotPresent"
-                      ],
-                      "type": "string"
-                    }
-                  },
-                  "type": "object",
-                  "additionalProperties": false
-                }
-              },
-              "required": [
-                "name"
-              ],
-              "type": "object",
-              "additionalProperties": false
-            },
-            "metadata": {
-              "description": "Metadata is the metadata for connection secret.",
-              "properties": {
-                "annotations": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "description": "Annotations are the annotations to be added to connection secret.\n- For Kubernetes secrets, this will be used as \"metadata.annotations\".\n- It is up to Secret Store implementation for others store types.",
-                  "type": "object"
-                },
-                "labels": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "description": "Labels are the labels/tags to be added to connection secret.\n- For Kubernetes secrets, this will be used as \"metadata.labels\".\n- It is up to Secret Store implementation for others store types.",
-                  "type": "object"
-                },
-                "type": {
-                  "description": "Type is the SecretType for the connection secret.\n- Only valid for Kubernetes Secret Stores.",
-                  "type": "string"
-                }
-              },
-              "type": "object",
-              "additionalProperties": false
-            },
-            "name": {
-              "description": "Name is the name of the connection secret.",
-              "type": "string"
-            }
-          },
-          "required": [
+            "kind",
             "name"
           ],
           "type": "object",
           "additionalProperties": false
         },
         "writeConnectionSecretToRef": {
-          "description": "WriteConnectionSecretToReference specifies the namespace and name of a\nSecret to which any connection details for this managed resource should\nbe written. Connection details frequently include the endpoint, username,\nand password required to connect to the managed resource.\nThis field is planned to be replaced in a future release in favor of\nPublishConnectionDetailsTo. Currently, both could be set independently\nand connection details would be published to both without affecting\neach other.",
+          "description": "WriteConnectionSecretToReference specifies the namespace and name of a\nSecret to which any connection details for this managed resource should\nbe written. Connection details frequently include the endpoint, username,\nand password required to connect to the managed resource.",
           "properties": {
             "name": {
               "description": "Name of the secret.",
               "type": "string"
-            },
-            "namespace": {
-              "description": "Namespace of the secret.",
-              "type": "string"
             }
           },
           "required": [
-            "name",
-            "namespace"
+            "name"
           ],
           "type": "object",
           "additionalProperties": false
@@ -1024,14 +1220,14 @@
         "atProvider": {
           "properties": {
             "accessConfig": {
-              "description": "Configuration block for the access config associated with your cluster, see Amazon EKS Access Entries.",
+              "description": "Configuration block for the access config associated with your cluster, see Amazon EKS Access Entries. Detailed below.",
               "properties": {
                 "authenticationMode": {
                   "description": "The authentication mode for the cluster. Valid values are CONFIG_MAP, API or API_AND_CONFIG_MAP",
                   "type": "string"
                 },
                 "bootstrapClusterCreatorAdminPermissions": {
-                  "description": "Whether or not to bootstrap the access config values to the cluster. Default is false.",
+                  "description": "Whether or not to bootstrap the access config values to the cluster. Default is true.",
                   "type": "boolean"
                 }
               },
@@ -1064,9 +1260,47 @@
               "description": "The ID of your local Amazon EKS cluster on the AWS Outpost. This attribute isn't available for an AWS EKS cluster on AWS cloud.",
               "type": "string"
             },
+            "computeConfig": {
+              "description": "Configuration block with compute configuration for EKS Auto Mode. Detailed below.",
+              "properties": {
+                "enabled": {
+                  "description": "Request to enable or disable the compute capability on your EKS Auto Mode cluster. If the compute capability is enabled, EKS Auto Mode will create and delete EC2 Managed Instances in your Amazon Web Services account.",
+                  "type": "boolean"
+                },
+                "nodePools": {
+                  "description": "Configuration for node pools that defines the compute resources for your EKS Auto Mode cluster. Valid options are general-purpose and system.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array",
+                  "x-kubernetes-list-type": "set"
+                },
+                "nodeRoleArn": {
+                  "description": "The ARN of the IAM Role EKS will assign to EC2 Managed Instances in your EKS Auto Mode cluster. This value cannot be changed after the compute capability of EKS Auto Mode is enabled..",
+                  "type": "string"
+                }
+              },
+              "type": "object",
+              "additionalProperties": false
+            },
+            "controlPlaneScalingConfig": {
+              "description": "Configuration block for the control plane scaling tier. See EKS Provisioned Control Plane for more information. Detailed below.",
+              "properties": {
+                "tier": {
+                  "description": "The control plane scaling tier. Valid values are standard, tier-xl, tier-2xl, or tier-4xl. Defaults to standard. For more information about each tier, see EKS Provisioned Control Plane.",
+                  "type": "string"
+                }
+              },
+              "type": "object",
+              "additionalProperties": false
+            },
             "createdAt": {
               "description": "Unix epoch timestamp in seconds for when the cluster was created.",
               "type": "string"
+            },
+            "deletionProtection": {
+              "description": "Whether to enable deletion protection for the cluster. When enabled, the cluster cannot be deleted unless deletion protection is first disabled. Default: false.",
+              "type": "boolean"
             },
             "enabledClusterLogTypes": {
               "description": "List of the desired control plane logging to enable. For more information, see Amazon EKS Control Plane Logging.",
@@ -1077,7 +1311,7 @@
               "x-kubernetes-list-type": "set"
             },
             "encryptionConfig": {
-              "description": "Configuration block with encryption configuration for the cluster. Only available on Kubernetes 1.13 and above clusters created after March 6, 2020. Detailed below.",
+              "description": "Configuration block with encryption configuration for the cluster. Detailed below.",
               "properties": {
                 "provider": {
                   "description": "Configuration block with provider for encryption. Detailed below.",
@@ -1105,6 +1339,10 @@
             "endpoint": {
               "description": "Endpoint for your Kubernetes API server.",
               "type": "string"
+            },
+            "forceUpdateVersion": {
+              "description": "Force version update by overriding upgrade-blocking readiness checks when updating a cluster.",
+              "type": "boolean"
             },
             "id": {
               "description": "Name of the cluster.",
@@ -1137,6 +1375,17 @@
             "kubernetesNetworkConfig": {
               "description": "Configuration block with kubernetes network configuration for the cluster. Detailed below.",
               "properties": {
+                "elasticLoadBalancing": {
+                  "description": "Configuration block with elastic load balancing configuration for the cluster. Detailed below.",
+                  "properties": {
+                    "enabled": {
+                      "description": "Whether zonal shift is enabled for the cluster.",
+                      "type": "boolean"
+                    }
+                  },
+                  "type": "object",
+                  "additionalProperties": false
+                },
                 "ipFamily": {
                   "description": "The IP family used to assign Kubernetes pod and service addresses. Valid values are ipv4 (default) and ipv6. You can only specify an IP family when you create a cluster, changing this value will force a new cluster to be created.",
                   "type": "string"
@@ -1146,7 +1395,7 @@
                   "type": "string"
                 },
                 "serviceIpv6Cidr": {
-                  "description": "The CIDR block that Kubernetes pod and service IP addresses are assigned from if you specified ipv6 for ipFamily when you created the cluster. Kubernetes assigns service addresses from the unique local address range (fc00::/7) because you can't specify a custom IPv6 CIDR block when you create the cluster.",
+                  "description": "(Computed) The CIDR block that Kubernetes pod and service IP addresses are assigned from if you specify ipv6 for ip_family when you create the cluster. Kubernetes assigns service addresses from the unique local address range (fc00::/7) because you can't specify a custom IPv6 CIDR block when you create the cluster.",
                   "type": "string"
                 }
               },
@@ -1187,6 +1436,47 @@
               "description": "Platform version for the cluster.",
               "type": "string"
             },
+            "region": {
+              "description": "Region where this resource will be managed. Defaults to the Region set in the provider configuration.\nRegion is the region you'd like your resource to be created in.",
+              "type": "string"
+            },
+            "remoteNetworkConfig": {
+              "description": "Configuration block with remote network configuration for EKS Hybrid Nodes. Detailed below.",
+              "properties": {
+                "remoteNodeNetworks": {
+                  "description": "Configuration block with remote node network configuration for EKS Hybrid Nodes. Detailed below.",
+                  "properties": {
+                    "cidrs": {
+                      "description": "List of network CIDRs that can contain hybrid nodes.",
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array",
+                      "x-kubernetes-list-type": "set"
+                    }
+                  },
+                  "type": "object",
+                  "additionalProperties": false
+                },
+                "remotePodNetworks": {
+                  "description": "Configuration block with remote pod network configuration for EKS Hybrid Nodes. Detailed below.",
+                  "properties": {
+                    "cidrs": {
+                      "description": "List of network CIDRs that can contain pods that run Kubernetes webhooks on hybrid nodes.",
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array",
+                      "x-kubernetes-list-type": "set"
+                    }
+                  },
+                  "type": "object",
+                  "additionalProperties": false
+                }
+              },
+              "type": "object",
+              "additionalProperties": false
+            },
             "roleArn": {
               "description": "ARN of the IAM role that provides permissions for the Kubernetes control plane to make calls to AWS API operations on your behalf. Ensure the resource configuration includes explicit dependencies on the IAM Role permissions by adding depends_on if using the aws_iam_role_policy resource or aws_iam_role_policy_attachment resource, otherwise EKS cannot delete EKS managed EC2 infrastructure such as Security Groups on EKS Cluster deletion.",
               "type": "string"
@@ -1194,6 +1484,24 @@
             "status": {
               "description": "Status of the EKS cluster. One of CREATING, ACTIVE, DELETING, FAILED.",
               "type": "string"
+            },
+            "storageConfig": {
+              "description": "Configuration block with storage configuration for EKS Auto Mode. Detailed below.",
+              "properties": {
+                "blockStorage": {
+                  "description": "Configuration block with block storage configuration for the cluster. Detailed below.",
+                  "properties": {
+                    "enabled": {
+                      "description": "Indicates if the block storage capability is enabled on your EKS Auto Mode cluster. If the block storage capability is enabled, EKS Auto Mode will create and delete block storage volumes in your Amazon Web Services account.",
+                      "type": "boolean"
+                    }
+                  },
+                  "type": "object",
+                  "additionalProperties": false
+                }
+              },
+              "type": "object",
+              "additionalProperties": false
             },
             "tags": {
               "additionalProperties": {
@@ -1211,15 +1519,26 @@
               "type": "object",
               "x-kubernetes-map-type": "granular"
             },
+            "upgradePolicy": {
+              "description": "Configuration block for the support policy to use for the cluster.  See upgrade_policy for details.",
+              "properties": {
+                "supportType": {
+                  "description": "Support type to use for the cluster. If the cluster is set to EXTENDED, it will enter extended support at the end of standard support. If the cluster is set to STANDARD, it will be automatically upgraded at the end of standard support. Valid values are EXTENDED, STANDARD",
+                  "type": "string"
+                }
+              },
+              "type": "object",
+              "additionalProperties": false
+            },
             "version": {
-              "description": "\u2013  Desired Kubernetes master version. If you do not specify a value, the latest available version at resource creation is used and no upgrades will occur except those automatically triggered by EKS. The value must be configured and increased to upgrade the version when desired. Downgrades are not supported by EKS.",
+              "description": "Desired Kubernetes master version. If you do not specify a value, the latest available version at resource creation is used and no upgrades will occur except those automatically triggered by EKS. The value must be configured and increased to upgrade the version when desired. Downgrades are not supported by EKS.",
               "type": "string"
             },
             "vpcConfig": {
               "description": "Configuration block for the VPC associated with your cluster. Amazon EKS VPC resources have specific requirements to work properly with Kubernetes. For more information, see Cluster VPC Considerations and Cluster Security Group Considerations in the Amazon EKS User Guide. Detailed below. Also contains attributes detailed in the Attributes section.",
               "properties": {
                 "clusterSecurityGroupId": {
-                  "description": "Cluster security group that was created by Amazon EKS for the cluster. Managed node groups use this security group for control-plane-to-data-plane communication.",
+                  "description": "(Computed) Cluster security group that is created by Amazon EKS for the cluster. Managed node groups use this security group for control-plane-to-data-plane communication.",
                   "type": "string"
                 },
                 "endpointPrivateAccess": {
@@ -1239,7 +1558,7 @@
                   "x-kubernetes-list-type": "set"
                 },
                 "securityGroupIds": {
-                  "description": "account elastic network interfaces that Amazon EKS creates to use to allow communication between your worker nodes and the Kubernetes control plane.",
+                  "description": "List of security group IDs for the cross-account elastic network interfaces that Amazon EKS creates to use to allow communication between your worker nodes and the Kubernetes control plane.",
                   "items": {
                     "type": "string"
                   },
@@ -1247,7 +1566,7 @@
                   "x-kubernetes-list-type": "set"
                 },
                 "subnetIds": {
-                  "description": "account elastic network interfaces in these subnets to allow communication between your worker nodes and the Kubernetes control plane.",
+                  "description": "List of subnet IDs. Must be in at least two different availability zones. Amazon EKS creates cross-account elastic network interfaces in these subnets to allow communication between your worker nodes and the Kubernetes control plane.",
                   "items": {
                     "type": "string"
                   },
@@ -1255,8 +1574,19 @@
                   "x-kubernetes-list-type": "set"
                 },
                 "vpcId": {
-                  "description": "ID of the VPC associated with your cluster.",
+                  "description": "(Computed) ID of the VPC associated with your cluster.",
                   "type": "string"
+                }
+              },
+              "type": "object",
+              "additionalProperties": false
+            },
+            "zonalShiftConfig": {
+              "description": "Configuration block with zonal shift configuration for the cluster. Detailed below.",
+              "properties": {
+                "enabled": {
+                  "description": "Whether zonal shift is enabled for the cluster.",
+                  "type": "boolean"
                 }
               },
               "type": "object",

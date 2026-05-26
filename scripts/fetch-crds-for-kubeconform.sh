@@ -122,23 +122,32 @@ else
 fi
 
 # --- 2. published CRD bootstrap (always run; safe to overlay live mode) ----
+#
+# Crossplane v2 migration (SEG-4): the AWS provider CRDs are pinned to
+# provider-upjet-aws v2.5.0 and use the new namespaced `.aws.m.upbound.io`
+# group. The legacy cluster-scoped `.aws.upbound.io_*.yaml` URLs are
+# DELIBERATELY OMITTED — v2.5.0 ships both groups for back-compat but
+# the repo has hard-cutover to namespaced v2 MRs. Re-adding legacy URLs
+# would produce a dual-schema store.
 CRD_URLS=(
   "https://raw.githubusercontent.com/crossplane/crossplane/v2.3.0/cluster/crds/apiextensions.crossplane.io_compositions.yaml"
   "https://raw.githubusercontent.com/crossplane/crossplane/v2.3.0/cluster/crds/apiextensions.crossplane.io_compositeresourcedefinitions.yaml"
   "https://raw.githubusercontent.com/external-secrets/external-secrets/v0.10.4/deploy/crds/bundle.yaml"
   "https://raw.githubusercontent.com/argoproj/argo-cd/v2.13.1/manifests/crds/application-crd.yaml"
   "https://raw.githubusercontent.com/argoproj/argo-cd/v2.13.1/manifests/crds/appproject-crd.yaml"
-  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v1.12.0/package/crds/secretsmanager.aws.upbound.io_secrets.yaml"
-  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v1.12.0/package/crds/ec2.aws.upbound.io_vpcs.yaml"
-  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v1.12.0/package/crds/ec2.aws.upbound.io_subnets.yaml"
-  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v1.12.0/package/crds/eks.aws.upbound.io_clusters.yaml"
-  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v1.12.0/package/crds/eks.aws.upbound.io_nodegroups.yaml"
-  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v1.12.0/package/crds/iam.aws.upbound.io_roles.yaml"
-  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v1.12.0/package/crds/iam.aws.upbound.io_rolepolicyattachments.yaml"
+  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/secretsmanager.aws.m.upbound.io_secrets.yaml"
+  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/ec2.aws.m.upbound.io_vpcs.yaml"
+  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/ec2.aws.m.upbound.io_subnets.yaml"
+  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/ec2.aws.m.upbound.io_internetgateways.yaml"
+  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/ec2.aws.m.upbound.io_routes.yaml"
+  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/eks.aws.m.upbound.io_clusters.yaml"
+  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/eks.aws.m.upbound.io_nodegroups.yaml"
+  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/iam.aws.m.upbound.io_roles.yaml"
+  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/iam.aws.m.upbound.io_rolepolicyattachments.yaml"
 )
 
 KYVERNO_BUNDLE_URL="https://github.com/kyverno/kyverno/raw/v1.13.0/config/install-latest-testing.yaml"
-FUNCTION_PT_URL="https://raw.githubusercontent.com/crossplane-contrib/function-patch-and-transform/v0.8.2/package/input/pt.fn.crossplane.io_resources.yaml"
+FUNCTION_PT_URL="https://raw.githubusercontent.com/crossplane-contrib/function-patch-and-transform/v0.10.6/package/input/pt.fn.crossplane.io_resources.yaml"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -207,17 +216,20 @@ for xrd_path in sorted(pathlib.Path("crossplane/xrds").glob("*.yaml")):
         spec = doc["spec"]
         group = spec["group"]
         x_kind = spec["names"]["kind"]
-        claim_kind = (spec.get("claimNames") or {}).get("kind") or None
+        # Crossplane v2 XRDs (apiextensions.crossplane.io/v2) have no
+        # claimNames — the XR is itself the user-facing object. Older
+        # v1 XRDs carried both an XR kind and a claim kind; emitting
+        # only x_kind is correct for v2 and merely loses an alias for
+        # v1 (legacy v1 XRDs will be gone after SEG-1 wave 2).
         for ver in spec["versions"]:
             schema = ver.get("schema", {}).get("openAPIV3Schema")
             if not schema:
                 continue
-            for k in (x_kind, claim_kind):
-                if not k:
-                    continue
-                dest = write_schema(store, group, k, ver["name"], schema)
-                print(f"  wrote {dest}")
-                count += 1
+            if not x_kind:
+                continue
+            dest = write_schema(store, group, x_kind, ver["name"], schema)
+            print(f"  wrote {dest}")
+            count += 1
 print(f"  ({count} schemas from repo XRDs)")
 PY
 
