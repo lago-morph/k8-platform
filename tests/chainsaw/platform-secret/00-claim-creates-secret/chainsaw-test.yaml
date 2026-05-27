@@ -67,7 +67,8 @@ spec:
       try:
         - script:
             content: |
-              set -euo pipefail
+              set -eu
+              # chainsaw runs scripts under /bin/sh; pipefail is bash-only.
               # The Composition derives the ASM name from XR UID.
               # In Crossplane v2 the XR is namespaced and its name
               # equals the user-created resource name (no separate
