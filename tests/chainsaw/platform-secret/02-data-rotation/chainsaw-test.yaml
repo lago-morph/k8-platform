@@ -40,8 +40,14 @@ spec:
                 name: scenario02
                 namespace: default
               status:
+                # v2 XRs have 3 conditions: Synced, Ready, Responsive
+                # (chainsaw matches arrays element-wise at same index).
                 conditions:
+                  - type: Synced
+                    status: "True"
                   - type: Ready
+                    status: "True"
+                  - type: Responsive
                     status: "True"
 
     - name: write initial value into ASM out-of-band

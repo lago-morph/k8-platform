@@ -38,10 +38,15 @@ spec:
                 name: scenario00
                 namespace: default
               status:
+                # v2 XRs have 3 conditions: Synced, Ready, Responsive
+                # (chainsaw matches arrays element-wise at same index, so
+                # listing all 3 in the order Crossplane outputs them).
                 conditions:
                   - type: Synced
                     status: "True"
                   - type: Ready
+                    status: "True"
+                  - type: Responsive
                     status: "True"
 
     - name: assert ExternalSecret materialized in claim namespace
