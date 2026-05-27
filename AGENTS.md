@@ -474,6 +474,60 @@ after dispatching) — not a flaky test.
 yet have a verifier; phase apply-and-verify is invoked too rarely to
 need one.)
 
+### 6.8 Live-admission verification for v2 Crossplane CRD changes
+
+**Dispatch live chainsaw before relying on kubeconform alone for v2
+Crossplane manifest changes.** For any PR that migrates Crossplane
+manifests across a major API-version boundary (e.g. v1 → v2 group
+rename, XRD `apiextensions/v1` → `/v2`, Composition rewrites with new
+`providerConfigRef` shapes), dispatch `chainsaw.yml` against the branch
+SHA and confirm at least the `xrd-establishes` scenario passes BEFORE
+merging.
+
+**Why kubeconform isn't sufficient here.** The static kubeconform JSON
+schema is generated from the CRD's `openAPIV3Schema`. The live
+admission webhook has additional handler logic that can reject fields
+the schema accepts. The 2026-05-26 v1 → v2 migration discovered this
+the hard way: `compositeresourcedefinition_v2.json` accepts
+`connectionSecretKeys` on a v2 XRD (the field still exists in the v2
+CRD for back-compat), but the v2 admission webhook rejects it at apply
+time:
+
+```
+CompositeResourceDefinition.apiextensions.crossplane.io
+"xplatformclusters.platform.k8-platform.io" is invalid: spec:
+Invalid value: "object": XR connection secrets aren't supported in
+apiextensions.crossplane.io/v2
+```
+
+That gap cost a hotfix PR plus two chainsaw iterations after Wave 2
+merged. See `docs/decisions/0001-kubeconform-not-sole-gate-for-v2-crd-changes.md`
+for the full ADR.
+
+**Operating contract** (specializes §6.7):
+
+1. After kubeconform CI is green, dispatch `chainsaw.yml` against
+   `BRANCH` with `commit_sha=$(git rev-parse HEAD)`. Use
+   `scenario_filter=""` for full set, or at minimum a filter that
+   includes `xrd-establishes`.
+2. On failure: fetch the chainsaw stdout via `ext-github`
+   `op_c08d23e5bd6966cb` per §10 of `ai/testing-guidelines.md` BEFORE
+   forming hypotheses. Common v2 admission-rejection shapes:
+   `is invalid: spec: Invalid value: …`, `--for=condition=Offered`
+   timeouts (v2 has no claim CRD, so the Offered condition never
+   appears), `no matches for kind <V1Kind>` (v1 claim kind in a v2
+   cluster).
+3. On success: paste the chainsaw run URL into the PR description
+   under "§6.7 chainsaw contract".
+4. Only then consider the PR ready to merge.
+
+**Schema-pass IS still the necessary first gate** — kubeconform catches
+field-structure changes that the schema correctly reflects (the same
+2026-05-26 migration caught `vpcConfig[0]` → `vpcConfig` and
+`scalingConfig[0]` → `scalingConfig` via kubeconform locally). This
+rule supplements kubeconform with a live-admission gate for the
+specific class of failures the schema can't express.
+
 ---
 
 ## 7. Testing loops — companion skills
@@ -538,6 +592,50 @@ Crossplane version in one call (SPEC-S4).
 When picking up a session, the first concrete commands are:
 1. `scripts/whereami.sh` — one call for account, region, EKS, zone, kubectl ctx, ArgoCD URL, Crossplane version.
 2. Treat the handoff doc's account-level statements (phase 0+1 "applied" vs "needs apply") as the session-author's belief, not ground truth — verify with the live API.
+
+### 8.2 Re-check environmental preconditions when CI surfaces infra-level errors
+
+**Re-check environmental preconditions on each rotated account before
+diagnosing code failures.** At session start (always, per §8.1
+`scripts/whereami.sh`) AND when any CI failure shows infrastructure-
+level errors, verify:
+
+1. `aws sts get-caller-identity` succeeds with the expected account.
+2. The state bucket for phase 0 exists for the current account:
+   `aws s3 ls "s3://k8-platform-tfstate-$(aws sts get-caller-identity --query Account --output text)/"`.
+3. The GitHub Actions repo secrets (`AWS_ACCESS_KEY_ID`,
+   `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`) match the current account.
+   This cannot be verified from the sandbox; if any other precondition
+   above fails, secrets are almost certainly stale too — surface to the
+   user.
+
+If any precondition fails, the in-repo handoff doc is stale per §8.1
+— **DO NOT continue with code-hypothesis debugging.** Stop, document
+the rotation, and either rotate the credentials (operator action) or
+re-bootstrap from phase 0.
+
+**Failure shapes that trigger this rule** (specialization of
+`ai/testing-guidelines.md` §10.1):
+
+- `Error: Unable to find remote state` from terraform (phase 0 state
+  doesn't exist on the rotated account).
+- `InvalidClientTokenId` / `The security token included in the
+  request is invalid` / `403 Forbidden` from STS or any AWS API.
+- `connection refused` / `dial tcp: lookup …: no such host` from
+  kubectl (cluster torn down or kubeconfig stale).
+- Real-AWS chainsaw scenarios timing out at 245s with
+  `Ready=False, message: "Unready resources: …"` — same shape as the
+  original `00-situation.md` §1 symptom but now on v2.5.0, where that
+  bug is fixed. Most likely cause: chainsaw provider can't
+  authenticate to AWS because the runner's secrets are stale.
+
+**Why this rule exists separately from §8.1.** §8.1 says "verify with
+the live API" at session start. §8.2 says "verify ALSO when these
+specific CI symptoms surface mid-session", because rotation can be
+discovered partway through a run and the surrounding code-hypothesis
+debugging will go nowhere until the precondition is fixed. See
+`retrospective/2026-05-26-106.md` for the 2026-05-26 v1→v2 migration
+that surfaced this pattern.
 
 ---
 
