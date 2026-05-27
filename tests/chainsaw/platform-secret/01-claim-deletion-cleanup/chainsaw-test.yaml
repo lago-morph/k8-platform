@@ -27,7 +27,7 @@ spec:
               spec:
                 refreshInterval: 30s
                 region: us-east-1
-                description: "chainsaw scenario 01 — deletion cleanup"
+                description: "chainsaw scenario 01 - deletion cleanup"
 
     - name: wait for claim Ready (otherwise deletion races provisioning)
       try:

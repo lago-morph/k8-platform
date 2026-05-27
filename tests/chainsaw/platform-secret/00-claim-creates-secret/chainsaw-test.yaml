@@ -26,7 +26,7 @@ spec:
               spec:
                 refreshInterval: 30s
                 region: us-east-1
-                description: "chainsaw scenario 00 — happy path"
+                description: "chainsaw scenario 00 - happy path"
 
     - name: assert claim becomes Ready
       try:

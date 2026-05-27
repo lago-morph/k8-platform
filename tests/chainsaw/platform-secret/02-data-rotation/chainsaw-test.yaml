@@ -28,7 +28,7 @@ spec:
               spec:
                 refreshInterval: 10s
                 region: us-east-1
-                description: "chainsaw scenario 02 — rotation"
+                description: "chainsaw scenario 02 - rotation"
 
     - name: wait for claim Ready
       try:
