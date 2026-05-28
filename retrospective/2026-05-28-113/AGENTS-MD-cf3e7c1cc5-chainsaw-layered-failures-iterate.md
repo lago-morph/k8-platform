@@ -1,0 +1,9 @@
+# agent instruction
+
+**Chainsaw failures often hide layered bugs. A green strike-N+1 is the minimum bar, not the maximum — assume more bugs are latent until proven otherwise.** "When chainsaw fails, an early-bound failure mode (assert-shape mismatch, AWS API rejection, k8s admission rejection) can be masking later-bound failure modes (shell-portability, condition shape, MR readiness, etc.) that never get exercised because chainsaw doesn't reach them. After fixing the first failure mode, EXPECT to find another. Plan for 2-3 chainsaw iterations per v2-migration-class PR, NOT one. The 3-strike cap in `terraform-ci-watch` is PER FAILURE MODE; each new mode resets the counter. Do NOT declare a PR ready-to-merge after one chainsaw red→green cycle if the PR touches >1 chainsaw scenario; dispatch one more confirmation run with `scenario_filter=\"\"` to verify."
+
+*Grounded in: auto-003 chainsaw iterations 26544123347 → 26544796570 → 26545542710 → 26545816270, where each strike's fix exposed the next latent bug.*
+
+# justification
+
+The 2026-05-26 retrospective (`retrospective/2026-05-26-106.md` §"Phase 6 — IRSA probe gate, full chainsaw, hotfix iteration") documented "STOPPED debugging code per §10.1" — they correctly suspected creds-rotation but never verified by iterating after the assumed environmental fix. The em-dash bug was THERE the whole time but invisible because the 245s timeout symptom matched both the environmental and the code-layered failure modes. Auto-003 had to iterate 3 more times to surface the layered bugs. If the rule "iterate before declaring done" had been in place, the 2026-05-26 session would have caught at least one of the three (likely all three) and the auto-003 run wouldn't have needed to. Cost of adopting: 1-2 extra chainsaw dispatches (~20 min) per v2-migration PR. Cost of NOT adopting: a hotfix PR per latent bug, each requiring a fresh diagnostic loop after the user discovers the regression in a later run.
