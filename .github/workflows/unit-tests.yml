@@ -13,6 +13,13 @@
 # diagnosable from the GitHub Actions UI without scrolling through
 # the full run, and so known-broken tests can be tolerated explicitly
 # until they're fixed.
+#
+# A final `run.sh catch-all` step backstops the per-step list so any
+# test added to `tests/unit/run.sh` is automatically gated on push,
+# even if the contributor forgot to add a matching per-step entry
+# here. The catch-all is the source of truth for completeness; the
+# per-step list above is for Actions-UI diagnostic clarity on the
+# tests that have been wired individually.
 name: Unit tests
 
 on:
@@ -117,16 +124,8 @@ jobs:
       - name: test_eks_module_defaults
         run: bash tests/unit/test_eks_module_defaults.sh
 
-      # KNOWN-BROKEN on main: 4 argocd Ingress assertions fail because
-      # the yq selectors don't match the rendered chart shape. Tolerated
-      # here so the workflow surfaces real regressions in the rest of
-      # the suite; remove `continue-on-error` once the assertions are
-      # fixed (likely needs to switch from name-based to label-based
-      # selectors). Tracked alongside the rest of the phase-1 polish
-      # work.
-      - name: test_helm_render (continue-on-error — pre-existing argocd assertions broken)
+      - name: test_helm_render
         run: bash tests/unit/test_helm_render.sh
-        continue-on-error: true
 
       - name: test_post_comment
         run: bash tests/unit/test_post_comment.sh
@@ -251,3 +250,15 @@ jobs:
           else
             echo "(test_composition_render_version_pin.sh not on this branch — skipped)"
           fi
+
+      # run.sh catch-all — executes every test wired into
+      # tests/unit/run.sh, including the ones not (yet) given a per-step
+      # entry above. This is the gate that prevents drift: any new test
+      # appended to run.sh is automatically required-to-pass on push,
+      # even if no matching step was added here. Re-runs the per-step
+      # tests above (~30s of overlap on a clean checkout) in exchange
+      # for never silently dropping a test from CI. Per AGENTS.md §6.13
+      # the per-step list above remains useful for Actions-UI clarity on
+      # the tests that are wired individually.
+      - name: run.sh catch-all (gates every test in tests/unit/run.sh)
+        run: bash tests/unit/run.sh
