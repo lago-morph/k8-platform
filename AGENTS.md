@@ -591,6 +591,83 @@ background poll AND then proceeded to foreground-poll the same run
 ~90 times during the wait, re-uploading the full ~100K-token context
 on each call. The user called this out twice in one session.*
 
+### 6.11 `[Request interrupted by user]` is a hard stop
+
+**When the harness delivers a `[Request interrupted by user]` system
+message, do NOT pivot into an adjacent task** ("let me do this small
+thing instead", "while I have you"). Stop the current activity, do not
+start a new one, and wait for the user's next explicit direction.
+Background processes the agent had started prior to the interrupt
+should be killed if they continue to consume model context or
+registry/API quota. Treat the interrupt the same way a SIGINT from a
+terminal would be treated by an interactive program: full halt.
+
+*Grounded in: auto-003 post-retro phase, where `[Request interrupted
+by user]` fired twice and the agent both times continued with a small
+adjacent task; the user replied "you keep doing things even when I
+push stop."*
+
+### 6.12 Don't claim a tool is "unavailable" until you've tried to install or start it
+
+**Before reporting "X is not available in this sandbox" or deferring
+work on that basis, attempt the obvious installation or activation
+paths:**
+
+1. **Already installed but not at PATH?** `which X`, `ls /usr/bin/X
+   /usr/local/bin/X /root/.local/bin/X`.
+2. **Daemon installed but stopped?** `systemctl status X`, `service X
+   status`, `pgrep X`, `sudo Xd &`.
+3. **One-line install available?** `curl -fL <release-url> -o /tmp/X
+   && chmod +x /tmp/X`.
+
+Report "unavailable" only after at least one of those attempts has
+failed with a concrete error. The wrong shape of "unavailable" claim
+is `which X` returning nothing — that's an unanswered question, not
+an answer.
+
+*Grounded in: auto-003 post-retro phase, where the agent twice
+deferred substantial work ("docker not in sandbox", "kubectl not in
+sandbox") that turned out to be wrong on both counts — docker daemon
+needed `sudo dockerd &`, kubectl was a one-line curl install. The
+user pointed both out.*
+
+### 6.13 Run a pre-dispatch static audit before any long CI dispatch
+
+**Before dispatching a long-running CI workflow** (chainsaw,
+terraform-test, integration suite), run a one-pass static audit for
+every known bug class the changed files could exhibit. Long CI
+iterations cost minutes per round and tend to surface bugs in layers —
+one fix unmasks the next. A pre-dispatch audit catches multiple bug
+classes in one pass, in seconds.
+
+The canonical audit lives at `scripts/pre-chainsaw-audit.sh` and is
+the implementation of the `pre-dispatch-static-audit` skill
+(`SKILL-SPEC-3a7d2e9f1c`). Invoke it before every `chainsaw.yml`
+dispatch. The audit MUST cover at minimum:
+
+- (a) non-ASCII characters in tag-bound `description:` / `Description:`
+  fields (the AWS Resource Groups Tagging service rejects them — see
+  §6.8 ADR-0001).
+- (b) `set -o pipefail` / `[[ ]]` / other bash-isms in chainsaw
+  `script.content:` blocks (chainsaw runs scripts under `/bin/sh`).
+- (c) `status.conditions:` array length not equal to 3 on v2 XR
+  asserts (v2 carries Synced + Ready + Responsive).
+- (d) `($namespace)` literals in `apply.resource.metadata.namespace`
+  (chainsaw's pre-substitution validation rejects these as invalid
+  RFC 1123 labels).
+- (e) golden YAMLs missing `metadata.namespace: default` (chainsaw
+  `assert: file:` searches the per-test namespace by default).
+- (f) golden-vs-scenario data-value drift on fields the Composition
+  propagates (notably `tags.Description`).
+
+Each check is a one-line grep; the full audit runs in seconds.
+Skipping it costs ~5-15 minutes per chainsaw iteration per missed bug
+class. Fix every FAIL before dispatching; re-run the audit until clean.
+
+*Grounded in: auto-003 PR #111 chainsaw iterations 1-5, each
+surfacing a different bug class that a single pre-dispatch audit
+would have caught.*
+
 ---
 
 ## 7. Testing loops — companion skills
