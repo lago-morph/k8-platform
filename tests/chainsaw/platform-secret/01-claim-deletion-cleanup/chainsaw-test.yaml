@@ -123,22 +123,29 @@ spec:
     - script:
         content: |
           set +e
-          # Enumerate v2 XR kinds explicitly. When a new XRD is added,
-          # append its XR kind here (e.g. xplatformbucket). v2 namespaced
-          # XRs do NOT reliably register under `kubectl get composite`.
+          # Enumerate v2 XR kinds across ALL namespaces. The scenarios in
+          # this repo apply XRs to `namespace: default` (per commit 8526f46
+          # "use literal 'default' namespace in composition-drift apply"),
+          # NOT to chainsaw's per-test scratch namespace. A $NAMESPACE-bound
+          # lookup would return nothing and the catch block would be
+          # diagnostically empty — exactly what the 2026-05-28 PR #125
+          # composition-drift timeout exposed (issue OI-2026-05-28-1).
+          # `-A` surfaces the XR regardless of where the scenario put it.
           for xr_kind in xplatformsecret xplatformcluster; do
-            for xr in $(kubectl get "$xr_kind" -n "$NAMESPACE" -o name 2>/dev/null); do
-              kubectl describe "$xr" -n "$NAMESPACE" 2>&1 | head -c 1500
-              # Describe every MR referenced by this XR.
-              kubectl get "$xr" -n "$NAMESPACE" -o jsonpath='{range .spec.resourceRefs[*]}{.apiVersion}{" "}{.kind}{" "}{.name}{"\n"}{end}' \
-                | while read -r api kind name; do
-                    [ -z "$kind" ] && continue
-                    kubectl describe "$kind.$api" "$name" 2>&1 | head -c 1000
-                  done
-            done
+            kubectl get "$xr_kind" -A \
+              -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' \
+              | while read -r ns name; do
+                  [ -z "$name" ] && continue
+                  kubectl describe "$xr_kind" -n "$ns" "$name" 2>&1 | head -c 1500
+                  # Describe every MR referenced by this XR. MRs are
+                  # cluster-scoped on the upbound providers, so no -n flag.
+                  kubectl get "$xr_kind" -n "$ns" "$name" \
+                    -o jsonpath='{range .spec.resourceRefs[*]}{.apiVersion}{" "}{.kind}{" "}{.name}{"\n"}{end}' \
+                    | while read -r api kind mrname; do
+                        [ -z "$kind" ] && continue
+                        kubectl describe "$kind.$api" "$mrname" 2>&1 | head -c 1000
+                      done
+                done
           done
-        env:
-          - name: NAMESPACE
-            value: ($namespace)
     - events:
         namespace: ($namespace)
