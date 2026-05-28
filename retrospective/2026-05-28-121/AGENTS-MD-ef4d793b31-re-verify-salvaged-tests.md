@@ -1,0 +1,9 @@
+# agent instruction
+
+**Tests salvaged from a closed or abandoned PR MUST be re-verified against the current shape of every artifact they assert about, before their pass/fail signal is trusted.** Compositions, CRDs, XRDs, and schemas evolve; a test that was correct against the salvage-source's artifacts may be silently wrong (no-op assertion, misdirected mutation, dead binding) against current `main`. Re-verification is at minimum: (a) does each `kubectl get` / `kubectl apply` target a current resource? (b) does each mutation propagate to a field the assertion actually reads? (c) does each assertion match the current rendered output, not the salvage-era one?
+
+*Grounded in: PR #111's salvaged `_meta/composition-drift` scenario from closed PR #94 — its yq mutation targeted `forProvider.region`, which the current composition's `FromCompositeFieldPath` patch overrides, so the mutation never propagated; failed silently as "meta-test broken" on chainsaw round 4 (2026-05-28).*
+
+# justification
+
+The `_meta/composition-drift` chainsaw scenario was lifted from closed PR #94 as part of SEG-4 PR-T3. It carried four latent bugs against the current composition shape, peeled off across four chainsaw rounds: (1) v1-shape `[type: Ready]` assert against a v2 XR; (2) `set -o pipefail` under `/bin/sh`; (3) `kubectl -n $namespace` against an XR applied to `default`; (4) yq mutation of `forProvider.region` overridden by a `FromCompositeFieldPath` patch. Only the fourth was a salvage-era design that no enforcer can catch statically — but ALL four were silently inherited because nobody re-walked the scenario against current `main` artifacts at salvage time. The re-verification checklist is ~5 minutes of reading; the actual cost paid this session was ~25 minutes of cloud-CI iteration plus the user's attention to disambiguate the design flaw. As long as salvaging closed PRs remains a pattern (PR #94 → PR #111, PR #105 → multiple), the rule earns its place.

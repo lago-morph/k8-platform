@@ -1,0 +1,9 @@
+# agent instruction
+
+**Enforcers must scan every directory the bug class can appear in, not just the directory of the first instance.** When you author OR extend an enforcer (a `tests/unit/test_*.sh`, a kubeconform exclude list, a kyverno audit policy, a static-audit grep), the `find` / `grep` / glob scope MUST include every directory of the same artifact type — even directories that don't yet contain the bug class. New scenarios land in those directories and silently regress otherwise.
+
+*Grounded in: `test_chainsaw_xr_conditions_complete.sh` scanned `platform-secret/` + `platform-cluster/` but not `_meta/`; PR #111's first chainsaw round (2026-05-28) re-discovered the conditions-array bug in `_meta/composition-drift`.*
+
+# justification
+
+The original conditions enforcer was written against the bug class surfaced by chainsaw run `26544796570` (three `platform-secret/` scenarios timed out at 245s). Its `find` scope listed exactly the two directories where the bug had already appeared. When the SEG-4 PR-T3 work added `tests/chainsaw/_meta/composition-drift/chainsaw-test.yaml` carrying the same v1-shape `[type: Ready]` assert (salvaged from closed PR #94), the enforcer silently skipped it — the `find` glob didn't extend that far. Chainsaw round 1 of PR #111 re-discovered the bug at runtime. The fix on the enforcer was a one-line addition (`tests/chainsaw/_meta`) — a fraction of the cost of a 247-second cloud-CI failure. The pattern recurs across enforcer types: kubeconform exclude lists scoped to first-known-bad files, kyverno audit policies scoped to first-affected namespaces, grep patterns anchored to known-bad subtrees. The marginal cost of widening scope at author time is zero (the enforcer already runs `find`); the cost of narrow scope is a regression that lands in CI rather than at commit.
