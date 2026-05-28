@@ -100,12 +100,27 @@ spec:
               # a FromCompositeFieldPath patch that overwrites
               # forProvider.region from spec.region on every reconcile,
               # so a base mutation is a no-op.
+              #
+              # Snapshot the live (pristine) Composition BEFORE mutating
+              # so the cleanup step can restore it without depending on
+              # chainsaw's script CWD or a working-tree on-disk file.
+              # Strip read-only server fields (resourceVersion, uid,
+              # creationTimestamp, generation, managedFields, status,
+              # last-applied-configuration) so the snapshot is portable
+              # — without this, the restore step's `kubectl apply` hits
+              # the cluster's bumped resourceVersion (from this step's
+              # own mutated apply) and fails with the standard
+              # optimistic-locking error "the object has been modified;
+              # please apply your changes to the latest version and
+              # try again". Issue surfaced in run 26554454819.
               kubectl get composition platform-secret-aws -o yaml \
-                > /tmp/composition-original.yaml
+                | yq 'del(.metadata.resourceVersion, .metadata.uid, .metadata.creationTimestamp, .metadata.generation, .metadata.managedFields, .metadata.annotations["kubectl.kubernetes.io/last-applied-configuration"], .status)' \
+                > /tmp/composition-pristine.yaml
+              cp /tmp/composition-pristine.yaml /tmp/composition-mutated.yaml
               yq -i \
                 '.spec.pipeline[0].input.resources[0].base.spec.forProvider.recoveryWindowInDays = 7' \
-                /tmp/composition-original.yaml
-              kubectl apply -f /tmp/composition-original.yaml
+                /tmp/composition-mutated.yaml
+              kubectl apply -f /tmp/composition-mutated.yaml
               # Force a reconcile by annotating the XR. The XR was
               # applied at namespace: default (literal, matching the
               # apply: step) — NOT chainsaw's per-test scratch namespace
@@ -140,10 +155,26 @@ spec:
       try:
         - script:
             content: |
-              set -u
-              # Re-apply the on-disk Composition manifest so subsequent
-              # scenarios are not contaminated.
-              kubectl apply -f crossplane/compositions/platform-secret.yaml || true
+              set -eu
+              # Restore the pristine Composition snapshot saved by the
+              # mutate step above. Earlier this re-applied
+              # `crossplane/compositions/platform-secret.yaml` via a
+              # CWD-relative path with `|| true` — chainsaw scripts run
+              # from `tests/chainsaw/` (where tests/chainsaw/run.sh
+              # cd's), so the relative path did NOT resolve and the
+              # `|| true` masked the apply error. The Composition stayed
+              # mutated; subsequent scenarios reconciled against
+              # recoveryWindowInDays=7 and failed their goldens at the
+              # chainsaw assert timeout. See OI-2026-05-28-1 Issue B in
+              # docs/open-issues.md for the verbatim log evidence.
+              #
+              # The /tmp/ snapshot path doesn't depend on chainsaw's
+              # CWD, and dropping `|| true` means any future restore
+              # failure exits non-zero immediately rather than
+              # cascading into the next scenario.
+              if [ -f /tmp/composition-pristine.yaml ]; then
+                kubectl apply -f /tmp/composition-pristine.yaml
+              fi
               # XR lives in default (see mutate step above).
               kubectl delete xplatformsecret drift-probe -n default --ignore-not-found
   # SPEC-A4 canonical catch block — keep in sync with
