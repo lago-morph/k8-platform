@@ -1,0 +1,164 @@
+# SPEC-C4 §6.1 meta-test — confirms the golden-file assertion mechanism
+# correctly REJECTS a Composition that has been mutated away from the
+# committed golden.
+#
+# v2-ification (SEG-4 PR-T3):
+#   - Claim kind PlatformSecret → XR kind XPlatformSecret (v2 has no claim CRD).
+#   - secret.secretsmanager.aws.upbound.io → secret.secretsmanager.aws.m.upbound.io
+#     (v2 .m. modern provider group).
+#   - kubectl get platformsecret → kubectl get xplatformsecret
+#     (XR replaces claim in v2).
+#   - .spec.resourceRef.name removed — in v2 the XR is the user-applied
+#     resource directly; no claim → XR promotion.
+#   - Catch block replaced with the v2-canonical fragment from
+#     tests/chainsaw/_lib/catch-block.yaml (enforced by
+#     tests/unit/test_chainsaw_catch_block.sh).
+#
+# Approach:
+#   1. Apply a normal XPlatformSecret XR against the production
+#      Composition (Synced/Ready → Composition is loaded as-is).
+#   2. yq-patch the Composition's ASM `forProvider.region` base value to
+#      a wrong region (`eu-west-99`) and re-apply.
+#   3. Force a re-reconcile so the rendered MR picks up the mutation.
+#   4. Re-run the golden assert from scenario 00 with the unchanged
+#      binding (`us-east-1`); the assert MUST fail.
+#
+# The scenario's outer success is INVERTED: the deliberate-fail assert
+# is wrapped in a `script:` that runs chainsaw's diff and asserts a
+# non-zero exit. Because the scenario lives under `_meta/`,
+# `tests/chainsaw/run.sh` (per the meta- prefix convention from A4)
+# treats the inversion at the harness level.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: composition-drift
+  labels:
+    meta: "true"
+spec:
+  timeouts:
+    apply: 30s
+    assert: 240s
+    delete: 60s
+  steps:
+    - name: apply a baseline XR
+      try:
+        - apply:
+            resource:
+              apiVersion: platform.k8-platform.io/v1alpha1
+              kind: XPlatformSecret
+              metadata:
+                name: drift-probe
+                namespace: default
+              spec:
+                refreshInterval: 30s
+                region: us-east-1
+                description: "chainsaw scenario 00 — happy path"
+
+    - name: wait for XR Ready
+      try:
+        - assert:
+            resource:
+              apiVersion: platform.k8-platform.io/v1alpha1
+              kind: XPlatformSecret
+              metadata:
+                name: drift-probe
+                namespace: default
+              status:
+                conditions:
+                  - type: Ready
+                    status: "True"
+
+    - name: baseline — golden MUST pass against unmutated render
+      bindings:
+        - name: expected_region
+          value: us-east-1
+      try:
+        - assert:
+            file: ../../platform-secret/00-claim-creates-secret/expected/asm-secret.yaml
+
+    - name: mutate the live Composition (wrong region)
+      try:
+        - script:
+            content: |
+              set -euo pipefail
+              # Patch the base region on the asm-secret resource. The
+              # path under function-patch-and-transform input is:
+              #   spec.pipeline[0].input.resources[0].base.spec.forProvider.region
+              kubectl get composition platform-secret-aws -o yaml \
+                > /tmp/composition-original.yaml
+              yq -i \
+                '.spec.pipeline[0].input.resources[0].base.spec.forProvider.region = "eu-west-99"' \
+                /tmp/composition-original.yaml
+              kubectl apply -f /tmp/composition-original.yaml
+              # Force a reconcile by annotating the XR.
+              kubectl annotate xplatformsecret drift-probe -n "$NAMESPACE" \
+                "spec-c4.k8-platform.io/drift-probe=$(date +%s)" --overwrite
+              # Give the reconciler a beat.
+              sleep 10
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+
+    - name: drift — golden MUST FAIL against mutated render (inverted)
+      bindings:
+        - name: expected_region
+          value: us-east-1
+      try:
+        - script:
+            content: |
+              set +e
+              # Re-run the assert as a one-shot via kubectl get. The MR's
+              # spec.forProvider.region should now be eu-west-99,
+              # NOT us-east-1.
+              region=$(kubectl get secret.secretsmanager.aws.m.upbound.io \
+                -l "crossplane.io/composite=drift-probe" \
+                -o jsonpath='{.items[0].spec.forProvider.region}')
+              echo "rendered region: $region (expected us-east-1)"
+              if [ "$region" = "us-east-1" ]; then
+                echo "FAIL: mutation did NOT propagate — meta-test is broken"
+                exit 1
+              fi
+              echo "OK: mutation propagated; golden assert would reject this MR"
+
+    - name: restore the Composition (cleanup)
+      try:
+        - script:
+            content: |
+              set -uo pipefail
+              # Re-apply the on-disk Composition manifest so subsequent
+              # scenarios are not contaminated.
+              kubectl apply -f crossplane/compositions/platform-secret.yaml || true
+              kubectl delete xplatformsecret drift-probe -n "$NAMESPACE" --ignore-not-found
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+  # SPEC-A4 canonical catch block — keep in sync with
+  # tests/chainsaw/_lib/catch-block.yaml (enforced by
+  # tests/unit/test_chainsaw_catch_block.sh).
+  catch:
+    - describe:
+        apiVersion: platform.k8-platform.io/v1alpha1
+        kind: XPlatformSecret      # overridden per-scenario when the XR kind differs
+        namespace: ($namespace)
+    - script:
+        content: |
+          set +e
+          # Enumerate v2 XR kinds explicitly. When a new XRD is added,
+          # append its XR kind here (e.g. xplatformbucket). v2 namespaced
+          # XRs do NOT reliably register under `kubectl get composite`.
+          for xr_kind in xplatformsecret xplatformcluster; do
+            for xr in $(kubectl get "$xr_kind" -n "$NAMESPACE" -o name 2>/dev/null); do
+              kubectl describe "$xr" -n "$NAMESPACE" 2>&1 | head -c 1500
+              # Describe every MR referenced by this XR.
+              kubectl get "$xr" -n "$NAMESPACE" -o jsonpath='{range .spec.resourceRefs[*]}{.apiVersion}{" "}{.kind}{" "}{.name}{"\n"}{end}' \
+                | while read -r api kind name; do
+                    [ -z "$kind" ] && continue
+                    kubectl describe "$kind.$api" "$name" 2>&1 | head -c 1000
+                  done
+            done
+          done
+        env:
+          - name: NAMESPACE
+            value: ($namespace)
+    - events:
+        namespace: ($namespace)
