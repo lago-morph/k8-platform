@@ -34,6 +34,7 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source-path=SCRIPTDIR
 # shellcheck source=_lib/k8s-helpers.sh
 . "$SCRIPT_DIR/_lib/k8s-helpers.sh"
 
