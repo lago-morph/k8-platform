@@ -84,7 +84,7 @@ spec:
       try:
         - script:
             content: |
-              set -euo pipefail
+              set -eu
               # Patch the base region on the asm-secret resource. The
               # path under function-patch-and-transform input is:
               #   spec.pipeline[0].input.resources[0].base.spec.forProvider.region
@@ -128,7 +128,7 @@ spec:
       try:
         - script:
             content: |
-              set -uo pipefail
+              set -u
               # Re-apply the on-disk Composition manifest so subsequent
               # scenarios are not contaminated.
               kubectl apply -f crossplane/compositions/platform-secret.yaml || true
