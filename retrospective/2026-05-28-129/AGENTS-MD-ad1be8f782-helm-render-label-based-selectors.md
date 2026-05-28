@@ -1,0 +1,9 @@
+# agent instruction
+
+**Use label-based selectors in helm-render assertions.** When asserting on rendered helm-chart resources, select by `metadata.labels["app.kubernetes.io/name"]` (or the chart's equivalent stable label), not by `metadata.name`. Chart release-name prefixing varies across charts and across resource kinds within a chart, and a name-based selector that works for `ServiceAccount` can silently return empty for `Deployment` in the same chart.
+
+*Grounded in: 2026-05-28 PR #124 fix to `test_helm_render` argocd block — 4 assertions on `metadata.name=="argocd-server"` for `Deployment`/`Ingress` returned empty because the chart prefixes those names with `argo-cd-` (release name); `ServiceAccount` happened to NOT be prefixed, so the SA assertion passed.*
+
+# justification
+
+`test_helm_render.sh` had been marked `continue-on-error: true` in CI for weeks with the comment "4 argocd Ingress assertions fail because the yq selectors don't match the rendered chart shape." The note was correct in count but wrong in attribution — the assertions hadn't drifted; they had never matched. The `argo-cd` Helm chart inconsistently prefixes resource names with the release name: ServiceAccounts skip the prefix (so the SA-IRSA assertion passed), Deployments and Ingresses keep it (so the Deployment/Ingress assertions silently returned empty against `metadata.name=="argocd-server"`). The fix was switching to `metadata.labels["app.kubernetes.io/name"]=="argocd-server"`, a label every standard Kubernetes Helm chart carries identically across all resource kinds. The marginal cost of label-based selection is zero — the yq expression is the same length. The cost of NOT using it is what we paid: weeks of tolerated red, one rounded-down "4 assertions" workflow comment that misattributed the cause, and a session where the new catch-all CI gate forced the issue.

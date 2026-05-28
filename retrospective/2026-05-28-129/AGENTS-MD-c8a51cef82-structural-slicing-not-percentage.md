@@ -1,0 +1,9 @@
+# agent instruction
+
+**Prefer structural slicing over percentage heuristics in static audits.** When a static-audit check scopes its grep to a portion of a file (e.g., "everything before the catch block", "the apply section"), slice by a keyword anchor (`awk '/^[[:space:]]*catch:[[:space:]]*$/ { exit } { print }'`) rather than by file-size percentage. Percentage heuristics break when comments or new content push a legitimately-allowed line past the threshold, producing false positives that are silent until they fire.
+
+*Grounded in: 2026-05-28 PR #128 `pre-chainsaw-audit.sh` Check D — "first 60% of file" heuristic broke when the catch-block change added comments to `meta-catch-fires/chainsaw-test.yaml`, pushing the legitimate `describe.namespace: ($namespace)` line just inside the threshold and triggering a false-positive that blocked subsequent dispatches.*
+
+# justification
+
+Check D was written with the heuristic "apply steps are typically before catch, so flag any `namespace: ($namespace)` in the first 60% of the file". That worked on every existing scenario at authoring time. When PR #128's catch-block change added five comment lines to `meta-catch-fires/chainsaw-test.yaml` (growing it from 65 to 73 lines), the file's `describe.namespace: ($namespace)` at line 43 — legitimate, inside the catch block — moved from line 43-of-65 (66%, past threshold) to line 43-of-73 (59%, inside threshold). The audit went RED. The hook (running the audit) blocked an unrelated `list_workflow_runs` call on a follow-up PR review. Fix took two debug rounds to land. The marginal cost of slice-by-keyword is one `awk` invocation versus one `wc + arithmetic` pair — measurably the same. The cost of percentage heuristics is silent breakage on every future content addition that crosses the threshold. Check G in the same script already used slice-by-keyword and never had this problem; Check D was the outlier and it bit me.

@@ -1,0 +1,9 @@
+# agent instruction
+
+**After session resume from suspension, verify status of in-flight dispatches before continuing.** When the sandbox suspends mid-wait (typically while waiting for a long CI run), webhooks that arrive during suspension don't deliver as `<github-webhook-activity>` envelopes on resume. The first action after resume — before authoring new work, before answering a user question that depends on the run's outcome — is one direct-API query against any in-flight dispatch's run id. This complements §6.10 and §6.15: those rules cover the active-wait case; this one covers the resumed-after-suspension case.
+
+*Grounded in: 2026-05-28 PR #129 chainsaw run 26555037975 (success conclusion) — completion arrived during sandbox idle, no webhook envelope on resume; user `Check on run` was what prompted the direct query that surfaced the green status.*
+
+# justification
+
+Claude Code-on-the-web sandboxes suspend after inactivity (the user-visible "welp" / sandbox restart pattern). Webhooks queued for a suspended sandbox do not appear as `<github-webhook-activity>` envelopes when the sandbox resumes. In the PR #129 session, I dispatched chainsaw at 04:31Z, the sandbox went idle, and the run completed at 04:43Z. No envelope arrived on resume. When the user said "Check on run", one `list_workflow_runs` query surfaced the success status in a single tool call. Without that check, I would have stayed waiting indefinitely for an envelope that was never going to arrive. The marginal cost of one direct-API query at session resume is one tool call. The cost of skipping it is indefinite stranding plus the agent inventing reasons why the run "must still be in progress" (an §6.17 violation if dressed as conclusion). This rule is the resume-trigger complement to §6.15's ETA+50% trigger; both fire the same one-shot direct query, but their triggers are different and neither subsumes the other.
