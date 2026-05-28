@@ -80,18 +80,30 @@ spec:
         - assert:
             file: ../../platform-secret/00-claim-creates-secret/expected/asm-secret.yaml
 
-    - name: mutate the live Composition (wrong region)
+    - name: mutate the live Composition (wrong recoveryWindowInDays)
       try:
         - script:
             content: |
               set -eu
-              # Patch the base region on the asm-secret resource. The
-              # path under function-patch-and-transform input is:
-              #   spec.pipeline[0].input.resources[0].base.spec.forProvider.region
+              # Mutate an unpatched base field on the asm-secret resource.
+              # `recoveryWindowInDays` is set in the Composition's base
+              # (value: 0) and is NOT overridden by any patch — the XR's
+              # spec has no field that targets it. The golden file
+              # (platform-secret/00-claim-creates-secret/expected/asm-secret.yaml)
+              # asserts recoveryWindowInDays: 0, so mutating it to a
+              # non-zero value will both propagate to the rendered MR
+              # AND cause the golden assert to fail — which is exactly
+              # the meta-test's required outcome.
+              #
+              # Region (the original mutation target, salvaged from
+              # closed PR #94) does NOT work here: the composition has
+              # a FromCompositeFieldPath patch that overwrites
+              # forProvider.region from spec.region on every reconcile,
+              # so a base mutation is a no-op.
               kubectl get composition platform-secret-aws -o yaml \
                 > /tmp/composition-original.yaml
               yq -i \
-                '.spec.pipeline[0].input.resources[0].base.spec.forProvider.region = "eu-west-99"' \
+                '.spec.pipeline[0].input.resources[0].base.spec.forProvider.recoveryWindowInDays = 7' \
                 /tmp/composition-original.yaml
               kubectl apply -f /tmp/composition-original.yaml
               # Force a reconcile by annotating the XR. The XR was
@@ -104,21 +116,21 @@ spec:
               sleep 10
 
     - name: drift — golden MUST FAIL against mutated render (inverted)
-      bindings:
-        - name: expected_region
-          value: us-east-1
       try:
         - script:
             content: |
               set +e
-              # Re-run the assert as a one-shot via kubectl get. The MR's
-              # spec.forProvider.region should now be eu-west-99,
-              # NOT us-east-1.
-              region=$(kubectl get secret.secretsmanager.aws.m.upbound.io \
+              # Sanity-check that the mutation propagated to the rendered
+              # MR. recoveryWindowInDays was 0 in the base; we mutated to
+              # 7. If the live MR still shows 0, either the reconcile
+              # didn't fire, OR a patch has been introduced that
+              # overrides this field — in either case the meta-test no
+              # longer exercises composition drift and must be retargeted.
+              days=$(kubectl get secret.secretsmanager.aws.m.upbound.io \
                 -l "crossplane.io/composite=drift-probe" \
-                -o jsonpath='{.items[0].spec.forProvider.region}')
-              echo "rendered region: $region (expected us-east-1)"
-              if [ "$region" = "us-east-1" ]; then
+                -o jsonpath='{.items[0].spec.forProvider.recoveryWindowInDays}')
+              echo "rendered recoveryWindowInDays: $days (base was 0, mutated to 7)"
+              if [ "$days" = "0" ] || [ -z "$days" ]; then
                 echo "FAIL: mutation did NOT propagate — meta-test is broken"
                 exit 1
               fi
