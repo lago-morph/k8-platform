@@ -65,7 +65,11 @@ spec:
                 namespace: default
               status:
                 conditions:
+                  - type: Synced
+                    status: "True"
                   - type: Ready
+                    status: "True"
+                  - type: Responsive
                     status: "True"
 
     - name: baseline — golden MUST pass against unmutated render
