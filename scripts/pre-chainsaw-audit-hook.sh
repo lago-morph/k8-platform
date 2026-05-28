@@ -23,14 +23,19 @@ set -uo pipefail
 
 input=$(cat)
 
-# Filter: only run for mcp__*__execute calls that mention chainsaw.yml
-# anywhere in their tool_input payload. jq's `tostring` flattens the
-# whole input subtree so we don't have to guess the param path the
-# specific MCP server uses (workflow_id, ref, inputs.workflow_id, etc.).
+# Filter: only run for mcp__*__execute calls that are a workflow_dispatch
+# of chainsaw.yml. Read-only queries (list_workflow_runs,
+# list_jobs_for_workflow_run, download_job_logs) also reference
+# chainsaw.yml in their tool_input but do not provision anything, so the
+# audit must NOT block them. The jentic catalog uses operation_uuid
+# `op_2acb005c9f3704ad` for actions/create-workflow-dispatch (verified
+# 2026-05-23 per .claude/skills/ext-github/resources/workflow_dispatch.json).
+# Filter requires BOTH the dispatch UUID and chainsaw.yml to be present.
 if ! printf '%s' "$input" | jq -e '
   (.tool_name // "") as $name
   | (.tool_input // {}) as $i
   | ($name | test("^mcp__.*__execute$"))
+    and ($i | tostring | test("op_2acb005c9f3704ad"))
     and ($i | tostring | test("chainsaw\\.yml"))
 ' >/dev/null 2>&1; then
   exit 0

@@ -169,16 +169,22 @@ d_files=$(find tests/chainsaw -name 'chainsaw-test.yaml' -type f 2>/dev/null | s
 d_hits=0
 while IFS= read -r f; do
   [ -z "$f" ] && continue
-  # Find any `namespace: ($namespace)` that is inside an apply block (rough
-  # heuristic: the scenario uses `apply:` somewhere; we flag ANY ($namespace)
-  # outside the catch block's describe/events context. The catch block is
-  # allowed because chainsaw substitutes there.
-  # Conservative: only flag namespace: ($namespace) lines that appear within
-  # the first 60% of the file (apply steps are typically before catch).
-  total_lines=$(wc -l < "$f")
-  cutoff=$(( total_lines * 6 / 10 ))
-  [ "$cutoff" -lt 1 ] && cutoff=1
-  bad=$(head -n "$cutoff" "$f" \
+  # Slice off everything from the top-level `catch:` keyword onward. The
+  # catch block legitimately uses `namespace: ($namespace)` in its
+  # `describe:` and `events:` ops (chainsaw substitutes there); only an
+  # `apply.resource.metadata.namespace` triggers the RFC 1123 rejection.
+  # Earlier this check used "first 60% of file" — a heuristic that broke
+  # when meta-catch-fires's catch block grew past the 60% line. Slice-by-
+  # keyword mirrors Check G's approach and is independent of file length.
+  before_catch=$(awk '
+    /^[[:space:]]*catch:[[:space:]]*$/ { exit }
+    { print }
+  ' "$f")
+  if [ -z "$before_catch" ]; then
+    # No catch block at all — scan the whole file (no false-positive risk).
+    before_catch=$(cat "$f")
+  fi
+  bad=$(printf '%s\n' "$before_catch" \
         | grep -nE '^[[:space:]]+namespace:[[:space:]]+\(\$namespace\)[[:space:]]*$' \
         || true)
   if [ -n "$bad" ]; then
