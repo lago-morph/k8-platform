@@ -60,27 +60,32 @@ if helm_render \
     "" \
     "argocd: application-controller SA does NOT get the server IRSA arn"
 
-  # Ingress is enabled and host points at our subdomain.
+  # Ingress is enabled and host points at our subdomain. Select by
+  # app.kubernetes.io/name=argocd-server because the chart prefixes Ingress
+  # metadata.name with the release-name ("argo-cd-argocd-server") while the
+  # label stays stable across release-name choices.
   assert_yq_matches "$OUT" \
-    'select(.kind=="Ingress" and .metadata.name=="argocd-server") | .spec.rules[0].host' \
+    'select(.kind=="Ingress" and .metadata.labels["app.kubernetes.io/name"]=="argocd-server") | .spec.rules[0].host' \
     "^argocd\.management\.$STUB_DOMAIN$" \
     "argocd: Ingress host == argocd.management.$STUB_DOMAIN"
 
   # external-dns annotation on the Ingress matches hostname (so ExternalDNS picks it up).
   assert_yq_eq "$OUT" \
-    'select(.kind=="Ingress" and .metadata.name=="argocd-server") | .metadata.annotations["external-dns.alpha.kubernetes.io/hostname"]' \
+    'select(.kind=="Ingress" and .metadata.labels["app.kubernetes.io/name"]=="argocd-server") | .metadata.annotations["external-dns.alpha.kubernetes.io/hostname"]' \
     "argocd.management.$STUB_DOMAIN" \
     "argocd: Ingress external-dns hostname annotation == subdomain"
 
   # Ingress class is nginx.
   assert_yq_eq "$OUT" \
-    'select(.kind=="Ingress" and .metadata.name=="argocd-server") | .spec.ingressClassName' \
+    'select(.kind=="Ingress" and .metadata.labels["app.kubernetes.io/name"]=="argocd-server") | .spec.ingressClassName' \
     "nginx" \
     "argocd: Ingress ingressClassName == nginx"
 
-  # argocd-server runs with --insecure (TLS terminates at NLB).
+  # argocd-server runs with --insecure (TLS terminates at NLB). Use
+  # `// []` fallbacks because Mike Farah yq's `null + [...]` collapses
+  # to null (the chart sets args but not command on this container).
   assert_yq_matches "$OUT" \
-    'select(.kind=="Deployment" and .metadata.name=="argocd-server") | .spec.template.spec.containers[0].command + .spec.template.spec.containers[0].args | .[]' \
+    'select(.kind=="Deployment" and .metadata.labels["app.kubernetes.io/name"]=="argocd-server") | ((.spec.template.spec.containers[0].command // []) + (.spec.template.spec.containers[0].args // [])) | .[]' \
     "(^|=)--insecure" \
     "argocd: argocd-server runs with --insecure"
 else
