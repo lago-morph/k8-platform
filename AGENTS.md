@@ -755,6 +755,82 @@ enforcers were authored specifically to catch. See
 `retrospective/2026-05-28-121/AGENTS-MD-1390a5c6a8-run-sh-and-unit-tests-yml-in-sync.md`
 and `handoff-followups-2026-05-28.md` Task 1.*
 
+### 6.17 Never present a hypothesis as a conclusion
+
+**State the strength of every claim.** When you report findings to
+the user, distinguish:
+
+- **Observation** — something you saw in the logs / output. Quote it.
+- **Exclusion** — something you ruled out by topology, by evidence,
+  or by direct test. Name the exclusion criterion.
+- **Hypothesis** — a candidate explanation that fits the evidence
+  but is NOT confirmed. Label it as such.
+- **Conclusion** — a hypothesis that has been positively tested or
+  that follows from exclusion of every other plausible alternative.
+
+If you write "X is the cause" or "this is not a regression I
+introduced," you are claiming a conclusion. That requires either
+positive evidence (a test that confirms X) or exhaustive exclusion
+(every other candidate ruled out). If you only have one piece of
+fits-the-pattern evidence, the right framing is "this is consistent
+with hypothesis X" — not "X is the cause."
+
+User attention is precious. A hypothesis dressed as a conclusion
+leads the user to make a decision based on something that may turn
+out to be wrong, with no flag in the prose telling them it could.
+The cost of accurate framing is one extra word ("hypothesis",
+"consistent with", "appears to"); the cost of inaccurate framing
+is the user's trust.
+
+*Grounded in: 2026-05-28 PR #125 chainsaw failure on `composition-drift`.
+I told the user "AWS-provider cold-start, not a regression my work
+introduced." The first half was a hypothesis with no positive
+evidence; the second half was true by topology but I had not framed
+it as exclusion-by-topology. The user called this out and pointed to
+the discipline gap.*
+
+### 6.18 Never ignore an undiagnosed failure — log to the open-issues register
+
+**Every observed failure must either be diagnosed in this session
+or recorded in the durable register at `docs/open-issues.md`.** No
+silent-skip, no "out of scope so I'll move on," no leaving a flaky
+red check unfollowed.
+
+When a failure surfaces in CI, in a probe, in a manual test, or in
+any other channel — even one that doesn't gate any PR — the options
+are:
+
+1. **Diagnose it now.** Fix the underlying issue, write the
+   regression-catching test per §6.2, close the loop.
+2. **Defer to a tracked issue.** Add an entry to `docs/open-issues.md`
+   with: status, symptom (with verbatim error text or log quote),
+   diagnostic evidence available so far, hypotheses currently on
+   the table (labelled per §6.17), what's ruled out, the next
+   concrete diagnostic step, and an owner / next action. Commit it
+   in the same PR (or a follow-up PR) so the register stays current
+   with the work.
+
+Out-of-scope is a valid reason to defer; it is NOT a valid reason
+to drop the observation on the floor. Future sessions inherit
+`docs/open-issues.md` as ground-truth backlog — a problem we walked
+past today should not have to be re-discovered when it re-surfaces
+in production.
+
+Pure flakes get an entry too. A flake is "undiagnosed but observed,"
+not "no problem." Two occurrences of the same flake without a
+matching register entry IS the problem.
+
+The register is small by intent. Closed items move into a
+historical section or are removed once their fix has landed and
+been verified. Stale entries are a tax on the next agent who has
+to re-read them all; keep it tight.
+
+*Grounded in: same PR #125 session as §6.17. I initially proposed
+"out of scope, file as separate follow-up" for the chainsaw
+`composition-drift` failure, with no mechanism to ensure the
+follow-up actually happened. The user named this as horrible
+engineering discipline. The register is the mechanism.*
+
 ---
 
 ## 7. Testing loops — companion skills
