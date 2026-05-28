@@ -831,6 +831,43 @@ to re-read them all; keep it tight.
 follow-up actually happened. The user named this as horrible
 engineering discipline. The register is the mechanism.*
 
+### 6.19 Never silence cleanup failures with `|| true`
+
+**Test and CI cleanup steps that depend on succeeding (re-applying
+state, deleting resources, restoring config) MUST fail loudly when
+they fail.** The `|| true` shell idiom masks the underlying error and
+lets contamination propagate to subsequent scenarios. If a cleanup is
+genuinely best-effort, guard with `[ -f X ] && cmd` or an explicit
+`if ! cmd; then echo WARN; fi` so the warning surfaces.
+
+*Grounded in: 2026-05-28 PR #129 composition-drift — the original
+cleanup ran `kubectl apply -f crossplane/compositions/platform-secret.yaml || true`
+with a path that didn't resolve from chainsaw's CWD; the `|| true`
+masked the error and cascaded into three downstream scenario failures
+(claim-creates-secret, claim-rotation, claim-deletion-cleanup, each
+timing out at ~250s on the same chainsaw run). See
+`retrospective/2026-05-28-129/AGENTS-MD-6e0243fa6a-no-or-true-cleanup-mask.md`
+and OI-2026-05-28-1 Issue B in `docs/open-issues.md`.*
+
+### 6.20 After session resume from suspension, verify status of in-flight dispatches
+
+**When the sandbox suspends mid-wait (typically while waiting for a
+long CI run), webhooks that arrive during suspension do not deliver as
+`<github-webhook-activity>` envelopes on resume.** The first action
+after resume — before authoring new work, before answering a user
+question that depends on the run's outcome — is one direct-API query
+against any in-flight dispatch's run id. This complements §6.10 and
+§6.15: those rules cover the active-wait case; this one covers the
+resumed-after-suspension case. Both fire the same one-shot direct
+query, but their triggers are different and neither subsumes the
+other.
+
+*Grounded in: 2026-05-28 PR #129 chainsaw run 26555037975 (success
+conclusion) — completion arrived during sandbox idle, no webhook
+envelope on resume; the user's `Check on run` was what prompted the
+direct query that surfaced the green status. See
+`retrospective/2026-05-28-129/AGENTS-MD-6163a071e9-verify-inflight-after-resume.md`.*
+
 ---
 
 ## 7. Testing loops — companion skills
