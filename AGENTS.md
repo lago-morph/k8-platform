@@ -668,6 +668,61 @@ class. Fix every FAIL before dispatching; re-run the audit until clean.
 surfacing a different bug class that a single pre-dispatch audit
 would have caught.*
 
+### 6.14 Use Bash run_in_background, not Monitor, for single-notification waits
+
+**Use `Bash` with `run_in_background: true` for single-notification
+waits; reserve `Monitor` for streams of multiple events.** A Monitor
+that just sleeps and ticks is an anti-pattern — every tick is a
+chat-visible notification, the monitor doesn't end on the event you
+care about, and there is no surfaced way to stop it early. For "tell
+me when X completes", use `Bash` with `run_in_background: true` and an
+`until <check>; do sleep <N>; done` loop that exits when the
+condition is met.
+
+*Grounded in: 2026-05-28 chainsaw-verify wait — armed a Monitor as a
+generic ticker, received 29 useless tick notifications before the
+180-second timeout fired. See
+`retrospective/2026-05-28-121/AGENTS-MD-5bdc52acff-bash-bg-not-monitor-single-notification.md`.*
+
+### 6.15 Webhook backup poll at 1.5x expected ETA
+
+**When a webhook subscription is the agreed completion channel and
+1.5x the expected ETA has elapsed with no event, do a single
+direct-API status query as a backup.** This specializes §6.10's
+"no foreground polling" rule for the silent-event-loss case.
+PR-activity subscriptions occasionally drop `workflow_run completed`
+events without dropping the surrounding `check_suite` failure events;
+silence on the channel does not mean the work is still running.
+Confirm with one direct-API call before assuming. One direct call at
+ETA + 50% does not constitute a polling loop — it's a single fallback
+query.
+
+*Grounded in: 2026-05-28 PR #111 chainsaw run 26550478501 —
+completion event for the green run never delivered via
+`mcp__github__subscribe_pr_activity`; user noticed before agent did.
+See `retrospective/2026-05-28-121/AGENTS-MD-ae0308b2ac-webhook-backup-poll.md`.*
+
+### 6.16 `tests/unit/run.sh` and `.github/workflows/unit-tests.yml` must stay in sync
+
+**Every test in `tests/unit/run.sh` MUST also be enumerated in
+`.github/workflows/unit-tests.yml`'s per-step list, OR the workflow
+must end with a `run.sh` catch-all step that invokes it.** Per-step CI
+is preferred for separate-failure diagnosability in the Actions UI,
+but silently drifts when tests are added to `run.sh` without a paired
+workflow edit. The catch-all alternative trades that UI clarity for
+guaranteed coverage. Either pattern is acceptable; the gap between
+them is not. When authoring a new `tests/unit/test_*.sh`, the same
+PR must update `unit-tests.yml` (or rely on the catch-all if it
+exists).
+
+*Grounded in: 2026-05-28 audit found 17 of 39 tests in
+`tests/unit/run.sh` missing from `unit-tests.yml`'s per-step list,
+including the two enforcers whose absence caused PR #111's chainsaw
+rounds 1-2 (POSIX-sh + 3-conditions) to re-discover bugs the
+enforcers were authored specifically to catch. See
+`retrospective/2026-05-28-121/AGENTS-MD-1390a5c6a8-run-sh-and-unit-tests-yml-in-sync.md`
+and `handoff-followups-2026-05-28.md` Task 1.*
+
 ---
 
 ## 7. Testing loops — companion skills
