@@ -26,6 +26,11 @@
 #      corresponding scenario's XR `spec.description` (the Composition
 #      patches XR.spec.description into MR.spec.forProvider.tags.Description
 #      — auto-003 PR-T3 Strike 4)
+#   G: chainsaw try/finally script blocks use `kubectl -n "$NAMESPACE"`
+#      with `NAMESPACE: ($namespace)` binding while a sibling apply: step
+#      targets a literal namespace (the script's $NAMESPACE resolves to
+#      chainsaw's per-test scratch namespace and the kubectl call misses
+#      the resource — auto-003 PR-T3 Strike 3, commit 2f476c0)
 #
 # Exit 0 if all checks pass (safe to dispatch). Exit 1 if any check
 # fails (fix first, re-run).
@@ -234,6 +239,45 @@ for golden in $(find tests/chainsaw/platform-secret -path '*/expected/asm-secret
   fi
 done
 [ "$f_hits" -eq 0 ] && pass "all goldens' Description match the scenario's XR description"
+
+# ---------------------------------------------------------------------------
+# Check G — kubectl -n "$NAMESPACE" in try/finally script blocks when an
+# apply: step in the same scenario targets a literal namespace (other than
+# `($namespace)`). The script's NAMESPACE binding resolves to chainsaw's
+# per-test scratch namespace, so the kubectl call misses the resource that
+# the apply step put in the literal namespace.
+#
+# The catch block legitimately uses $NAMESPACE to enumerate cluster-wide
+# context, so we look only at content BEFORE the first `catch:` keyword.
+# ---------------------------------------------------------------------------
+heading "Check G: kubectl -n \"\$NAMESPACE\" in try/finally with literal-namespace apply"
+g_files=$(find tests/chainsaw -name 'chainsaw-test.yaml' -type f 2>/dev/null | sort)
+g_hits=0
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  # Slice the file to everything before the top-level `catch:` keyword.
+  # awk because sed's `1,/pat/p` doesn't gracefully handle "no match".
+  before_catch=$(awk '
+    /^[[:space:]]*catch:[[:space:]]*$/ { exit }
+    { print }
+  ' "$f")
+  [ -z "$before_catch" ] && continue
+  has_namespace_binding=$(printf '%s\n' "$before_catch" \
+    | grep -cE 'value:[[:space:]]+\(\$namespace\)' || true)
+  uses_namespace_var=$(printf '%s\n' "$before_catch" \
+    | grep -cE 'kubectl[^#]*-n[[:space:]]+"?\$NAMESPACE"?' || true)
+  literal_apply_ns=$(printf '%s\n' "$before_catch" \
+    | grep -nE '^[[:space:]]+namespace:[[:space:]]+[a-z][a-z0-9-]*[[:space:]]*$' \
+    | grep -vE 'namespace:[[:space:]]+\(\$namespace\)' || true)
+  if [ "$has_namespace_binding" -gt 0 ] \
+    && [ "$uses_namespace_var" -gt 0 ] \
+    && [ -n "$literal_apply_ns" ]; then
+    fail "script uses kubectl -n \"\$NAMESPACE\" while apply targets a literal namespace: ${f}" \
+      "the script's \$NAMESPACE binding (value: (\$namespace)) resolves to chainsaw's per-test scratch namespace; the apply step put the resource in a different (literal) namespace. Hard-code -n <literal> in the kubectl call. See commit 2f476c0 (auto-003 PR-T3 Strike 3)."
+    g_hits=$((g_hits + 1))
+  fi
+done <<< "$g_files"
+[ "$g_hits" -eq 0 ] && pass "no chainsaw try/finally script mixes \$NAMESPACE binding with literal-namespace apply"
 
 # ---------------------------------------------------------------------------
 # Summary

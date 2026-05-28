@@ -70,7 +70,7 @@ metadata:
 spec:
   refreshInterval: 10s
   region: $REGION
-  description: "integration test 11 — e2e XR from $RUN_ID"
+  description: "integration test 11 - e2e XR from $RUN_ID"
 YAML
 
 # ---- 2. Wait for XR Ready ------------------------------------------------
