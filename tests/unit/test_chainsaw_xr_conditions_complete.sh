@@ -27,6 +27,7 @@ cd "$(dirname "$0")/../.."   # repo root
 FILES=$(
   find tests/chainsaw/platform-secret \
        tests/chainsaw/platform-cluster \
+       tests/chainsaw/_meta \
        -name 'chainsaw-test.yaml' -type f 2>/dev/null | sort
 )
 

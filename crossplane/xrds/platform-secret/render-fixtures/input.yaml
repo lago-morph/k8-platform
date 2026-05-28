@@ -20,4 +20,4 @@ metadata:
 spec:
   refreshInterval: 1h
   region: us-east-1
-  description: "Render fixture probe — not a real secret"
+  description: "Render fixture probe - not a real secret"

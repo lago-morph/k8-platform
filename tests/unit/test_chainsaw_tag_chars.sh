@@ -6,14 +6,21 @@
 #
 # Crossplane v2 propagates the XR's `spec.description` field into
 # `spec.forProvider.tags.Description` on the underlying AWS MR. If a
-# chainsaw scenario or example XR uses an em-dash in `description:`,
-# AWS rejects the CreateSecret call, the MR never reaches Ready, and
-# the scenario times out (245s @ chainsaw run 26544123347).
+# chainsaw scenario, golden file, example XR, or render-fixture probe
+# XR uses an em-dash in a `description:` (XR-level) or `Description:`
+# (golden tag-value) field, AWS rejects the CreateSecret call, the MR
+# never reaches Ready, and the scenario times out.
 #
-# This test scans every `description:` field in chainsaw scenarios and
-# example XRs and asserts pure-ASCII content. It is the regression test
-# for the bug surfaced by chainsaw run 26544123347 against
-# `claude/v2-exec-hotfix-xrd-connsec` @ `6a47acf`.
+# This test scans every file that could contribute a tag-bound value
+# to AWS and asserts pure-ASCII content in those fields. It is the
+# regression test for the bug surfaced by chainsaw run 26544123347
+# (auto-003 Strike 1) and the golden-content drift surfaced by run
+# 26547209612 (auto-003 Strike 4).
+#
+# Scoped directories:
+#   - tests/chainsaw/                       (scenarios, _meta, _smoke, goldens — recursively)
+#   - crossplane/claims/                    (example XRs and the live PlatformCluster claim)
+#   - crossplane/xrds/*/render-fixtures/    (render-fixture probe XRs)
 
 set -uo pipefail
 cd "$(dirname "$0")/../.."   # repo root
@@ -21,35 +28,38 @@ cd "$(dirname "$0")/../.."   # repo root
 # shellcheck disable=SC1091
 . tests/lib/assert.sh
 
-# Files whose `description:` values flow into AWS tags via the
-# PlatformSecret Composition's `tags.Description` patch.
 FILES=$(
-  find tests/chainsaw/platform-secret \
-       crossplane/claims \
-       -name '*.yaml' -type f 2>/dev/null | sort
+  {
+    find tests/chainsaw -name '*.yaml' -type f 2>/dev/null
+    find crossplane/claims -name '*.yaml' -type f 2>/dev/null
+    find crossplane/xrds -path '*/render-fixtures/*.yaml' -type f 2>/dev/null
+  } | sort -u
 )
 
 if [ -z "$FILES" ]; then
-  _fail "files_discovered" "no chainsaw scenario or example claim YAMLs found"
+  _fail "files_discovered" "no chainsaw / claim / render-fixture YAMLs found"
   assert_summary; exit 1
 fi
 _pass "files_discovered ($(echo "$FILES" | wc -l | tr -d ' ') file(s))"
 
-# AWS allows the following characters in tag values:
-#   A-Z a-z 0-9 space . : / = + - _ @
-# We assert: only ASCII printable + space + tab.
-# A simpler shape: scan `description: "..."` values for any byte > 0x7F.
+# Tag-bound field markers. Match the YAML key + value on the same line:
+#   description: "<value>"     — XR-level tag value
+#   Description: "<value>"     — direct golden tag value
+# We strip YAML comments before scanning so a comment containing an
+# em-dash (the documentation case) is not a violation.
+TAG_FIELD_RE='^[[:space:]]*(description|Description):[[:space:]]+'
+
 while IFS= read -r f; do
-  # Extract the value of any `description:` field. The form in chainsaw
-  # scenarios is:
-  #   description: "..."
-  #   or:
-  #   description: ...
-  bad=$(grep -nE '^\s*description:' "$f" \
+  # Strip comments before scanning. A line like:
+  #   description: "good"  # comment with em-dash —
+  # is OK; the comment never reaches AWS.
+  bad=$(sed 's/#.*$//' "$f" \
+        | grep -nE "$TAG_FIELD_RE" \
         | LC_ALL=C grep -nP '[\x80-\xff]' \
         || true)
   if [ -n "$bad" ]; then
-    _fail "ascii_tag_value_${f}" "non-ASCII characters found in 'description:' field of $f — AWS Tagging service will reject. Lines: $(echo "$bad" | head -3 | tr '\n' '|')"
+    _fail "ascii_tag_value_${f}" \
+      "non-ASCII characters found in 'description:' / 'Description:' tag-bound field of $f — AWS Tagging service will reject. Lines: $(echo "$bad" | head -3 | tr '\n' '|')"
   else
     _pass "ascii_tag_value_${f}"
   fi
