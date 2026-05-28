@@ -12,9 +12,33 @@ and writes back to it after every workflow run. See
 
 ## NEW SESSION QUICKSTART (read this first)
 
-**Resume context: 2026-05-25 session.** You are picking up after a session
-that upgraded Crossplane to 2.3.0, fixed two bugs blocking phase 2, and
-merged PRs #72 and #74 to main. One bug remains open (Bug 3 below).
+**Resume context: 2026-05-28 session.** The Crossplane v1→v2 migration is
+**COMPLETE**. The "Bug 3" blocker described below was resolved by the v1→v2
+migration (provider line jump from v1.12.0 to v2.5.0). All §11 DoD items in
+`ai/crossplane-v1-v2-un-fuckify/40-final-plan.md` are closed except item #9
+(SEG-4 PR-T3 — see PR #111). Phase 0 + Phase 1 are verified on the freshly
+rotated AWS test account.
+
+### Verification evidence (post-rotation, 2026-05-28)
+
+- Phase 0 base: [terraform-test run 26543008528](https://github.com/lago-morph/k8-platform/actions/runs/26543008528) GREEN.
+- Phase 1 management: [terraform-test run 26543224379](https://github.com/lago-morph/k8-platform/actions/runs/26543224379) GREEN.
+- Wave 2 hotfix PR #105 merged (`41e661d`); 5 additional v2-cutover bugs
+  fixed in PR #105 itself (em-dash in tags, missing Responsive condition,
+  bash-pipefail in /bin/sh).
+- Phase 2 chainsaw FULL against post-#105 main: [chainsaw run 26546054690](https://github.com/lago-morph/k8-platform/actions/runs/26546054690) GREEN — all 4 real-AWS scenarios + smoke + meta-catch-fires pass.
+- SEG-4 PR-T3 (chainsaw golden-file asserts + #94 selective salvage): PR
+  **#111** open; chainsaw dispatched against the PR branch.
+
+### Stale content below
+
+The "What was done — 2026-05-25" section and the Bug 3 narrative are
+**historical**. Bug 3 is resolved; the active blocker no longer exists.
+Phase 2 chainsaw is now GREEN.
+
+---
+
+## Original 2026-05-25 quickstart (HISTORICAL — Bug 3 resolved by v1→v2 migration)
 
 ### Hook bug — fix before starting work
 
@@ -101,8 +125,8 @@ Crossplane-core compat per minor release.
 
 | Field | Value |
 |---|---|
-| Active phase | **Phase 2 — phase 0 and 1 applied; phase 2 chainsaw failing (Bug 3)** |
-| Last update | 2026-05-25 |
+| Active phase | **Phase 2 — Crossplane v2.5.0 verified on rotated account; chainsaw FULL GREEN** |
+| Last update | 2026-05-28 (post-rotation verification, auto-003 run) |
 | AWS account | **ephemeral — derive from `aws sts get-caller-identity`** (see AGENTS.md §8.1) |
 | Route53 zone | `<account-id>.realhandsonlabs.net.` |
 | EKS cluster | `k8-platform-mgmt` in the region from `$AWS_REGION` |
@@ -116,10 +140,10 @@ Cross-session `applied`/`verified` are NOT durable (AGENTS.md §8.1).
 
 | Phase | State (this account) | Notes |
 |---|---|---|
-| 0 base | **applied** | [run 26382645677](https://github.com/lago-morph/k8-platform/actions/runs/26382645677) |
-| 1 management | **applied** | [run 26382778999](https://github.com/lago-morph/k8-platform/actions/runs/26382778999); Crossplane 2.3.0 live, beta flags off |
-| 2 xrds | **broken** | Bug 3 open: provider v1.12.0 slow under 2.3.0 core |
-| 3+ | not started | — |
+| 0 base | **verified** | [terraform-test run 26543008528](https://github.com/lago-morph/k8-platform/actions/runs/26543008528) — apply+e2e-verify GREEN on rotated account (2026-05-28). State bucket auto-bootstrapped. |
+| 1 management | **verified** | [terraform-test run 26543224379](https://github.com/lago-morph/k8-platform/actions/runs/26543224379) — apply+e2e-verify GREEN. Crossplane v2.5.0 live; helm.tf Function v1 + rollout-status + SA post-check all passed. |
+| 2 xrds | **verified** | [chainsaw run 26546054690](https://github.com/lago-morph/k8-platform/actions/runs/26546054690) — full scenario set GREEN against post-#105 main (`41e661d`). v1→v2 migration §11 DoD item #5 closed. |
+| 3+ | not started | Phase 3 ApplicationSet kubeconfig source repoint (consumers read kubeconfig from EKS Cluster MR's own connection-secret rather than from XR-aggregated `platform-cluster-kubeconfig` — the v2-removed XR-level secret). Tracked. |
 
 ### Live AWS resource shape
 
