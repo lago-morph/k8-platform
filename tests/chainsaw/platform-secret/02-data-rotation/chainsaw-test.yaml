@@ -21,34 +21,41 @@ spec:
         - apply:
             resource:
               apiVersion: platform.k8-platform.io/v1alpha1
-              kind: PlatformSecret
+              kind: XPlatformSecret
               metadata:
                 name: scenario02
                 namespace: default
               spec:
                 refreshInterval: 10s
                 region: us-east-1
-                description: "chainsaw scenario 02 — rotation"
+                description: "chainsaw scenario 02 - rotation"
 
     - name: wait for claim Ready
       try:
         - assert:
             resource:
               apiVersion: platform.k8-platform.io/v1alpha1
-              kind: PlatformSecret
+              kind: XPlatformSecret
               metadata:
                 name: scenario02
                 namespace: default
               status:
+                # v2 XRs have 3 conditions: Synced, Ready, Responsive
+                # (chainsaw matches arrays element-wise at same index).
                 conditions:
+                  - type: Synced
+                    status: "True"
                   - type: Ready
+                    status: "True"
+                  - type: Responsive
                     status: "True"
 
     - name: write initial value into ASM out-of-band
       try:
         - script:
             content: |
-              set -euo pipefail
+              set -eu
+              # chainsaw runs scripts under /bin/sh; pipefail is bash-only.
               # v2: XR is namespaced and shares the user's resource
               # name (no v1 claim → XR promotion pointer).
               xr="${CLAIM_NAME}"
@@ -81,7 +88,8 @@ spec:
       try:
         - script:
             content: |
-              set -euo pipefail
+              set -eu
+              # chainsaw runs scripts under /bin/sh; pipefail is bash-only.
               key=$(cat /tmp/scenario02-asm-key.txt)
               aws secretsmanager put-secret-value \
                 --secret-id "$key" \

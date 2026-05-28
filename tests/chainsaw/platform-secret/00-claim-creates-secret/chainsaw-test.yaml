@@ -19,29 +19,34 @@ spec:
         - apply:
             resource:
               apiVersion: platform.k8-platform.io/v1alpha1
-              kind: PlatformSecret
+              kind: XPlatformSecret
               metadata:
                 name: scenario00
                 namespace: default
               spec:
                 refreshInterval: 30s
                 region: us-east-1
-                description: "chainsaw scenario 00 — happy path"
+                description: "chainsaw scenario 00 - happy path"
 
     - name: assert claim becomes Ready
       try:
         - assert:
             resource:
               apiVersion: platform.k8-platform.io/v1alpha1
-              kind: PlatformSecret
+              kind: XPlatformSecret
               metadata:
                 name: scenario00
                 namespace: default
               status:
+                # v2 XRs have 3 conditions: Synced, Ready, Responsive
+                # (chainsaw matches arrays element-wise at same index, so
+                # listing all 3 in the order Crossplane outputs them).
                 conditions:
                   - type: Synced
                     status: "True"
                   - type: Ready
+                    status: "True"
+                  - type: Responsive
                     status: "True"
 
     - name: assert ExternalSecret materialized in claim namespace
@@ -62,7 +67,8 @@ spec:
       try:
         - script:
             content: |
-              set -euo pipefail
+              set -eu
+              # chainsaw runs scripts under /bin/sh; pipefail is bash-only.
               # The Composition derives the ASM name from XR UID.
               # In Crossplane v2 the XR is namespaced and its name
               # equals the user-created resource name (no separate

@@ -49,17 +49,19 @@ spec:
     singular: xplatformcluster
   defaultCompositionRef:
     name: platform-cluster-aws
-  # v2 migration (SEG-1 step 1b) — verified against the v2 XRD JSON
-  # schema (kubeconform-schemas/apiextensions.crossplane.io/
-  # compositeresourcedefinition_v2.json): the v2 XRD KEEPS the original
-  # field name `connectionSecretKeys`. The plan's tentative rename to
-  # `connectionDetails` was reverted per plan §3 Open Q #3 contingency.
-  # The list contents (kubeconfig, endpoint, cluster-ca) are unchanged
-  # from v1.
-  connectionSecretKeys:
-    - kubeconfig
-    - endpoint
-    - cluster-ca
+  # v2 migration (SEG-1 step 1b + chainsaw-driven correction):
+  # Crossplane v2 explicitly rejects XR-level connection secrets:
+  #   "XR connection secrets aren't supported in apiextensions.crossplane.io/v2"
+  # The static kubeconform schema (compositeresourcedefinition_v2.json)
+  # ACCEPTS `connectionSecretKeys` but the live v2 admission webhook
+  # REJECTS it. Plan §3 Open Q #3 anticipated this divergence;
+  # confirmation came from chainsaw `xrd-establishes` failure on the
+  # post-Wave-2 SHA 7de8c05.
+  #
+  # Phase 3 consumers (ApplicationSet) must read kubeconfig directly
+  # from the EKS Cluster MR's writeConnectionSecretToRef secret rather
+  # than expecting an XR-aggregated `platform-cluster-kubeconfig`.
+  # Tracked as a follow-up — does NOT block the v2 migration itself.
   versions:
     - name: v1alpha1
       served: true

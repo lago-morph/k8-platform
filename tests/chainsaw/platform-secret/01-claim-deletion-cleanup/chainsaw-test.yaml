@@ -20,27 +20,33 @@ spec:
         - apply:
             resource:
               apiVersion: platform.k8-platform.io/v1alpha1
-              kind: PlatformSecret
+              kind: XPlatformSecret
               metadata:
                 name: scenario01
                 namespace: default
               spec:
                 refreshInterval: 30s
                 region: us-east-1
-                description: "chainsaw scenario 01 — deletion cleanup"
+                description: "chainsaw scenario 01 - deletion cleanup"
 
     - name: wait for claim Ready (otherwise deletion races provisioning)
       try:
         - assert:
             resource:
               apiVersion: platform.k8-platform.io/v1alpha1
-              kind: PlatformSecret
+              kind: XPlatformSecret
               metadata:
                 name: scenario01
                 namespace: default
               status:
+                # v2 XRs have 3 conditions: Synced, Ready, Responsive
+                # (chainsaw matches arrays element-wise at same index).
                 conditions:
+                  - type: Synced
+                    status: "True"
                   - type: Ready
+                    status: "True"
+                  - type: Responsive
                     status: "True"
 
     - name: capture XR UID so we can verify ASM teardown out-of-band
@@ -62,7 +68,7 @@ spec:
         - delete:
             ref:
               apiVersion: platform.k8-platform.io/v1alpha1
-              kind: PlatformSecret
+              kind: XPlatformSecret
               name: scenario01
               namespace: default
 
@@ -80,7 +86,8 @@ spec:
       try:
         - script:
             content: |
-              set -euo pipefail
+              set -eu
+              # chainsaw runs scripts under /bin/sh; pipefail is bash-only.
               key=$(cat /tmp/scenario01-asm-key.txt)
               echo "Checking ASM key is gone: $key"
               # describe-secret returns 254 (no such secret) — that's success.

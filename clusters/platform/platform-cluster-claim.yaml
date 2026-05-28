@@ -60,10 +60,9 @@ spec:
     desiredSize: 2
     minSize: 1
     maxSize: 3
-  # v2 migration (SEG-1 step 1f): connection-secret target. The XR
-  # writes its merged connection-details (kubeconfig/endpoint/cluster-
-  # ca, declared on the XRD's spec.connectionDetails) to this Secret
-  # name in the XR's namespace (`platform`). Phase 3 ApplicationSet
-  # reads `platform/platform-cluster-kubeconfig`.
-  writeConnectionSecretToRef:
-    name: platform-cluster-kubeconfig
+  # v2 migration: XR-level connection secrets are explicitly NOT
+  # supported in apiextensions.crossplane.io/v2 (the v2 admission
+  # webhook rejects them, even though the static schema accepts).
+  # Phase 3 ApplicationSet must read kubeconfig directly from the
+  # EKS Cluster MR's own writeConnectionSecretToRef secret. Tracked
+  # as Phase 3 follow-up.
