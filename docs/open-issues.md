@@ -1,7 +1,7 @@
 # Open Issues — durable register of undiagnosed problems
 
 Anything observed that we did not fully diagnose goes here. Per AGENTS.md
-§6.14 ("Never ignore an undiagnosed failure"), an open issue is a
+§6.18 ("Never ignore an undiagnosed failure"), an open issue is a
 hard requirement — we record what happened, what we ruled out, and the
 next concrete diagnostic step. The list shrinks as items get closed
 (with evidence) and grows as new ones surface.
