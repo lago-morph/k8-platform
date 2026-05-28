@@ -1,0 +1,9 @@
+# agent instruction
+
+**An enforcer's scope must cover EVERY directory where its bug class can appear, not just the directory where the first instance was found.** "When writing a unit-test enforcer for a class of bugs (e.g., 'no em-dash in chainsaw-scenario tag values', 'every chainsaw XR-conditions assert lists all 3 v2 conditions'), before committing the scope list, search the entire repo for the bug-class fingerprint (`grep -rln <pattern>` across the cluster-bound directories at minimum), enumerate every directory where the pattern appears or could appear, and include all of them in the enforcer's `find` paths. The narrow shape — 'scan only the directory where I happened to find the first instance' — leaks regressions through the gap and forces a follow-up fix-the-enforcer commit later, often after the bug has cost a CI iteration."
+
+*Grounded in: auto-003 session, where `test_chainsaw_tag_chars.sh` (PR #105 commit `d843915`) and `test_chainsaw_xr_conditions_complete.sh` (PR #105 commit `8298c1f`) both shipped with too-narrow `find` paths that excluded directories where the bug class could (and did) reappear; both required follow-up widening commits.*
+
+# justification
+
+Every narrow-scope enforcer is at minimum a wasted CI iteration when the bug reappears in a missed directory, and at worst it's a false sense of security that defers the discovery to a later session. The narrow shape is tempting because the bug fingerprint is fresh in mind only for the file where it just bit; widening the scope means thinking about adjacent files. Cost of adopting: one `grep -rln` survey before authoring the enforcer (a few seconds plus a few lines of judgement). Cost of not adopting: a follow-up fix-the-enforcer commit per missed directory, plus the iteration on the original bug-class regression that the wider enforcer would have caught. In the auto-003 session this pattern played out twice for the same author in the same PR.
