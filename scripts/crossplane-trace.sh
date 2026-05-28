@@ -32,6 +32,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Optional shared helpers; spec §5.6 says inline-fallback if absent.
 if [[ -f "$SCRIPT_DIR/_lib/k8s-helpers.sh" ]]; then
+  # shellcheck source-path=SCRIPTDIR
   # shellcheck source=_lib/k8s-helpers.sh
   . "$SCRIPT_DIR/_lib/k8s-helpers.sh"
 else

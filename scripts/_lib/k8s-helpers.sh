@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # PURPOSE:
 # Shared kubectl helper functions for scripts/ executables. First introduced
 # by SPEC-S7 (scripts/wait-for-claim.sh); later consumed by SPEC-S2

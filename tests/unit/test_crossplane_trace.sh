@@ -529,7 +529,9 @@ assert_contains "lowercase_kind_works" "=== END TRACE ===" "$out"
 # ===========================================================================
 echo "── test 15: shellcheck ──"
 if command -v shellcheck >/dev/null 2>&1; then
-  if shellcheck "$SCRIPT" 2>&1; then
+  # -x so shellcheck follows the optional `_lib/k8s-helpers.sh` source
+  # (resolved via the SCRIPTDIR directive in scripts/crossplane-trace.sh).
+  if shellcheck -x "$SCRIPT" 2>&1; then
     _pass "shellcheck_clean"
   else
     _fail "shellcheck_clean" "shellcheck reported issues"
