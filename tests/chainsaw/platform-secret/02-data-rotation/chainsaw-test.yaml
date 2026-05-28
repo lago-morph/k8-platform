@@ -50,6 +50,21 @@ spec:
                   - type: Responsive
                     status: "True"
 
+    - name: assert rendered ASM Secret MR matches golden (SPEC-C4)
+      bindings:
+        - name: expected_region
+          value: us-east-1
+      try:
+        - assert:
+            file: expected/asm-secret.yaml
+
+    - name: assert rendered ExternalSecret matches golden (SPEC-C4)
+      # Critical for this scenario: refreshInterval: 10s is the contract
+      # that makes the rotation propagate within the test's wait window.
+      try:
+        - assert:
+            file: expected/external-secret.yaml
+
     - name: write initial value into ASM out-of-band
       try:
         - script:
