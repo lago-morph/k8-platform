@@ -546,6 +546,51 @@ See `ai/testing-guidelines.md §10` for the full procedure including
 §10.1 on verifying environmental preconditions (AWS creds, cluster
 reachability, tool availability) before debugging code.
 
+### 6.10 Never foreground-poll a long-running CI run
+
+**Every tool call re-uploads the entire accumulated conversation
+context to the model.** A 100K-token session that foreground-polls a
+15-minute CI run every 10 seconds spends ~90 × ~100K ≈ **9 million
+input tokens** to learn `status: in_progress` repeatedly. The useful
+information is the final ~2KB.
+
+**The rule.** When you need to wait for a long-running CI run (any
+GitHub Actions workflow, terraform-test, chainsaw, anything that takes
+>1 minute):
+
+1. **Dispatch exactly ONE background poll** via `Bash` with
+   `run_in_background: true`. The poll loop runs `curl` against the
+   GitHub API and exits only when `status=completed`. Example:
+   ```bash
+   until [ "$(curl -sS "https://api.github.com/repos/$OWNER/$REPO/actions/runs/$RUN_ID" \
+       | python3 -c "import json,sys; print(json.load(sys.stdin).get('status',''))")" = "completed" ]; do
+     sleep 60
+   done
+   ```
+   This polling happens **outside** the model loop — zero tokens
+   consumed per check.
+
+2. **Do not make any tool call that queries the same run's status
+   until the harness delivers the polling background's completion
+   notification.** No `mcp__*__execute` status checks. No `date` calls
+   "just to keep alive". No `ls /tmp/.../task-output`. The notification
+   IS the wake-up signal — wait for it.
+
+3. **One background poll per run.** Do not launch overlapping polls on
+   the same run. If you switched branches or context and lost track of
+   the original poll, that is acceptable cost — do NOT add a second
+   poll and a third on top.
+
+4. **Do parallel-author work in the meantime, if it doesn't depend on
+   the running CI.** Prepare the next PR's content, draft the
+   run-summary, run local unit tests — anything that produces durable
+   on-disk artifacts. But do NOT call the status tool.
+
+*Grounded in: auto-003 chainsaw waits, where I dispatched a correct
+background poll AND then proceeded to foreground-poll the same run
+~90 times during the wait, re-uploading the full ~100K-token context
+on each call. The user called this out twice in one session.*
+
 ---
 
 ## 7. Testing loops — companion skills
