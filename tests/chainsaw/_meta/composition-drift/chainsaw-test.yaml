@@ -48,7 +48,7 @@ spec:
               kind: XPlatformSecret
               metadata:
                 name: drift-probe
-                namespace: ($namespace)
+                namespace: default
               spec:
                 refreshInterval: 30s
                 region: us-east-1
@@ -62,7 +62,7 @@ spec:
               kind: XPlatformSecret
               metadata:
                 name: drift-probe
-                namespace: ($namespace)
+                namespace: default
               status:
                 conditions:
                   - type: Ready
