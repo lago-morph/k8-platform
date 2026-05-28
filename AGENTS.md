@@ -591,6 +591,29 @@ background poll AND then proceeded to foreground-poll the same run
 ~90 times during the wait, re-uploading the full ~100K-token context
 on each call. The user called this out twice in one session.*
 
+**Webhook delivery is not 100% reliable — back stop the wait.** When
+`mcp__github__subscribe_pr_activity` is active, completion events for
+dispatched runs (chainsaw.yml, terraform-test.yml) normally arrive as
+`<github-webhook-activity>` envelopes once the workflow run reaches
+`completed`. Observed reliability across two probes is mixed: the
+auto-003 PR #111 final-SHA `ef410ac` chainsaw success event did NOT
+deliver, while the 2026-05-28 probe on PR #125 run 26552671925
+(conclusion: failure) DID deliver. The relay works at least some of
+the time but cannot be relied on as the sole completion signal.
+
+The cheap mitigation: if you have dispatched a heavy run and **no**
+webhook event has arrived by **expected ETA + 50%** (e.g. 22 minutes
+for chainsaw, whose normal wall-clock is ~15 min), issue ONE direct
+`mcp__*__execute` query against the run id to read its status. ONE.
+This costs a single tool call's context, where ETA+50% with no event
+is roughly the point at which the run has either landed or is genuinely
+stuck — either way, you need to know.
+
+Do NOT begin polling on a regular interval if the first backup query
+returns `in_progress`. Either dispatch a new background poll for the
+remaining time, or accept the wait will end via webhook OR the next
+ETA+50% backup, whichever fires first.
+
 ### 6.11 `[Request interrupted by user]` is a hard stop
 
 **When the harness delivers a `[Request interrupted by user]` system
