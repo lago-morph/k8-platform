@@ -1,7 +1,23 @@
 # Scope envelope — `auto-004` "implement phase 2 — make the Crossplane XRDs work"
 
 **Author.** Lead agent, autonomous-run session 2026-05-29.
-**Status.** Awaiting user confirmation (implicit-confirm after a short wait — user is away on an overnight run).
+**Status.** Confirmed + expanded by user mid-run (see Addendum 1).
+
+> ## Addendum 1 — user direction received after the initial envelope
+>
+> The user replied:
+> 1. *"there is also a handoff.md file in ai directory"* — acknowledged; `ai/handoff.md` was read at run start (it is the canonical handoff, AGENTS §1).
+> 2. *"keep going after you finish phase 2, and work on phase 3, 4, etc."* — run scope expands from "phase 2 only" to **phases 2 → 3 → 4 → … through phase 6** (DESIGN.md iterations), in order, as far as the overnight budget allows.
+> 3. *"You have no PR limit. Use stacked PRs."* — the skill's 30-PR cap is lifted by explicit user grant, and **stacked PRs are explicitly authorized** (this is the "explicit permission" the harness branch policy required to push branches other than `claude/fervent-ride-cPkqa`).
+>
+> **Superseded by this addendum:**
+> - *First decision point #1* (single-branch vs stacked) — RESOLVED: use stacked PRs. The stack roots at `claude/fervent-ride-cPkqa` (carrying this envelope); each subsequent chunk branches off the previous tip with `base = <parent branch>`.
+> - *Scale estimate* — no longer 1 PR; now an unbounded stacked sequence across phases 2–6, sized to the overnight budget.
+> - *"What I plan to NOT do" bullet on phase 3* — REMOVED; phases 3+ are now in scope. Real-AWS provisioning for phases 3+ will be **authored + CI-dispatched**, but end-to-end verification depends on live AWS creds; where creds are stale (§8.2) the phase lands as authored-pending-verification with an explicit morning-review item.
+>
+> **Still in force:** every test-discipline rule (§6.1–§6.20), the §5 invariant against destroying lower phases, no credential fabrication, and the §6.4 adversarial-review gate on new test plans.
+>
+> **Phase ordering reality check.** Phases 3–6 require a live EKS cluster provisioned by `PlatformCluster` (~20 min) and a working AWS account; an unattended sandbox cannot fully verify them without live creds. The run therefore front-loads what is *fully verifiable offline* (phase 2 XRD correctness via `crossplane render` + kind), then authors phases 3+ with their full test layers and dispatches CI, surfacing any environmental blockers as morning-review items rather than blocking the run.
 
 This document aligns intent before the unattended run begins. The morning
 user reviews against this envelope.
