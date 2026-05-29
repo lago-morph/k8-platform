@@ -7,7 +7,7 @@ XRDs were not working last time." Overnight, stacked PRs, no PR cap.
 
 - **Phase 0 (base): VERIFIED on a fresh account** — `Apply complete! 25 added`; live-confirmed VPC, 2 NAT GWs, Cognito pool, ISSUED ACM wildcard cert, tfstate bucket.
 - **Phase 1 (management): VERIFIED** — apply-and-verify GREEN; EKS `k8-platform-mgmt` ACTIVE (v1.35). (Sandbox can't kubectl the endpoint — environmental; CI's in-cluster verify passed.)
-- **Phase 2 (XRDs): the real "not working" cause was found and fixed offline, and it's ~verified on real AWS.** The SPEC-S9 author-time render check had **never run** (no goldens existed) because of a determinism bug in the render helper. Fixed → both Compositions now render-validate (12/0). Real-AWS chainsaw: **5/6 scenarios pass**; `claim-rotation` flaked on a known issue (OI Issue A) and was **re-kicked** (run pending at write time).
+- **Phase 2 (XRDs): VERIFIED on real AWS.** The real "not working" cause: the SPEC-S9 author-time render check had **never run** (no goldens existed) due to a determinism bug in the render helper. Fixed → both Compositions render-validate (12/0). Real-AWS chainsaw: first run 5/6 (`claim-rotation` flaked — OI Issue A); **re-kick PASSED full set** ([run 26622175855](https://github.com/lago-morph/k8-platform/actions/runs/26622175855), all scenarios green against `71022db`) → confirms the flake hypothesis. **PR #132 is now fully green (chainsaw + unit tests) and mergeable.**
 - **The account was freshly rotated** (empty) — the handoff said phase 0/1 were verified, but that was the prior account. Added **AGENTS §8.4** so future sessions assume an empty account until the live API proves otherwise.
 - **Phase 3 planned, not started** — gated on phase 1/2 green; the entry blocker (D1: subnet tag-selector, §8.1) and the empty platform-services stack are documented in `decisions/auto-004-phase-3-plan.md`.
 
@@ -39,7 +39,7 @@ XRDs were not working last time." Overnight, stacked PRs, no PR cap.
 
 ## Morning-review items
 
-1. **chainsaw `claim-rotation` flake (OI Issue A).** Re-kicked once against `71022db`. **If green → phase 2 is fully verified and #132 is mergeable.** If red again, it's likely deterministic — recommended root-cause fix: set `crossplane.io/external-name` on the ASM secret MR so the provider adopts the existing secret instead of re-issuing CreateSecret (alt: run chainsaw scenarios serially). I can implement on confirmation.
+1. **chainsaw `claim-rotation` flake (OI Issue A) — RESOLVED for this run.** Re-kick against `71022db` passed the full set, confirming a transient flake (not a Composition bug). #132 is green. *Durable follow-up (not blocking):* OI Issue A should still get a permanent fix so it stops flaking — recommended: set `crossplane.io/external-name` on the ASM secret MR so the provider adopts the existing secret instead of re-issuing CreateSecret (alt: run chainsaw scenarios serially). Tracked in `docs/open-issues.md`.
 2. **Phase 3 D1 — subnet selection design.** Recommendation: tag-based `subnetIdSelector` + add a dedicated `subnet-tier=private` tag in `terraform/base` (the private subnets currently differ from mgmt/public only by `Name`). Needs your nod before I change the base module. Full options in the phase-3 plan.
 3. **Sandbox cannot kubectl the mgmt EKS endpoint** (TLS/egress). Not blocking (CI verifies in-cluster), but phase-3 cluster checks will go through CI/ArgoCD, not sandbox kubectl. FYI.
 
