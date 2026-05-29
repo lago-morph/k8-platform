@@ -1094,3 +1094,27 @@ ai/                      # Design documents, requirements, handoff, testing plan
 .github/workflows/       # CI workflows
 .github/scripts/         # Helper scripts called by workflows
 ```
+
+---
+
+## 12. Crossplane conventions
+
+### 12.1 Crossplane v2 has no claims — use "XR" / "composite resource", not "claim"
+
+**Crossplane v2 has no claims — say "XR" / "composite resource", not
+"claim".** This repo runs Crossplane v2 (`apiextensions.crossplane.io/v2`,
+`scope: Namespaced`), which has NO claim CRD and no claim→XR promotion:
+`XPlatformSecret` / `XPlatformCluster` are namespaced composite resources
+(XRs) the user applies directly. In commentary, commit messages, PR text,
+and docs, call them the XR or the composite resource, never the claim. Some
+artifact names still contain `claim` as v1-era holdovers (the chainsaw
+scenarios `claim-creates-secret` / `claim-rotation`, the step
+`wait for claim Ready`, the file
+`clusters/platform/platform-cluster-claim.yaml`, and the ArgoCD Application
+`platform-cluster-claim`) — quoting those proper names verbatim is fine, but
+do not let `claim` leak into conceptual descriptions of how the resource
+works.
+
+*Grounded in: 2026-05-29 auto-004 — the agent repeatedly called the v2 XRs
+"claims" in running commentary; the user challenged it. See
+`retrospective/2026-05-29-133-a/AGENTS-MD-1545d62c89-v2-no-claims-xr-terminology.md`.*
