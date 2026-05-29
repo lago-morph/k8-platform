@@ -85,6 +85,38 @@ occurrence. Re-dispatch only after Issue B is fixed (so subsequent
 scenarios don't cascade-fail and obscure Issue A).
 **Owner / next action:** Issue A defers; Issue B is the immediate fix.
 
+**2026-05-29 update (auto-004, NEW POSITIVE EVIDENCE — run `26621695077`):**
+Recurred on a fresh account, this time on the **`claim-rotation`** scenario
+(not composition-drift). 5/6 real-AWS scenarios passed
+(`claim-creates-secret` in 10.7s, `claim-deletion-cleanup`, `composition-drift`,
+`xrd-establishes`, `_smoke`); only `claim-rotation` failed at the
+`wait for claim Ready` 240s timeout. The catch block captured the actual
+provider error (the earlier occurrences only showed `Ready=False,
+reason=Creating`):
+```
+CannotCreateExternalResource ... ResourceExistsException: The operation
+failed because the secret k8-platform/<xr-uid> already exists.
+```
+This **sharpens the hypothesis** from "XR is just slow" to a **CreateSecret /
+Observe double-create race**: the AWS provider issues `CreateSecret`, then a
+second reconcile re-issues `CreateSecret` before the first is observable
+(AWS Secrets Manager read-after-write lag) → `ResourceExistsException`, and
+the MR can get stuck re-attempting create rather than adopting the existing
+secret, so the XR never reaches Ready within 240s. Consistent with
+"flaky / load-dependent" (the same Composition's `claim-creates-secret`
+passed in 10.7s in the same run). Still **hypothesis**, not confirmed —
+candidate fixes to evaluate if it recurs deterministically:
+(a) run chainsaw scenarios serially (reduce parallel provider load),
+(b) raise `claim-rotation`'s assert timeout above 240s,
+(c) investigate the provider's external-name persistence after first
+    CreateSecret (the real fix if the MR never self-heals).
+Also noted: `tests/chainsaw/run.sh`'s cleanup trap deletes by
+`ASM_PREFIX="k8-platform-chainsaw"`, but the Composition names secrets
+`k8-platform/<uid>` — so scenario secrets are NOT swept by the prefix
+cleanup (they linger until manually removed). Separate minor issue; logged
+here for the next session. **Next action:** re-kicked chainsaw once to test
+the flake hypothesis (auto-004).
+
 ---
 
 <!-- New entries go above this line, newest first. -->
