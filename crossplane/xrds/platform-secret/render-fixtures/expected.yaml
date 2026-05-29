@@ -1,0 +1,76 @@
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  annotations: {}
+  labels:
+    crossplane.io/composite: render-probe-secret
+  name: render-probe-secret
+  namespace: default
+spec:
+  dataFrom:
+    - extract:
+        key: k8-platform/97d41e24-41e5-5a14-bfa6-11d16bfe7844
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: aws-secrets-manager
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Delete
+    name: render-probe-secret
+apiVersion: secretsmanager.aws.m.upbound.io/v1beta1
+kind: Secret
+metadata:
+  annotations: {}
+  generateName: render-probe-secret-
+  labels:
+    crossplane.io/composite: render-probe-secret
+  name: render-probe-secret-934a4befb899
+  namespace: default
+spec:
+  forProvider:
+    name: k8-platform/97d41e24-41e5-5a14-bfa6-11d16bfe7844
+    recoveryWindowInDays: 0
+    region: us-east-1
+    tags:
+      Description: Render fixture probe - not a real secret
+      ManagedBy: crossplane
+      PlatformAbstraction: PlatformSecret
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
+---
+apiVersion: platform.k8-platform.io/v1alpha1
+kind: XPlatformSecret
+metadata:
+  name: render-probe-secret
+  namespace: default
+spec:
+  crossplane:
+    resourceRefs:
+      - apiVersion: external-secrets.io/v1beta1
+        kind: ExternalSecret
+        name: render-probe-secret
+      - apiVersion: secretsmanager.aws.m.upbound.io/v1beta1
+        kind: Secret
+        name: render-probe-secret-934a4befb899
+  description: Render fixture probe - not a real secret
+  refreshInterval: 1h
+  region: us-east-1
+status:
+  conditions:
+    - reason: WatchCircuitClosed
+      status: "True"
+      type: Responsive
+    - reason: ReconcileSuccess
+      status: "True"
+      type: Synced
+    - message: 'Unready resources: asm-secret, external-secret'
+      reason: Creating
+      status: "False"
+      type: Ready

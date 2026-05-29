@@ -1,0 +1,289 @@
+apiVersion: eks.aws.m.upbound.io/v1beta1
+kind: Cluster
+metadata:
+  annotations:
+    crossplane.io/external-name: render-probe
+  generateName: render-probe-cluster-
+  labels:
+    crossplane.io/composite: render-probe-cluster
+    platform.k8-platform.io/role: eks-cluster
+  name: render-probe-cluster-69f9d71223c3
+  namespace: default
+spec:
+  forProvider:
+    region: us-east-1
+    roleArnSelector:
+      matchControllerRef: true
+      matchLabels:
+        platform.k8-platform.io/role: cluster-role
+    tags:
+      ClusterName: render-probe
+      ManagedBy: crossplane
+      PlatformAbstraction: PlatformCluster
+    version: "1.32"
+    vpcConfig:
+      endpointPrivateAccess: true
+      endpointPublicAccess: true
+      subnetIds:
+        - subnet-00000000000000001
+        - subnet-00000000000000002
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
+apiVersion: eks.aws.m.upbound.io/v1beta1
+kind: NodeGroup
+metadata:
+  annotations:
+    crossplane.io/external-name: render-probe-default
+  generateName: render-probe-cluster-
+  labels:
+    crossplane.io/composite: render-probe-cluster
+  name: render-probe-cluster-b1150f7a0f66
+  namespace: default
+spec:
+  forProvider:
+    clusterNameSelector:
+      matchControllerRef: true
+      matchLabels:
+        platform.k8-platform.io/role: eks-cluster
+    instanceTypes:
+      - t3.medium
+    nodeRoleArnSelector:
+      matchControllerRef: true
+      matchLabels:
+        platform.k8-platform.io/role: node-role
+    region: us-east-1
+    scalingConfig:
+      desiredSize: 2
+      maxSize: 3
+      minSize: 1
+    subnetIds:
+      - subnet-00000000000000001
+      - subnet-00000000000000002
+    tags:
+      ClusterName: render-probe
+      ManagedBy: crossplane
+      PlatformAbstraction: PlatformCluster
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
+apiVersion: iam.aws.m.upbound.io/v1beta1
+kind: Role
+metadata:
+  annotations:
+    crossplane.io/external-name: k8-platform-cluster-render-probe
+  generateName: render-probe-cluster-
+  labels:
+    crossplane.io/composite: render-probe-cluster
+    platform.k8-platform.io/role: cluster-role
+  name: render-probe-cluster-0bdb16c721e6
+  namespace: default
+spec:
+  forProvider:
+    assumeRolePolicy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [{
+          "Effect": "Allow",
+          "Principal": {"Service": "eks.amazonaws.com"},
+          "Action": "sts:AssumeRole"
+        }]
+      }
+    tags:
+      ClusterName: render-probe
+      ManagedBy: crossplane
+      PlatformAbstraction: PlatformCluster
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
+apiVersion: iam.aws.m.upbound.io/v1beta1
+kind: Role
+metadata:
+  annotations:
+    crossplane.io/external-name: k8-platform-nodegroup-render-probe
+  generateName: render-probe-cluster-
+  labels:
+    crossplane.io/composite: render-probe-cluster
+    platform.k8-platform.io/role: node-role
+  name: render-probe-cluster-441cc3b1ccc8
+  namespace: default
+spec:
+  forProvider:
+    assumeRolePolicy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [{
+          "Effect": "Allow",
+          "Principal": {"Service": "ec2.amazonaws.com"},
+          "Action": "sts:AssumeRole"
+        }]
+      }
+    tags:
+      ClusterName: render-probe
+      ManagedBy: crossplane
+      PlatformAbstraction: PlatformCluster
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
+apiVersion: iam.aws.m.upbound.io/v1beta1
+kind: RolePolicyAttachment
+metadata:
+  annotations: {}
+  generateName: render-probe-cluster-
+  labels:
+    crossplane.io/composite: render-probe-cluster
+  name: render-probe-cluster-a15478035bd4
+  namespace: default
+spec:
+  forProvider:
+    policyArn: arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+    role: k8-platform-nodegroup-render-probe
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
+apiVersion: iam.aws.m.upbound.io/v1beta1
+kind: RolePolicyAttachment
+metadata:
+  annotations: {}
+  generateName: render-probe-cluster-
+  labels:
+    crossplane.io/composite: render-probe-cluster
+  name: render-probe-cluster-a916859b9d9b
+  namespace: default
+spec:
+  forProvider:
+    policyArn: arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+    role: k8-platform-cluster-render-probe
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
+apiVersion: iam.aws.m.upbound.io/v1beta1
+kind: RolePolicyAttachment
+metadata:
+  annotations: {}
+  generateName: render-probe-cluster-
+  labels:
+    crossplane.io/composite: render-probe-cluster
+  name: render-probe-cluster-ba923b07429d
+  namespace: default
+spec:
+  forProvider:
+    policyArn: arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+    role: k8-platform-nodegroup-render-probe
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
+apiVersion: iam.aws.m.upbound.io/v1beta1
+kind: RolePolicyAttachment
+metadata:
+  annotations: {}
+  generateName: render-probe-cluster-
+  labels:
+    crossplane.io/composite: render-probe-cluster
+  name: render-probe-cluster-ffd8137bdb2b
+  namespace: default
+spec:
+  forProvider:
+    policyArn: arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+    role: k8-platform-nodegroup-render-probe
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
+---
+apiVersion: platform.k8-platform.io/v1alpha1
+kind: XPlatformCluster
+metadata:
+  name: render-probe-cluster
+  namespace: default
+spec:
+  crossplane:
+    resourceRefs:
+      - apiVersion: eks.aws.m.upbound.io/v1beta1
+        kind: Cluster
+        name: render-probe-cluster-69f9d71223c3
+      - apiVersion: eks.aws.m.upbound.io/v1beta1
+        kind: NodeGroup
+        name: render-probe-cluster-b1150f7a0f66
+      - apiVersion: iam.aws.m.upbound.io/v1beta1
+        kind: RolePolicyAttachment
+        name: render-probe-cluster-a15478035bd4
+      - apiVersion: iam.aws.m.upbound.io/v1beta1
+        kind: RolePolicyAttachment
+        name: render-probe-cluster-a916859b9d9b
+      - apiVersion: iam.aws.m.upbound.io/v1beta1
+        kind: RolePolicyAttachment
+        name: render-probe-cluster-ba923b07429d
+      - apiVersion: iam.aws.m.upbound.io/v1beta1
+        kind: RolePolicyAttachment
+        name: render-probe-cluster-ffd8137bdb2b
+      - apiVersion: iam.aws.m.upbound.io/v1beta1
+        kind: Role
+        name: render-probe-cluster-0bdb16c721e6
+      - apiVersion: iam.aws.m.upbound.io/v1beta1
+        kind: Role
+        name: render-probe-cluster-441cc3b1ccc8
+  name: render-probe
+  nodeGroup:
+    desiredSize: 2
+    instanceTypes:
+      - t3.medium
+    maxSize: 3
+    minSize: 1
+  region: us-east-1
+  version: "1.32"
+  vpc:
+    subnetIds:
+      - subnet-00000000000000001
+      - subnet-00000000000000002
+status:
+  conditions:
+    - reason: WatchCircuitClosed
+      status: "True"
+      type: Responsive
+    - reason: ReconcileSuccess
+      status: "True"
+      type: Synced
+    - message: 'Unready resources: cluster-role, cluster-role-policy, eks-cluster, and 5 more'
+      reason: Creating
+      status: "False"
+      type: Ready

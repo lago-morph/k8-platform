@@ -135,17 +135,38 @@ read_function_version() {
 # share a fixture format.
 # ------------------------------------------------------------------------
 normalize_stream() {
-  yq eval '
-    del(
-      .metadata.ownerReferences,
-      .metadata.uid,
-      .metadata.resourceVersion,
-      .metadata.creationTimestamp,
-      .metadata.generation,
-      .metadata.managedFields,
-      .metadata.annotations."crossplane.io/composition-resource-name",
-      .status.conditions[]?.lastTransitionTime
-    )
+  # `crossplane render` emits a multi-document stream whose DOCUMENT ORDER
+  # is not stable across invocations: the composed-resource docs and the
+  # diagnostic function `Result` docs can swap positions between two
+  # back-to-back renders of the same input (observed for platform-secret —
+  # the ExternalSecret and ASM Secret docs flip, as do the two
+  # "not yet ready" Result messages). A golden-file diff must therefore be
+  # order-independent, otherwise expected.yaml can never be a stable golden
+  # and the determinism sub-test in
+  # tests/unit/test_composition_render_fixtures.sh flakes the moment a
+  # golden is bootstrapped. Normalization now:
+  #   1. drops the render.crossplane.io Result docs (render-time readiness
+  #      noise, not part of the composed-resource contract a golden pins),
+  #   2. sorts the remaining docs by a stable (kind, name) key, and
+  #   3. strips the non-deterministic per-field metadata as before.
+  # (The XR's spec.crossplane.resourceRefs order was observed stable across
+  # runs, so it is not re-sorted; revisit if a future render flakes on it.)
+  # See auto-004 SPEC-S9 determinism fix.
+  yq ea '
+    [.]
+    | map(select((.apiVersion // "") != "render.crossplane.io/v1beta1"))
+    | sort_by(.kind + "/" + (.metadata.name // .metadata.generateName // ""))
+    | .[]
+    | del(
+        .metadata.ownerReferences,
+        .metadata.uid,
+        .metadata.resourceVersion,
+        .metadata.creationTimestamp,
+        .metadata.generation,
+        .metadata.managedFields,
+        .metadata.annotations."crossplane.io/composition-resource-name",
+        .status.conditions[]?.lastTransitionTime
+      )
   ' -
 }
 
@@ -231,12 +252,17 @@ run_one() {
     return 0
   fi
 
-  local expected_norm
-  expected_norm=$(normalize_stream <"$expected")
-
+  # Compare the freshly-normalized render against the stored golden AS-IS.
+  # The golden was produced by this same helper's bootstrap path (already
+  # normalized). normalize_stream is deterministic across renders but NOT
+  # idempotent w.r.t. yq's multi-document separator emission, so
+  # re-normalizing the golden here would spuriously differ from a single
+  # normalize of a fresh render. Trust the stored golden; regenerate it via
+  # bootstrap (delete expected.yaml, re-run) when the Composition changes.
+  # See auto-004 SPEC-S9 determinism fix.
   local diff_out
   diff_out=$(diff -u \
-    <(printf '%s\n' "$expected_norm") \
+    "$expected" \
     <(printf '%s\n' "$normalized")) || {
     err "rendered output differs from $expected"
     local lines

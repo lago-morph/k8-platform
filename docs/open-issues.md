@@ -13,9 +13,9 @@ is the sequence number for that date.
 
 ## OI-2026-05-28-1 — `composition-drift` first-scenario timeout on chainsaw
 
-**Status:** **partially diagnosed** — Issue B (cleanup path bug) root-caused
-with verbatim log evidence; Issue A (first-scenario XR-Ready timeout) still
-hypothesis-level.
+**Status:** **partially resolved** — Issue B (cleanup path bug) **RESOLVED**
+(fix landed in PR #129; verified in code 2026-05-29); Issue A (first-scenario
+XR-Ready timeout) still **open**, hypothesis-level.
 **Surfaced:** 2026-05-28, PR #125 chainsaw dispatch (run id `26552671925`,
 HEAD SHA `b31cc87`).
 **Re-dispatch:** 2026-05-28, run `26553581065` against the same SHA produced
@@ -23,8 +23,16 @@ a DIFFERENT failure pattern, which is what surfaced Issue B.
 
 ### Issue B — `composition-drift` cleanup silently fails to restore the mutated Composition
 
-**Status:** **diagnosed.** Fix is small and obvious.
-**Root cause:** The composition-drift scenario's
+**Status:** **RESOLVED** (verified 2026-05-29, auto-004). The fix already
+landed via PR #129 (commits `0e31154` "restore Composition from /tmp
+snapshot, not cwd-relative on-disk path" + `e834a8a` "strip read-only
+fields from pristine snapshot"). `tests/chainsaw/_meta/composition-drift/chainsaw-test.yaml`
+now snapshots the pristine Composition to `/tmp/composition-pristine.yaml`
+in the mutate step and restores from that path (CWD-independent) guarded by
+`if [ -f ... ]` with **no `|| true`** — so a future restore failure exits
+non-zero immediately instead of cascading. The register entry below was
+stale; closing it. Real-AWS chainsaw re-confirmation is the last step.
+**Root cause (historical):** The composition-drift scenario's
 "restore the Composition (cleanup)" script runs:
 ```sh
 kubectl apply -f crossplane/compositions/platform-secret.yaml || true
@@ -76,6 +84,38 @@ chore/audit-wiring-fixes-2026-05-05 fix) so the asm-secret MR's
 occurrence. Re-dispatch only after Issue B is fixed (so subsequent
 scenarios don't cascade-fail and obscure Issue A).
 **Owner / next action:** Issue A defers; Issue B is the immediate fix.
+
+**2026-05-29 update (auto-004, NEW POSITIVE EVIDENCE — run `26621695077`):**
+Recurred on a fresh account, this time on the **`claim-rotation`** scenario
+(not composition-drift). 5/6 real-AWS scenarios passed
+(`claim-creates-secret` in 10.7s, `claim-deletion-cleanup`, `composition-drift`,
+`xrd-establishes`, `_smoke`); only `claim-rotation` failed at the
+`wait for claim Ready` 240s timeout. The catch block captured the actual
+provider error (the earlier occurrences only showed `Ready=False,
+reason=Creating`):
+```
+CannotCreateExternalResource ... ResourceExistsException: The operation
+failed because the secret k8-platform/<xr-uid> already exists.
+```
+This **sharpens the hypothesis** from "XR is just slow" to a **CreateSecret /
+Observe double-create race**: the AWS provider issues `CreateSecret`, then a
+second reconcile re-issues `CreateSecret` before the first is observable
+(AWS Secrets Manager read-after-write lag) → `ResourceExistsException`, and
+the MR can get stuck re-attempting create rather than adopting the existing
+secret, so the XR never reaches Ready within 240s. Consistent with
+"flaky / load-dependent" (the same Composition's `claim-creates-secret`
+passed in 10.7s in the same run). Still **hypothesis**, not confirmed —
+candidate fixes to evaluate if it recurs deterministically:
+(a) run chainsaw scenarios serially (reduce parallel provider load),
+(b) raise `claim-rotation`'s assert timeout above 240s,
+(c) investigate the provider's external-name persistence after first
+    CreateSecret (the real fix if the MR never self-heals).
+Also noted: `tests/chainsaw/run.sh`'s cleanup trap deletes by
+`ASM_PREFIX="k8-platform-chainsaw"`, but the Composition names secrets
+`k8-platform/<uid>` — so scenario secrets are NOT swept by the prefix
+cleanup (they linger until manually removed). Separate minor issue; logged
+here for the next session. **Next action:** re-kicked chainsaw once to test
+the flake hypothesis (auto-004).
 
 ---
 
