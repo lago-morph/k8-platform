@@ -16,11 +16,16 @@ with automatic DNS + valid TLS.
 - `argocd/apps/platform-cluster-claim.yaml` — ArgoCD Application, **manual-sync only** (no `automated:`), targets `path: clusters/platform` on `main`.
 - `platform-services/{ingress,external-dns,cert-manager,observability,keycloak,eso}/` — all empty `.gitkeep`. **The entire platform stack is unauthored.**
 
-## Live inputs (account 975049983446, queried this run)
+## Live inputs (how to query — values are account-ephemeral, AGENTS §8.1)
 
-- VPC `vpc-0670ddff37608b82c` (10.0.0.0/16).
-- Private subnets: `subnet-05e6d645fcb6f33c5` (us-east-1a), `subnet-02536846b210de89f` (us-east-1b), both named `k8-platform-private-*`, tagged `Project=k8-platform`, `Environment=dev`, `kubernetes.io/role/internal-elb=1`. (There are also separate `k8-platform-mgmt-*` and `k8-platform-public-*` subnets.)
-- Route53 zone `975049983446.realhandsonlabs.net.` (`/hostedzone/Z0182461NZM4YE192TO8`).
+Do NOT hardcode these; query them on the current account at phase-3 time:
+
+- **VPC:** `aws ec2 describe-vpcs --filters Name=tag:Name,Values='*k8-platform-vpc'`.
+- **Private subnets:** `aws ec2 describe-subnets --filters Name=vpc-id,Values=<vpc> Name=tag:Name,Values='*k8-platform-private-*'` — two subnets across us-east-1a/1b, tagged `Project=k8-platform`, `Environment=dev`, `kubernetes.io/role/internal-elb=1`. (Separate `k8-platform-mgmt-*` and `k8-platform-public-*` subnets also exist — the `Name` tag is currently the only discriminator; see D1.)
+- **Route53 zone:** `<account-id>.realhandsonlabs.net.` — discover via `aws route53 list-hosted-zones`.
+
+(These were queried live during auto-004 to confirm phase-0 networking; the
+specific IDs are intentionally omitted here because the account rotates.)
 
 ## Key decisions (need decision briefs + adversarial review per autonomous-run)
 
@@ -65,7 +70,7 @@ flip to prod for the final hello-app TLS check. Low-risk; brief-lite.
 ### D4 — ExternalDNS scoping to `platform.<domain>`
 
 REQ-PLAT-04: ExternalDNS on the platform cluster must only manage
-`*.platform.975049983446.realhandsonlabs.net`. `--domain-filter` +
+`*.platform.<account-id>.realhandsonlabs.net`. `--domain-filter` +
 `--zone-id-filter` (or a dedicated sub-hosted-zone). Brief-lite.
 
 ## Execution sequence (once phase 1 + 2 are green)
