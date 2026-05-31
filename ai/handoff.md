@@ -20,13 +20,22 @@ State at last checkpoint (all run URLs durable; account ID is ephemeral —
 query via `aws sts`):
 - **Phase 0 (base): VERIFIED** — [terraform-test run 26621367469](https://github.com/lago-morph/k8-platform/actions/runs/26621367469) `Apply complete! Resources: 25 added`. Confirmed live: VPC, 2 NAT GWs, Cognito pool, ISSUED ACM wildcard, state bucket bootstrapped.
 - **Phase 1 (management): VERIFIED** — [terraform-test run 26621556820](https://github.com/lago-morph/k8-platform/actions/runs/26621556820) apply-and-verify GREEN. Cluster `k8-platform-mgmt` ACTIVE (EKS v1.35) confirmed via AWS API. NOTE: **the sandbox cannot `kubectl` the mgmt EKS endpoint** — `x509: certificate signed by unknown authority`, and `ServiceUnavailable` with `--insecure-skip-tls-verify` (environmental egress limitation, §10.1 — NOT a phase failure; CI's in-cluster verify passed). Verify the cluster via CI or the chainsaw kind cluster, not sandbox kubectl.
-- **Phase 2 (XRDs): render-validated offline + chainsaw mostly green.**
+- **Phase 2 (XRDs): VERIFIED on real AWS.**
   - SPEC-S9 render goldens now exist + pass (`tests/unit/test_composition_render_fixtures.sh` 12/0) — the author-time gate that had NEVER run before this session. Fixed a real determinism bug in `scripts/composition-render.sh` (PR #132).
-  - Chainsaw run `26621695077` against `918e5ce`: **5/6 real scenarios PASS** (xrd-establishes, claim-creates-secret, claim-deletion-cleanup, composition-drift, smoke). **`claim-rotation` FAILED** (240s timeout, `ResourceExistsException` on the ASM secret) — see OI-2026-05-28-1 Issue A (sharpened: CreateSecret/Observe race). **Re-kicked** against `71022db`; check that run on resume.
-- **PRs:** #132 (`claude/fervent-ride-cPkqa`, stack base — phase-2 render fixes + AGENTS §8.4 + open-issues). `claude/auto-004-phase-3` (stacked — phase-3 plan, no PR yet).
-- **Phase 3 plan:** `decisions/auto-004-phase-3-plan.md` — D1 (subnet tag-selector, §8.1) is the entry blocker; platform-services dirs are empty.
+  - Chainsaw: first run `26621695077` (`918e5ce`) was 5/6 (`claim-rotation` flaked with `ResourceExistsException` — OI-2026-05-28-1 Issue A). **Re-kick `26622175855` (`71022db`) PASSED the full set** → confirmed transient flake. Phase 2 done.
+- **PRs (all MERGED to main):** #132 (phase-2 render fixes + AGENTS §8.4 + open-issues), #133 (summary + handoff + main retro), #134 (tail retro + AGENTS-MD-1545d62c89), #135 (AGENTS §12.1 v2-terminology adoption).
+- **Phase 3 plan:** `decisions/auto-004-phase-3-plan.md`, staged on branch `claude/auto-004-phase-3` (no PR; rebase onto main when phase 3 starts). D1 (subnet tag-selector, §8.1) is the entry blocker; `platform-services/*` dirs are empty.
 
-**Immediate next step:** (1) query phase-1 run `26621556820` + chainsaw re-run status; (2) if claim-rotation still red, implement the OI Issue A root-cause fix (set `crossplane.io/external-name` on the ASM secret MR, or serialize chainsaw scenarios) with render-revalidation; (3) once phase 1 green + chainsaw green, phase 2 is DONE → start phase 3 per the plan (D1 decision brief first).
+**Immediate next step — START PHASE 3 (phases 0/1/2 are DONE):**
+1. **D1 decision (blocks phase 3):** the `XPlatformCluster` XR can't hardcode subnet IDs (§8.1). Recommended D1-a = add a `subnet-tier=private` (or similar) tag in `terraform/base`, re-apply phase 0, switch the Composition to a tag-based `subnetIdSelector`, re-render the SPEC-S9 golden. Run the D1 decision brief (2 rounds, ≥3 real reviewers) first — this changes the base module, so confirm with the user per their stated caution about account/infra changes.
+2. Then: fill `clusters/platform/platform-cluster-claim.yaml` (drop placeholders + kubeconform-skip), sync it (manual) to provision the platform EKS cluster (~20 min), author `platform-services/{ingress,external-dns,cert-manager}` + a hello app, verify `hello.platform.<domain>` with TLS (REQ-PLAT-01..06).
+
+**Open follow-ups (non-blocking):**
+- **OI-2026-05-28-1 Issue A permanent fix:** `claim-rotation` flake is transient but recurring. Root-cause fix: set `crossplane.io/external-name` on the ASM secret MR (so the provider adopts the existing secret instead of re-issuing CreateSecret), or run chainsaw scenarios serially. Tracked in `docs/open-issues.md`.
+- **Rename surviving v1-era `*-claim` artifacts to `*-xr`** (per AGENTS §12.1): `clusters/platform/platform-cluster-claim.yaml`, the ArgoCD Application `platform-cluster-claim`, the `claim-*` chainsaw scenario dirs. Touches ArgoCD app names + chainsaw paths → its own small PR (do alongside phase 3).
+- **ASM cleanup-trap gap:** `tests/chainsaw/run.sh` deletes by `ASM_PREFIX=k8-platform-chainsaw` but the Composition names secrets `k8-platform/<uid>`, so scenario secrets aren't swept (linger in the account). See `docs/open-issues.md` Issue A note.
+
+**Sandbox note:** cannot `kubectl` the mgmt EKS endpoint (TLS/egress, environmental). Verify clusters via CI or the chainsaw kind cluster.
 
 ---
 
@@ -145,7 +154,7 @@ Crossplane-core compat per minor release.
 
 | Field | Value |
 |---|---|
-| Active phase | **Phase 2 (auto-004): fresh account; phase 0 verified, phase 1 apply IN FLIGHT, phase 2 chainsaw 5/6 (claim-rotation re-kicked). See QUICKSTART.** |
+| Active phase | **Phase 3 next — phases 0/1/2 VERIFIED on this account (auto-004). Phase 3 gated on the D1 subnet-selection decision. See QUICKSTART.** |
 | Last update | 2026-05-29 (auto-004 overnight run — NEW account, see §8.4) |
 | AWS account | **ephemeral — derive from `aws sts get-caller-identity`** (see AGENTS.md §8.1) |
 | Route53 zone | `<account-id>.realhandsonlabs.net.` |
@@ -162,7 +171,7 @@ Cross-session `applied`/`verified` are NOT durable (AGENTS.md §8.1).
 |---|---|---|
 | 0 base | **verified (this account)** | [terraform-test run 26621367469](https://github.com/lago-morph/k8-platform/actions/runs/26621367469) — apply+e2e-verify GREEN, `25 added`, 2026-05-29. Live-confirmed: VPC, 2 NAT GW, Cognito, ISSUED ACM cert, state bucket. |
 | 1 management | **apply IN FLIGHT** | run `26621556820` (2026-05-29). §6.20: query this run id on resume before assuming. |
-| 2 xrds | **render-validated; chainsaw 5/6** | SPEC-S9 goldens pass (PR #132). Chainsaw run `26621695077` (918e5ce): 5/6 PASS, `claim-rotation` failed (ResourceExistsException — OI Issue A); re-kicked vs `71022db`. |
+| 2 xrds | **verified (this account)** | SPEC-S9 goldens pass (PR #132). Chainsaw re-kick [run 26622175855](https://github.com/lago-morph/k8-platform/actions/runs/26622175855) (`71022db`) full set GREEN; first run was 5/6 (`claim-rotation` transient flake, OI Issue A). |
 | 3+ | not started | Phase 3 ApplicationSet kubeconfig source repoint (consumers read kubeconfig from EKS Cluster MR's own connection-secret rather than from XR-aggregated `platform-cluster-kubeconfig` — the v2-removed XR-level secret). Tracked. |
 
 ### Live AWS resource shape
