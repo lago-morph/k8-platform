@@ -520,3 +520,202 @@ environmental preconditions still hold:
 If the failure cause is environmental, document it in the PR body
 and stop debugging code. A code fix on top of an environmental
 failure ships the wrong fix.
+
+---
+
+## 11. CI and Agent Operating Rules
+
+### 11.1 Live-admission verification for v2 Crossplane CRD changes
+
+**Dispatch live chainsaw before relying on kubeconform alone for v2
+Crossplane manifest changes.** For any PR that migrates Crossplane
+manifests across a major API-version boundary (e.g. v1 → v2 group
+rename, XRD `apiextensions/v1` → `/v2`, Composition rewrites with new
+`providerConfigRef` shapes), dispatch `chainsaw.yml` against the branch
+SHA and confirm at least the `xrd-establishes` scenario passes BEFORE
+merging.
+
+**Why kubeconform isn't sufficient here.** The static kubeconform JSON
+schema is generated from the CRD's `openAPIV3Schema`. The live admission
+webhook has additional handler logic that can reject fields the schema
+accepts — for example, `compositeresourcedefinition_v2.json` accepts
+`connectionSecretKeys` on a v2 XRD (the field still exists in the v2 CRD
+for back-compat), but the v2 admission webhook rejects it at apply time.
+See `docs/decisions/0001-kubeconform-not-sole-gate-for-v2-crd-changes.md`
+for the full ADR.
+
+**Operating contract** (specializes AGENTS.md §6.7):
+
+1. After kubeconform CI is green, dispatch `chainsaw.yml` against
+   `BRANCH` with `commit_sha=$(git rev-parse HEAD)`. Use
+   `scenario_filter=""` for full set, or at minimum a filter that
+   includes `xrd-establishes`.
+2. On failure: fetch the chainsaw stdout via `ext-github`
+   `op_c08d23e5bd6966cb` per §10 BEFORE forming hypotheses. Common v2
+   admission-rejection shapes: `is invalid: spec: Invalid value: …`,
+   `--for=condition=Offered` timeouts (v2 has no claim CRD, so the
+   Offered condition never appears), `no matches for kind <V1Kind>`.
+3. On success: paste the chainsaw run URL into the PR description
+   under "§6.7 chainsaw contract".
+4. Only then consider the PR ready to merge.
+
+**Schema-pass IS still the necessary first gate** — kubeconform catches
+field-structure changes that the schema correctly reflects. This rule
+supplements it with a live-admission gate for the specific class of
+failures the schema can't express.
+
+### 11.2 Read the failure log first
+
+**When ANY CI check fails, the first action is to fetch the job log.**
+Do not read the PR description, workflow YAML, spec, test source, or
+commit message before reading the log. Hypotheses formed from indirect
+sources are guesses; the actual error is in the workflow stdout.
+
+See §10 for the full procedure including §10.1 on verifying environmental
+preconditions before debugging code.
+
+### 11.3 Never foreground-poll a long-running CI run
+
+Every tool call re-uploads the accumulated conversation context. A 100K-token
+session that foreground-polls a 15-minute CI run every 10 seconds spends
+~9 million input tokens learning `status: in_progress` repeatedly.
+
+**The rule.** When waiting for any GitHub Actions workflow that takes >1 minute:
+
+1. **Dispatch exactly ONE background poll** via `Bash` with
+   `run_in_background: true`. The poll loop exits only when
+   `status=completed`:
+   ```bash
+   until [ "$(curl -sS "https://api.github.com/repos/$OWNER/$REPO/actions/runs/$RUN_ID" \
+       | python3 -c "import json,sys; print(json.load(sys.stdin).get('status',''))")" = "completed" ]; do
+     sleep 60
+   done
+   ```
+2. **Make no tool calls querying that run's status** until the background
+   poll's completion notification arrives. No periodic status checks.
+3. **One background poll per run.**
+4. **Do parallel-author work in the meantime** on anything that doesn't
+   depend on the running CI.
+
+**Sandbox suspend / resume.** When the sandbox suspends mid-wait, webhooks
+that arrive during suspension do not deliver on resume. When you resume
+after an idle period, OR when no webhook event has arrived by **expected
+ETA + 50%**, issue ONE direct API query against the run id. ONE. If that
+returns `in_progress`, dispatch a new background poll rather than polling
+manually. Do not begin polling on a regular interval.
+
+### 11.4 `[Request interrupted by user]` is a hard stop
+
+When the harness delivers `[Request interrupted by user]`, do NOT pivot
+into an adjacent task. Stop the current activity, do not start a new one,
+and wait for the user's next explicit direction. Background processes the
+agent had started prior to the interrupt should be killed if they continue
+to consume model context or registry/API quota.
+
+### 11.5 Don't claim a tool is "unavailable" until you've tried to install or start it
+
+Before reporting "X is not available in this sandbox", attempt the obvious
+installation or activation paths:
+
+1. **Already installed but not on PATH?** `which X`, `ls /usr/bin/X /usr/local/bin/X /root/.local/bin/X`
+2. **Daemon installed but stopped?** `systemctl status X`, `pgrep X`, `sudo Xd &`
+3. **One-line install available?** `curl -fL <release-url> -o /tmp/X && chmod +x /tmp/X`
+
+Report "unavailable" only after at least one of those attempts fails with a
+concrete error.
+
+### 11.6 Run a pre-dispatch static audit before any long CI dispatch
+
+**Before dispatching a long-running CI workflow** (chainsaw, terraform-test,
+integration suite), run `scripts/pre-chainsaw-audit.sh`. The audit MUST
+cover at minimum:
+
+- (a) Non-ASCII characters in tag-bound `description:` / `Description:` fields (the AWS Resource Groups Tagging service rejects them).
+- (b) `set -o pipefail` / `[[ ]]` / other bash-isms in chainsaw `script.content:` blocks (chainsaw runs scripts under `/bin/sh`).
+- (c) `status.conditions:` array length not equal to 3 on v2 XR asserts (v2 carries Synced + Ready + Responsive).
+- (d) `($namespace)` literals in `apply.resource.metadata.namespace` (chainsaw's pre-substitution validation rejects these as invalid RFC 1123 labels).
+- (e) Golden YAMLs missing `metadata.namespace: default` (chainsaw `assert: file:` searches the per-test namespace by default).
+- (f) Golden-vs-scenario data-value drift on fields the Composition propagates (notably `tags.Description`).
+
+Each check is a one-line grep; the full audit runs in seconds. Fix every
+FAIL before dispatching; re-run until clean.
+
+### 11.7 Use Bash `run_in_background`, not Monitor, for single-notification waits
+
+Use `Bash` with `run_in_background: true` and an `until <check>; do sleep <N>; done`
+loop for "tell me when X completes." Reserve `Monitor` for streams of
+multiple events. A Monitor that just sleeps and ticks is an anti-pattern —
+every tick is a chat-visible notification, the monitor doesn't end on the
+event you care about, and there is no surfaced way to stop it early.
+
+### 11.8 Webhook backup poll at 1.5x expected ETA
+
+When a webhook subscription is the agreed completion channel and 1.5x the
+expected ETA has elapsed with no event, do a single direct-API status query.
+PR-activity subscriptions occasionally drop `workflow_run completed` events
+without dropping surrounding `check_suite` failure events; silence on the
+channel does not mean the work is still running. Confirm with one direct-API
+call before assuming. One direct call at ETA + 50% does not constitute a
+polling loop — it's a single fallback query.
+
+### 11.9 `tests/unit/run.sh` and `.github/workflows/unit-tests.yml` must stay in sync
+
+Every test in `tests/unit/run.sh` MUST also be enumerated in
+`.github/workflows/unit-tests.yml`'s per-step list, OR the workflow must end
+with a `run.sh` catch-all step that invokes it. Per-step CI is preferred for
+separate-failure diagnosability in the Actions UI; the catch-all trades that
+UI clarity for guaranteed coverage. Either pattern is acceptable; the gap
+between them is not. When authoring a new `tests/unit/test_*.sh`, the same
+PR must update `unit-tests.yml` or rely on the catch-all if it exists.
+
+### 11.10 Never present a hypothesis as a conclusion
+
+State the strength of every claim:
+
+- **Observation** — something seen in logs / output. Quote it.
+- **Exclusion** — something ruled out by topology, evidence, or direct test. Name the exclusion criterion.
+- **Hypothesis** — a candidate explanation that fits the evidence but is NOT confirmed. Label it as such.
+- **Conclusion** — a hypothesis positively tested or following from exhaustive exclusion of every other plausible alternative.
+
+Writing "X is the cause" or "this is not a regression I introduced" claims a
+conclusion. That requires positive evidence or exhaustive exclusion. One
+fits-the-pattern data point is "consistent with hypothesis X" — not "X is
+the cause." The cost of accurate framing is one extra word; the cost of
+inaccurate framing is the user's trust.
+
+### 11.11 Never ignore an undiagnosed failure — log to the open-issues register
+
+Every observed failure must either be diagnosed in this session or recorded
+in `docs/open-issues.md`. No silent-skip, no "out of scope so I'll move on,"
+no leaving a flaky red check unfollowed.
+
+Options:
+1. **Diagnose it now.** Fix the issue, write the regression-catching test per
+   AGENTS.md §6.2, close the loop.
+2. **Defer to a tracked issue.** Add an entry to `docs/open-issues.md` with:
+   status, symptom (with verbatim error text), diagnostic evidence, hypotheses
+   (labelled per §11.10), what's ruled out, the next concrete diagnostic step,
+   and an owner.
+
+Out-of-scope is a valid reason to defer; it is NOT a valid reason to drop the
+observation. Pure flakes get an entry too — a flake is "undiagnosed but
+observed," not "no problem." Keep closed items removed or in a historical
+section; stale entries are a tax on every future agent.
+
+### 11.12 Never silence cleanup failures with `|| true`
+
+Test and CI cleanup steps that depend on succeeding (re-applying state,
+deleting resources, restoring config) MUST fail loudly. The `|| true` idiom
+masks the underlying error and lets contamination propagate to subsequent
+scenarios. If a cleanup is genuinely best-effort, guard with
+`[ -f X ] && cmd` or an explicit `if ! cmd; then echo WARN; fi` so the
+warning surfaces.
+
+### 11.13 After session resume from suspension, verify status of in-flight dispatches
+
+When the sandbox suspends mid-wait, webhooks that arrive during suspension do
+not deliver on resume. The first action after resume — before authoring new
+work, before answering a user question that depends on the run's outcome —
+is one direct-API query against any in-flight dispatch's run id. This
+complements §11.3 (active-wait) and §11.8 (ETA backup): those cover
+different triggers; this one covers the resumed-after-suspension case.

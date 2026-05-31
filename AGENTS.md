@@ -26,11 +26,6 @@ historical files (`retrospective/`, `summary/`, `ai/archive/`), from prior
 commits, or from patterns found elsewhere in the repo. Conflicts resolve in
 favor of the spec. If anything is ambiguous, ask — do not synthesize.
 
-This rule exists because a prior session, while building the ext-github
-skill, attempted to harmonize the spec with the (now deleted) trigger-file
-machinery in the repo and produced a hybrid the user explicitly did not
-want. Treat each spec as load-bearing.
-
 ---
 
 ## 3. Branch policy
@@ -474,399 +469,13 @@ after dispatching) — not a flaky test.
 yet have a verifier; phase apply-and-verify is invoked too rarely to
 need one.)
 
-### 6.8 Live-admission verification for v2 Crossplane CRD changes
-
-**Dispatch live chainsaw before relying on kubeconform alone for v2
-Crossplane manifest changes.** For any PR that migrates Crossplane
-manifests across a major API-version boundary (e.g. v1 → v2 group
-rename, XRD `apiextensions/v1` → `/v2`, Composition rewrites with new
-`providerConfigRef` shapes), dispatch `chainsaw.yml` against the branch
-SHA and confirm at least the `xrd-establishes` scenario passes BEFORE
-merging.
-
-**Why kubeconform isn't sufficient here.** The static kubeconform JSON
-schema is generated from the CRD's `openAPIV3Schema`. The live
-admission webhook has additional handler logic that can reject fields
-the schema accepts. The 2026-05-26 v1 → v2 migration discovered this
-the hard way: `compositeresourcedefinition_v2.json` accepts
-`connectionSecretKeys` on a v2 XRD (the field still exists in the v2
-CRD for back-compat), but the v2 admission webhook rejects it at apply
-time:
-
-```
-CompositeResourceDefinition.apiextensions.crossplane.io
-"xplatformclusters.platform.k8-platform.io" is invalid: spec:
-Invalid value: "object": XR connection secrets aren't supported in
-apiextensions.crossplane.io/v2
-```
-
-That gap cost a hotfix PR plus two chainsaw iterations after Wave 2
-merged. See `docs/decisions/0001-kubeconform-not-sole-gate-for-v2-crd-changes.md`
-for the full ADR.
-
-**Operating contract** (specializes §6.7):
-
-1. After kubeconform CI is green, dispatch `chainsaw.yml` against
-   `BRANCH` with `commit_sha=$(git rev-parse HEAD)`. Use
-   `scenario_filter=""` for full set, or at minimum a filter that
-   includes `xrd-establishes`.
-2. On failure: fetch the chainsaw stdout via `ext-github`
-   `op_c08d23e5bd6966cb` per §10 of `ai/testing-guidelines.md` BEFORE
-   forming hypotheses. Common v2 admission-rejection shapes:
-   `is invalid: spec: Invalid value: …`, `--for=condition=Offered`
-   timeouts (v2 has no claim CRD, so the Offered condition never
-   appears), `no matches for kind <V1Kind>` (v1 claim kind in a v2
-   cluster).
-3. On success: paste the chainsaw run URL into the PR description
-   under "§6.7 chainsaw contract".
-4. Only then consider the PR ready to merge.
-
-**Schema-pass IS still the necessary first gate** — kubeconform catches
-field-structure changes that the schema correctly reflects (the same
-2026-05-26 migration caught `vpcConfig[0]` → `vpcConfig` and
-`scalingConfig[0]` → `scalingConfig` via kubeconform locally). This
-rule supplements kubeconform with a live-admission gate for the
-specific class of failures the schema can't express.
-
-### 6.9 Read the failure log first
-
-**Read the failure log first.** "When ANY CI check fails, the first
-action is to fetch the job log (e.g., via `ext-github`'s
-`download_job_logs` operation, job ID = last path segment of the
-check's `details_url`). Do not read the PR description, workflow YAML,
-spec, test source, or commit message before reading the log.
-Hypotheses formed from indirect sources are guesses; the actual error
-is in the workflow stdout."
-
-*Grounded in: session 2026-05-26 Phase 2 — multiple turns speculating
-about AWS-side root causes for chainsaw failures when the log
-immediately revealed the v1/v2 provider mismatch.*
-
-See `ai/testing-guidelines.md §10` for the full procedure including
-§10.1 on verifying environmental preconditions (AWS creds, cluster
-reachability, tool availability) before debugging code.
-
-### 6.10 Never foreground-poll a long-running CI run
-
-**Every tool call re-uploads the entire accumulated conversation
-context to the model.** A 100K-token session that foreground-polls a
-15-minute CI run every 10 seconds spends ~90 × ~100K ≈ **9 million
-input tokens** to learn `status: in_progress` repeatedly. The useful
-information is the final ~2KB.
-
-**The rule.** When you need to wait for a long-running CI run (any
-GitHub Actions workflow, terraform-test, chainsaw, anything that takes
->1 minute):
-
-1. **Dispatch exactly ONE background poll** via `Bash` with
-   `run_in_background: true`. The poll loop runs `curl` against the
-   GitHub API and exits only when `status=completed`. Example:
-   ```bash
-   until [ "$(curl -sS "https://api.github.com/repos/$OWNER/$REPO/actions/runs/$RUN_ID" \
-       | python3 -c "import json,sys; print(json.load(sys.stdin).get('status',''))")" = "completed" ]; do
-     sleep 60
-   done
-   ```
-   This polling happens **outside** the model loop — zero tokens
-   consumed per check.
-
-2. **Do not make any tool call that queries the same run's status
-   until the harness delivers the polling background's completion
-   notification.** No `mcp__*__execute` status checks. No `date` calls
-   "just to keep alive". No `ls /tmp/.../task-output`. The notification
-   IS the wake-up signal — wait for it.
-
-3. **One background poll per run.** Do not launch overlapping polls on
-   the same run. If you switched branches or context and lost track of
-   the original poll, that is acceptable cost — do NOT add a second
-   poll and a third on top.
-
-4. **Do parallel-author work in the meantime, if it doesn't depend on
-   the running CI.** Prepare the next PR's content, draft the
-   run-summary, run local unit tests — anything that produces durable
-   on-disk artifacts. But do NOT call the status tool.
-
-*Grounded in: auto-003 chainsaw waits, where I dispatched a correct
-background poll AND then proceeded to foreground-poll the same run
-~90 times during the wait, re-uploading the full ~100K-token context
-on each call. The user called this out twice in one session.*
-
-**The sandbox suspends when idle — back stop the wait when you resume.**
-When `mcp__github__subscribe_pr_activity` is active, completion events
-for dispatched runs (chainsaw.yml, terraform-test.yml) normally arrive
-as `<github-webhook-activity>` envelopes once the workflow run reaches
-`completed`. The Claude Code-on-the-web sandbox is suspended after
-inactivity; events that arrive while the sandbox is suspended do not
-appear as `<github-webhook-activity>` envelopes when the sandbox
-resumes. Three data points so far:
-- auto-003 PR #111 final-SHA `ef410ac` chainsaw success: not surfaced
-  on resume.
-- 2026-05-28 PR #125 run `26552671925` (failure conclusion): surfaced
-  while the sandbox was still active.
-- 2026-05-28 PR #129 run `26555037975` (success conclusion): completed
-  during a multi-minute idle period; not surfaced on resume.
-This is a sandbox-lifecycle property, NOT a GitHub webhook reliability
-claim. The same envelope shape arrives reliably for events that
-complete during an active session.
-
-The cheap mitigation: when you resume after an idle period, OR when
-you have dispatched a heavy run and **no** webhook event has arrived
-by **expected ETA + 50%** (e.g. 22 minutes for chainsaw, whose normal
-wall-clock is ~15 min), issue ONE direct `mcp__*__execute` query
-against the run id to read its status. ONE. This costs a single tool
-call's context, where ETA+50% with no event is roughly the point at
-which the run has either landed or is genuinely stuck — either way,
-you need to know.
-
-Do NOT begin polling on a regular interval if the first backup query
-returns `in_progress`. Either dispatch a new background poll for the
-remaining time, or accept the wait will end via webhook OR the next
-ETA+50% backup, whichever fires first.
-
-### 6.11 `[Request interrupted by user]` is a hard stop
-
-**When the harness delivers a `[Request interrupted by user]` system
-message, do NOT pivot into an adjacent task** ("let me do this small
-thing instead", "while I have you"). Stop the current activity, do not
-start a new one, and wait for the user's next explicit direction.
-Background processes the agent had started prior to the interrupt
-should be killed if they continue to consume model context or
-registry/API quota. Treat the interrupt the same way a SIGINT from a
-terminal would be treated by an interactive program: full halt.
-
-*Grounded in: auto-003 post-retro phase, where `[Request interrupted
-by user]` fired twice and the agent both times continued with a small
-adjacent task; the user replied "you keep doing things even when I
-push stop."*
-
-### 6.12 Don't claim a tool is "unavailable" until you've tried to install or start it
-
-**Before reporting "X is not available in this sandbox" or deferring
-work on that basis, attempt the obvious installation or activation
-paths:**
-
-1. **Already installed but not at PATH?** `which X`, `ls /usr/bin/X
-   /usr/local/bin/X /root/.local/bin/X`.
-2. **Daemon installed but stopped?** `systemctl status X`, `service X
-   status`, `pgrep X`, `sudo Xd &`.
-3. **One-line install available?** `curl -fL <release-url> -o /tmp/X
-   && chmod +x /tmp/X`.
-
-Report "unavailable" only after at least one of those attempts has
-failed with a concrete error. The wrong shape of "unavailable" claim
-is `which X` returning nothing — that's an unanswered question, not
-an answer.
-
-*Grounded in: auto-003 post-retro phase, where the agent twice
-deferred substantial work ("docker not in sandbox", "kubectl not in
-sandbox") that turned out to be wrong on both counts — docker daemon
-needed `sudo dockerd &`, kubectl was a one-line curl install. The
-user pointed both out.*
-
-### 6.13 Run a pre-dispatch static audit before any long CI dispatch
-
-**Before dispatching a long-running CI workflow** (chainsaw,
-terraform-test, integration suite), run a one-pass static audit for
-every known bug class the changed files could exhibit. Long CI
-iterations cost minutes per round and tend to surface bugs in layers —
-one fix unmasks the next. A pre-dispatch audit catches multiple bug
-classes in one pass, in seconds.
-
-The canonical audit lives at `scripts/pre-chainsaw-audit.sh` and is
-the implementation of the `pre-dispatch-static-audit` skill
-(`SKILL-SPEC-3a7d2e9f1c`). Invoke it before every `chainsaw.yml`
-dispatch. The audit MUST cover at minimum:
-
-- (a) non-ASCII characters in tag-bound `description:` / `Description:`
-  fields (the AWS Resource Groups Tagging service rejects them — see
-  §6.8 ADR-0001).
-- (b) `set -o pipefail` / `[[ ]]` / other bash-isms in chainsaw
-  `script.content:` blocks (chainsaw runs scripts under `/bin/sh`).
-- (c) `status.conditions:` array length not equal to 3 on v2 XR
-  asserts (v2 carries Synced + Ready + Responsive).
-- (d) `($namespace)` literals in `apply.resource.metadata.namespace`
-  (chainsaw's pre-substitution validation rejects these as invalid
-  RFC 1123 labels).
-- (e) golden YAMLs missing `metadata.namespace: default` (chainsaw
-  `assert: file:` searches the per-test namespace by default).
-- (f) golden-vs-scenario data-value drift on fields the Composition
-  propagates (notably `tags.Description`).
-
-Each check is a one-line grep; the full audit runs in seconds.
-Skipping it costs ~5-15 minutes per chainsaw iteration per missed bug
-class. Fix every FAIL before dispatching; re-run the audit until clean.
-
-*Grounded in: auto-003 PR #111 chainsaw iterations 1-5, each
-surfacing a different bug class that a single pre-dispatch audit
-would have caught.*
-
-### 6.14 Use Bash run_in_background, not Monitor, for single-notification waits
-
-**Use `Bash` with `run_in_background: true` for single-notification
-waits; reserve `Monitor` for streams of multiple events.** A Monitor
-that just sleeps and ticks is an anti-pattern — every tick is a
-chat-visible notification, the monitor doesn't end on the event you
-care about, and there is no surfaced way to stop it early. For "tell
-me when X completes", use `Bash` with `run_in_background: true` and an
-`until <check>; do sleep <N>; done` loop that exits when the
-condition is met.
-
-*Grounded in: 2026-05-28 chainsaw-verify wait — armed a Monitor as a
-generic ticker, received 29 useless tick notifications before the
-180-second timeout fired. See
-`retrospective/2026-05-28-121/AGENTS-MD-5bdc52acff-bash-bg-not-monitor-single-notification.md`.*
-
-### 6.15 Webhook backup poll at 1.5x expected ETA
-
-**When a webhook subscription is the agreed completion channel and
-1.5x the expected ETA has elapsed with no event, do a single
-direct-API status query as a backup.** This specializes §6.10's
-"no foreground polling" rule for the silent-event-loss case.
-PR-activity subscriptions occasionally drop `workflow_run completed`
-events without dropping the surrounding `check_suite` failure events;
-silence on the channel does not mean the work is still running.
-Confirm with one direct-API call before assuming. One direct call at
-ETA + 50% does not constitute a polling loop — it's a single fallback
-query.
-
-*Grounded in: 2026-05-28 PR #111 chainsaw run 26550478501 —
-completion event for the green run never delivered via
-`mcp__github__subscribe_pr_activity`; user noticed before agent did.
-See `retrospective/2026-05-28-121/AGENTS-MD-ae0308b2ac-webhook-backup-poll.md`.*
-
-### 6.16 `tests/unit/run.sh` and `.github/workflows/unit-tests.yml` must stay in sync
-
-**Every test in `tests/unit/run.sh` MUST also be enumerated in
-`.github/workflows/unit-tests.yml`'s per-step list, OR the workflow
-must end with a `run.sh` catch-all step that invokes it.** Per-step CI
-is preferred for separate-failure diagnosability in the Actions UI,
-but silently drifts when tests are added to `run.sh` without a paired
-workflow edit. The catch-all alternative trades that UI clarity for
-guaranteed coverage. Either pattern is acceptable; the gap between
-them is not. When authoring a new `tests/unit/test_*.sh`, the same
-PR must update `unit-tests.yml` (or rely on the catch-all if it
-exists).
-
-*Grounded in: 2026-05-28 audit found 17 of 39 tests in
-`tests/unit/run.sh` missing from `unit-tests.yml`'s per-step list,
-including the two enforcers whose absence caused PR #111's chainsaw
-rounds 1-2 (POSIX-sh + 3-conditions) to re-discover bugs the
-enforcers were authored specifically to catch. See
-`retrospective/2026-05-28-121/AGENTS-MD-1390a5c6a8-run-sh-and-unit-tests-yml-in-sync.md`
-and `handoff-followups-2026-05-28.md` Task 1.*
-
-### 6.17 Never present a hypothesis as a conclusion
-
-**State the strength of every claim.** When you report findings to
-the user, distinguish:
-
-- **Observation** — something you saw in the logs / output. Quote it.
-- **Exclusion** — something you ruled out by topology, by evidence,
-  or by direct test. Name the exclusion criterion.
-- **Hypothesis** — a candidate explanation that fits the evidence
-  but is NOT confirmed. Label it as such.
-- **Conclusion** — a hypothesis that has been positively tested or
-  that follows from exclusion of every other plausible alternative.
-
-If you write "X is the cause" or "this is not a regression I
-introduced," you are claiming a conclusion. That requires either
-positive evidence (a test that confirms X) or exhaustive exclusion
-(every other candidate ruled out). If you only have one piece of
-fits-the-pattern evidence, the right framing is "this is consistent
-with hypothesis X" — not "X is the cause."
-
-User attention is precious. A hypothesis dressed as a conclusion
-leads the user to make a decision based on something that may turn
-out to be wrong, with no flag in the prose telling them it could.
-The cost of accurate framing is one extra word ("hypothesis",
-"consistent with", "appears to"); the cost of inaccurate framing
-is the user's trust.
-
-*Grounded in: 2026-05-28 PR #125 chainsaw failure on `composition-drift`.
-I told the user "AWS-provider cold-start, not a regression my work
-introduced." The first half was a hypothesis with no positive
-evidence; the second half was true by topology but I had not framed
-it as exclusion-by-topology. The user called this out and pointed to
-the discipline gap.*
-
-### 6.18 Never ignore an undiagnosed failure — log to the open-issues register
-
-**Every observed failure must either be diagnosed in this session
-or recorded in the durable register at `docs/open-issues.md`.** No
-silent-skip, no "out of scope so I'll move on," no leaving a flaky
-red check unfollowed.
-
-When a failure surfaces in CI, in a probe, in a manual test, or in
-any other channel — even one that doesn't gate any PR — the options
-are:
-
-1. **Diagnose it now.** Fix the underlying issue, write the
-   regression-catching test per §6.2, close the loop.
-2. **Defer to a tracked issue.** Add an entry to `docs/open-issues.md`
-   with: status, symptom (with verbatim error text or log quote),
-   diagnostic evidence available so far, hypotheses currently on
-   the table (labelled per §6.17), what's ruled out, the next
-   concrete diagnostic step, and an owner / next action. Commit it
-   in the same PR (or a follow-up PR) so the register stays current
-   with the work.
-
-Out-of-scope is a valid reason to defer; it is NOT a valid reason
-to drop the observation on the floor. Future sessions inherit
-`docs/open-issues.md` as ground-truth backlog — a problem we walked
-past today should not have to be re-discovered when it re-surfaces
-in production.
-
-Pure flakes get an entry too. A flake is "undiagnosed but observed,"
-not "no problem." Two occurrences of the same flake without a
-matching register entry IS the problem.
-
-The register is small by intent. Closed items move into a
-historical section or are removed once their fix has landed and
-been verified. Stale entries are a tax on the next agent who has
-to re-read them all; keep it tight.
-
-*Grounded in: same PR #125 session as §6.17. I initially proposed
-"out of scope, file as separate follow-up" for the chainsaw
-`composition-drift` failure, with no mechanism to ensure the
-follow-up actually happened. The user named this as horrible
-engineering discipline. The register is the mechanism.*
-
-### 6.19 Never silence cleanup failures with `|| true`
-
-**Test and CI cleanup steps that depend on succeeding (re-applying
-state, deleting resources, restoring config) MUST fail loudly when
-they fail.** The `|| true` shell idiom masks the underlying error and
-lets contamination propagate to subsequent scenarios. If a cleanup is
-genuinely best-effort, guard with `[ -f X ] && cmd` or an explicit
-`if ! cmd; then echo WARN; fi` so the warning surfaces.
-
-*Grounded in: 2026-05-28 PR #129 composition-drift — the original
-cleanup ran `kubectl apply -f crossplane/compositions/platform-secret.yaml || true`
-with a path that didn't resolve from chainsaw's CWD; the `|| true`
-masked the error and cascaded into three downstream scenario failures
-(claim-creates-secret, claim-rotation, claim-deletion-cleanup, each
-timing out at ~250s on the same chainsaw run). See
-`retrospective/2026-05-28-129/AGENTS-MD-6e0243fa6a-no-or-true-cleanup-mask.md`
-and OI-2026-05-28-1 Issue B in `docs/open-issues.md`.*
-
-### 6.20 After session resume from suspension, verify status of in-flight dispatches
-
-**When the sandbox suspends mid-wait (typically while waiting for a
-long CI run), webhooks that arrive during suspension do not deliver as
-`<github-webhook-activity>` envelopes on resume.** The first action
-after resume — before authoring new work, before answering a user
-question that depends on the run's outcome — is one direct-API query
-against any in-flight dispatch's run id. This complements §6.10 and
-§6.15: those rules cover the active-wait case; this one covers the
-resumed-after-suspension case. Both fire the same one-shot direct
-query, but their triggers are different and neither subsumes the
-other.
-
-*Grounded in: 2026-05-28 PR #129 chainsaw run 26555037975 (success
-conclusion) — completion arrived during sandbox idle, no webhook
-envelope on resume; the user's `Check on run` was what prompted the
-direct query that surfaced the green status. See
-`retrospective/2026-05-28-129/AGENTS-MD-6163a071e9-verify-inflight-after-resume.md`.*
+### 6.8 Extended CI and agent operating rules
+
+Rules covering live-admission verification for Crossplane v2 CRD changes,
+CI log discipline, CI polling, pre-dispatch static audit, tool availability,
+hypothesis framing, open-issue tracking, cleanup mask discipline, unit-test /
+workflow sync, and post-resume status verification live in
+`ai/testing-guidelines.md §11`.
 
 ---
 
@@ -874,7 +483,7 @@ direct query that surfaced the green status. See
 
 - After every `git push` to a non-main branch that affects Terraform,
   invoke the **`terraform-ci-watch`** skill.
-- After applying a Crossplane Claim, XRD, or Composition (whether via
+- After applying a Crossplane XR, XRD, or Composition (whether via
   `kubectl`, ArgoCD sync, or CI), invoke the
   **`crossplane-claim-verify`** skill to wait for `Synced`/`Ready` and
   verify the underlying cloud resource is healthy.
@@ -898,155 +507,41 @@ At the end of every session (or when the user asks to wrap up), update
 Keep it current — it is the first thing a new session reads to orient
 itself without re-reading the full conversation.
 
-### 8.1 The AWS test account is ephemeral — NEVER hardcode account-derived values
+### 8.1 Rotated account — standing rules
 
-The AWS account underneath the test environment is rotated between
-sessions; the prior account is usually torn down in full before the
-next session starts. **The account ID, derived FQDNs, IRSA role ARNs,
-EKS cluster endpoint, OIDC provider ARN, ACM cert ARNs, Cognito pool
-IDs, and any other account-scoped identifier are NOT durable.**
+The AWS test account is torn down and re-issued between sessions. Treat
+every new session as landing on an **empty** account until the live API
+proves otherwise — regardless of what `ai/handoff.md` says. The default
+conservative assumption: no Terraform state backend, no EKS cluster, no
+IRSA roles, no ACM certs, no Cognito pool. The only pre-existing resource
+is the single public Route53 hosted zone provisioned by the lab.
 
-Do NOT write account-derived values into:
-- `ai/handoff.md`, `ai/PLAN.md`, or any other plan/spec/design doc
-- code comments, commit messages, PR descriptions, or skill content
-- Terraform `.tf` files (use variables / data sources / `local.account_id = data.aws_caller_identity.current.account_id`)
-- Test fixtures, scripts, or workflow YAML (read from `${{ secrets.AWS_REGION }}` / `aws sts get-caller-identity`)
+**At session start,** run `scripts/whereami.sh` as the first command (use
+`--json` for machine-readable output). If expected resources are absent,
+the account was rotated — bootstrap from scratch (`apply-and-verify`); do
+not run `verify` against nothing. Treat `ai/handoff.md`'s phase-state
+markers as the previous session's belief, not ground truth; verify with
+the live API.
 
-Refer to the account abstractly: "the test account", "the account ID (query
-via `aws sts get-caller-identity`)", "the `<account-id>.realhandsonlabs.net`
-zone". When the next session reads a stale hardcoded ID, it wastes a debug
-loop discovering "wait, that resource doesn't exist" before realizing the
-doc lied.
+**Never hardcode account-derived values** — account ID, IRSA role ARNs,
+EKS endpoint, OIDC ARN, ACM cert ARNs, Cognito pool IDs, FQDNs — in docs,
+code, fixtures, workflow YAML, or commit messages. Read them at runtime via
+`aws sts get-caller-identity`, Terraform data sources, or
+`${{ secrets.* }}`. Run URLs and commit SHAs are fine — those are durable
+audit-trail artifacts.
 
-Run URLs (`https://github.com/.../actions/runs/N`) and PR/commit SHAs
-are fine to cite — those are durable audit-trail artifacts. The line
-is: "does this identifier still resolve to a live resource after the
-account is rotated?" If no, it's ephemeral and doesn't belong in a
-plan or handoff.
+**When CI surfaces infra-level errors** (`InvalidClientTokenId`, `Unable to
+find remote state`, `connection refused` from kubectl, chainsaw real-AWS
+scenarios timing out with `Ready=False`), stop code-hypothesis debugging.
+Verify preconditions first: credentials valid, state bucket exists for the
+current account, GitHub Actions secrets match the current account. If any
+fail, the account rotated — rotate credentials and re-bootstrap before any
+code change.
 
-Run `scripts/whereami.sh` as the first command of every session; use `--json`
-for machine-readable output. This replaces the manual `aws sts get-caller-identity` /
-`aws eks list-clusters` sequence and surfaces kubectl context, ArgoCD URL, and
-Crossplane version in one call (SPEC-S4).
-
-When picking up a session, the first concrete commands are:
-1. `scripts/whereami.sh` — one call for account, region, EKS, zone, kubectl ctx, ArgoCD URL, Crossplane version.
-2. Treat the handoff doc's account-level statements (phase 0+1 "applied" vs "needs apply") as the session-author's belief, not ground truth — verify with the live API.
-
-### 8.2 Re-check environmental preconditions when CI surfaces infra-level errors
-
-**Re-check environmental preconditions on each rotated account before
-diagnosing code failures.** At session start (always, per §8.1
-`scripts/whereami.sh`) AND when any CI failure shows infrastructure-
-level errors, verify:
-
-1. `aws sts get-caller-identity` succeeds with the expected account.
-2. The state bucket for phase 0 exists for the current account:
-   `aws s3 ls "s3://k8-platform-tfstate-$(aws sts get-caller-identity --query Account --output text)/"`.
-3. The GitHub Actions repo secrets (`AWS_ACCESS_KEY_ID`,
-   `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`) match the current account.
-   This cannot be verified from the sandbox; if any other precondition
-   above fails, secrets are almost certainly stale too — surface to the
-   user.
-
-If any precondition fails, the in-repo handoff doc is stale per §8.1
-— **DO NOT continue with code-hypothesis debugging.** Stop, document
-the rotation, and either rotate the credentials (operator action) or
-re-bootstrap from phase 0.
-
-**Failure shapes that trigger this rule** (specialization of
-`ai/testing-guidelines.md` §10.1):
-
-- `Error: Unable to find remote state` from terraform (phase 0 state
-  doesn't exist on the rotated account).
-- `InvalidClientTokenId` / `The security token included in the
-  request is invalid` / `403 Forbidden` from STS or any AWS API.
-- `connection refused` / `dial tcp: lookup …: no such host` from
-  kubectl (cluster torn down or kubeconfig stale).
-- Real-AWS chainsaw scenarios timing out at 245s with
-  `Ready=False, message: "Unready resources: …"` — same shape as the
-  original `00-situation.md` §1 symptom but now on v2.5.0, where that
-  bug is fixed. Most likely cause: chainsaw provider can't
-  authenticate to AWS because the runner's secrets are stale.
-
-**Why this rule exists separately from §8.1.** §8.1 says "verify with
-the live API" at session start. §8.2 says "verify ALSO when these
-specific CI symptoms surface mid-session", because rotation can be
-discovered partway through a run and the surrounding code-hypothesis
-debugging will go nowhere until the precondition is fixed. See
-`retrospective/2026-05-26-106.md` for the 2026-05-26 v1→v2 migration
-that surfaced this pattern.
-
-### 8.3 Handoff docs carry factual state only
-
-**Handoff docs carry factual state only.** "When writing a handoff
-document for a future agent, restrict the content to (a) verified
-outcomes with run IDs / SHAs / PR numbers, (b) the exact open work and
-the one concrete next action, and (c) brief neutral operating notes. Do
-not include emotional commentary about the user, profanity,
-self-flagellation about prior mistakes, ranked speculation about what
-the user is most likely to ask next, or verbose narrative of how each
-past bug was discovered."
-
-*Grounded in: PR #116 handoff `i-am-a-fucking-idiot.md` primed the next
-session for defensiveness; PR #117 sanitization (`handoff-recovery.md`)
-preserved every verified outcome, PR number, run ID, SHA, and the
-exact one-line fix needed for PR #111 at roughly half the line count
-by stripping every priming surface.*
-
-See `retrospective/2026-05-28-117/AGENTS-MD-9621828c6c-handoff-docs-factual-state-only.md`
-for the per-rule source and full justification.
-
-### 8.4 Assume a rotated account is EMPTY until the live API proves otherwise
-
-**A new session almost always lands on a freshly-rotated AWS account with
-NO prior phase work instantiated.** The lab account underneath the test
-environment is torn down and re-issued between sessions. When a new
-session starts, the default, conservative assumption is:
-
-- **No Terraform state backend** — the `k8-platform-tfstate-<account-id>`
-  S3 bucket and the `k8-platform-tfstate-lock` DynamoDB table do **not**
-  exist yet.
-- **No EKS clusters** — `aws eks list-clusters` returns `[]`. There is no
-  `k8-platform-mgmt`, no kubeconfig context, no live Crossplane/ArgoCD.
-- **No IRSA roles, no ACM certs, no ASM secrets, no Cognito pool** from any
-  prior phase.
-- **The ONLY pre-existing resource** is the single public Route53 hosted
-  zone (`<account-id>.realhandsonlabs.net.`), which the lab provisions.
-
-This means **every phase (0, 1, 2, …) must be treated as `not applied` on
-the new account until the live API proves otherwise** — regardless of what
-`ai/handoff.md`'s Phase-states table says. The handoff's
-`applied`/`verified` markers describe the *previous* account and are NOT
-durable across rotation (this re-asserts §8.1 and §2 of
-`ai/testing-guidelines.md`: handoff phase-state is the prior session's
-belief, not ground truth).
-
-**Required confirmation before acting on any "already applied" assumption.**
-Before reading from a phase's outputs, dispatching a `verify` (rather than
-`apply-and-verify`), or telling the user a phase is live, the agent MUST
-confirm the resources actually exist on the current account:
-
-1. `scripts/whereami.sh` (or `aws sts get-caller-identity` + `aws eks
-   list-clusters` + `aws s3 ls s3://k8-platform-tfstate-<account-id>/`).
-2. If a resource the agent expected is absent, the account was rotated —
-   bring the phase up from scratch (`apply-and-verify`), do not `verify`
-   against nothing.
-
-Do NOT skip this and assume the cluster is up because the handoff (or a
-prior session, or an earlier run in *this* session before a rotation) said
-so. A `verify` dispatched against a non-existent cluster wastes a CI cycle
-and produces a confusing failure that looks like a code bug.
-
-*Grounded in: 2026-05-29 auto-004 run. The handoff QUICKSTART said phase 0
-+ phase 1 were `verified` (2026-05-28). The account had since rotated to a
-fresh one: `aws eks list-clusters` returned `[]`, the
-`k8-platform-tfstate-<account-id>` bucket returned `NoSuchBucket`, and only
-the Route53 zone existed. A `test-e2e` probe confirmed CI's secrets were
-valid for the new account and that the state backend was un-bootstrapped
-("note: bucket missing is expected … without prior bootstrap") — so the
-correct action was a from-scratch phase-0 `apply-and-verify`, not a
-`verify`.*
+**Handoff docs carry factual state only** — verified outcomes with run
+IDs / SHAs / PR numbers, the one concrete next action, and brief neutral
+operating notes. No emotional commentary, speculation about user intent, or
+verbose narrative of past bugs.
 
 ---
 
@@ -1114,7 +609,3 @@ scenarios `claim-creates-secret` / `claim-rotation`, the step
 `platform-cluster-claim`) — quoting those proper names verbatim is fine, but
 do not let `claim` leak into conceptual descriptions of how the resource
 works.
-
-*Grounded in: 2026-05-29 auto-004 — the agent repeatedly called the v2 XRs
-"claims" in running commentary; the user challenged it. See
-`retrospective/2026-05-29-133-a/AGENTS-MD-1545d62c89-v2-no-claims-xr-terminology.md`.*
