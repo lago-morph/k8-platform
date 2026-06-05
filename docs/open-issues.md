@@ -210,4 +210,33 @@ crossplane` exists today, so OCI was not an option.
 
 ---
 
+## OI-2026-06-05-3 — provider-family-aws install races the package manager on fresh Crossplane
+
+**Status:** **RESOLVED** (fix landed; pending live re-confirmation on the re-run).
+**Surfaced:** 2026-06-05 auto-005 — management `apply-and-verify` run
+27023573285 (branch ref, vendored-chart fix applied) failed at
+`terraform_data.crossplane_aws_provider` (helm.tf:232):
+```
+deploymentruntimeconfig.../aws-provider-config created
+provider.../provider-family-aws created
+No resources found ... ERROR: expected SA upbound-provider-family-aws, got: MISSING
+```
+**Root cause (CONFIRMED by reading the log):** the provisioner applied the
+`DeploymentRuntimeConfig` + `Provider`, then immediately `delete deploy -l … --wait=false`
+and `kubectl rollout status -l …`. On a **fresh** Crossplane install the package
+manager has not yet pulled the package image and created the provider's
+Deployment + ServiceAccount, so `rollout status -l <sel>` returns "No resources
+found" (non-zero) **immediately** (it does not wait for a matching resource to
+appear), and the SA post-check then fails with `MISSING`. The prior successful
+build (2026-05-29) won the race by luck (faster pull).
+
+**Fix (helm.tf):** (1) `kubectl wait --for=condition=Healthy
+provider.pkg.crossplane.io/provider-family-aws --timeout=300s` BEFORE the delete
+(guarantees the Deployment+SA exist); (2) after the delete, poll for the
+Deployment to reappear (the package manager doesn't recreate it instantly)
+before `rollout status`. POSIX /bin/sh. `terraform validate` passes. Handles
+both fresh-install and DRC-change-upgrade cases.
+
+---
+
 <!-- New entries go above this line, newest first. -->
