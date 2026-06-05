@@ -293,12 +293,28 @@ Always run `aws sts get-caller-identity` first to confirm what account you're on
 
 ## Pending follow-ups (roughly prioritized)
 
-1. **Bug 3** — bump provider-family-aws to latest v1.x (immediate next step above).
-2. **PlatformCluster XRD (phase 2b)** — after phase 2 chainsaw green.
-3. **Fix `tests/unit/test_helm_render.sh`** — 4 ArgoCD Ingress assertions fail; tolerated by `continue-on-error: true`. Switch selectors from `metadata.name` to `app.kubernetes.io/component=server`.
-4. **Unit-test coverage audit** — before starting phase 3.
-5. **Cross-region smoke chainsaw scenario** — wait for real consumer.
-6. **Long-running token-expiry chainsaw scenario** — nightly workflow only.
+> Items 1-3 were verified **already resolved** during the 2026-06-05
+> long-run audit (auto-005) — kept here struck-through for traceability,
+> not as live work.
+
+1. ~~**Bug 3** — bump provider-family-aws to latest v1.x.~~ **RESOLVED** by
+   the v1→v2 migration (provider jumped v1.12.0→v2.5.0); the slow-reconcile
+   blocker no longer exists (see the 2026-05-28 resume section above).
+2. ~~**PlatformCluster XRD (phase 2b)**.~~ **DONE** — shipped in PR #140
+   (`crossplane/xrds/platform-cluster.yaml` + Composition + render fixtures).
+3. ~~**Fix `tests/unit/test_helm_render.sh`** (4 ArgoCD Ingress assertions).~~
+   **RESOLVED** — the test passes 16/16 against CI's `yq` (mikefarah v4),
+   and the `continue-on-error: true` in `unit-tests.yml` is on the
+   best-effort *crossplane-CLI install* step, NOT on `test_helm_render`
+   (which gates for real). No code change needed.
+4. **Unit-test coverage audit** — still useful. The §6.16 run.sh↔unit-tests.yml
+   sync is currently satisfied (per-step list + a `run.sh` catch-all backstop).
+   The open part is a content audit for *missing* contracts, not wiring.
+5. **ASM chainsaw cleanup-trap gap** (OI-2026-05-28-1) — cleanup filters
+   `${ASM_RUN_PREFIX}/` but the Composition names secrets `k8-platform/<uid>`,
+   so scenario secrets linger in the account. **Fix in progress (auto-005).**
+6. **Cross-region smoke chainsaw scenario** — wait for real consumer.
+7. **Long-running token-expiry chainsaw scenario** — nightly workflow only.
 
 ---
 
