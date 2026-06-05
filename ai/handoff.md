@@ -12,9 +12,56 @@ and writes back to it after every workflow run. See
 
 ## NEW SESSION QUICKSTART (read this first)
 
-**Resume context: 2026-05-29 auto-004 run (overnight).** Account rotated
-again — a FRESH, empty account (only the Route53 zone pre-existed). See new
-AGENTS §8.4. Goal: implement phases 2,3,4… on real AWS, stacked PRs.
+**Resume context: 2026-06-05 — PHASE 3 IN PROGRESS on PR #140**
+(`claude/phase-3-implementation-foEb6`). Phase 0 is live on the current
+account ([base apply-and-verify run 26985472847](https://github.com/lago-morph/k8-platform/actions/runs/26985472847) GREEN, 2026-06-04).
+The D1 subnet question was answered by the user: **inject subnets/zone/domain
+from the base Terraform output via a `cluster-network` EnvironmentConfig**
+(NOT a tag-selector — that's infeasible; docs/decisions/0003 + ADR-e557a40123).
+TLS decision: **per-cluster DNS-validated ACM cert provisioned inside the
+cluster Composition, no cert-manager/Let's Encrypt** (docs/decisions/0003).
+
+**PR #140 state (light CI green — unit-tests + terraform-validate ✅):**
+- Wave 1: cluster Composition provisions `*.<subdomain>.<domain>` ACM cert
+  (acm Certificate + route53 Record + CertificateValidation); subnets/zone/
+  domain from the `cluster-network` EnvironmentConfig. `crossplane render`
+  verified; kubeconform + contract tests pass.
+- Wave 2: terraform/management installs eks/iam/acm/route53 providers +
+  function-environment-configs, materializes the EnvironmentConfig from base
+  outputs, extends Crossplane IRSA with ACM+Route53.
+- Wave 3: removed active Let's Encrypt/cert-manager refs; docs/future-enhancements.md.
+- Wave 5a: platform-cluster chainsaw scenario updated to the dns schema.
+- Chainsaw (xrd-establishes) dispatched on `e2cb41e` to validate the v2 CRD
+  change (§6.8).
+
+**Sequencing (all GitOps / CI-driven — the agent drives, no manual human
+steps). The agent has NO direct AWS/cluster creds in the sandbox (verified
+2026-06-05: no AWS_* env, no ~/.aws, IMDS blocked, no kubeconfig, aws
+egress 403). All AWS/cluster work runs THROUGH CI workflows that hold the
+creds (terraform-test.yml, chainsaw.yml).** Order:
+1. **User:** review + merge PR #140 (user chose wait-for-merge before any
+   live apply).
+2. **Agent via CI (post-merge):** dispatch `terraform-test.yml`
+   `phase=management, action=apply-and-verify` on main → installs the new
+   providers + function-environment-configs + IRSA + cluster-network
+   EnvironmentConfig.
+3. **Agent via CI/ArgoCD (post-merge):** trigger the `platform-cluster-claim`
+   sync (manual-sync gate kept ONLY for apply-ordering control — the
+   EnvironmentConfig/providers from step 2 must exist first) → Crossplane
+   provisions the platform EKS cluster + DNS-validated wildcard ACM cert
+   (~20 min). Verify `status.certificateArn` + `CertificateValidation` Ready
+   via CI in-cluster checks.
+4. **Agent (post-merge, against the LIVE cluster):** build the hub-spoke —
+   register the platform cluster with ArgoCD (kubeconfig from the EKS Cluster
+   MR connection secret), `platform-services/{ingress,external-dns}`
+   (ingress-nginx NLB bound to the cert ARN; ExternalDNS scoped to
+   `platform.<domain>`), spoke IRSA/OIDC provider, hello app — verify
+   `hello.platform.<domain>` with TLS (REQ-PLAT-02/03/04/06). Built live (not
+   blind) because the cross-cluster cert-ARN + ephemeral-domain injection +
+   hub-spoke registration need ArgoCD convergence feedback to get right
+   (AGENTS §6.17).
+
+---
 
 State at last checkpoint (all run URLs durable; account ID is ephemeral —
 query via `aws sts`):
@@ -172,7 +219,8 @@ Cross-session `applied`/`verified` are NOT durable (AGENTS.md §8.1).
 | 0 base | **verified (this account)** | [terraform-test run 26621367469](https://github.com/lago-morph/k8-platform/actions/runs/26621367469) — apply+e2e-verify GREEN, `25 added`, 2026-05-29. Live-confirmed: VPC, 2 NAT GW, Cognito, ISSUED ACM cert, state bucket. |
 | 1 management | **apply IN FLIGHT** | run `26621556820` (2026-05-29). §6.20: query this run id on resume before assuming. |
 | 2 xrds | **verified (this account)** | SPEC-S9 goldens pass (PR #132). Chainsaw re-kick [run 26622175855](https://github.com/lago-morph/k8-platform/actions/runs/26622175855) (`71022db`) full set GREEN; first run was 5/6 (`claim-rotation` transient flake, OI Issue A). |
-| 3+ | not started | Phase 3 ApplicationSet kubeconfig source repoint (consumers read kubeconfig from EKS Cluster MR's own connection-secret rather than from XR-aggregated `platform-cluster-kubeconfig` — the v2-removed XR-level secret). Tracked. |
+| 3 cluster+cert | **code complete on PR #140 (not yet applied)** | Cluster Composition + per-cluster ACM cert + terraform plumbing (providers/IRSA/EnvironmentConfig). Light CI green; chainsaw dispatched. Needs operator apply (`management apply-and-verify`) + XR sync to go live. |
+| 3 spoke | **paused (needs live cluster)** | hub-spoke registration, platform-services (ingress/external-dns), spoke IRSA/OIDC, hello app — REQ-PLAT-02/03/04/06. Consumers read kubeconfig from the EKS Cluster MR's own connection-secret (v2 removed the XR-level secret). |
 
 ### Live AWS resource shape
 
