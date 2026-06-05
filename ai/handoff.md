@@ -51,14 +51,15 @@ task A** and AGENTS §10.1.
 
 ### Next run — to finish phase 3 (in order)
 
-**A. (do first, code) Make ArgoCD creds a Terraform output — AGENTS §10.1.**
-`terraform/management` installs ArgoCD (helm.tf) but does NOT yet output a
-credential, so a session cannot drive ArgoCD. Add: `random_password
-.argocd_admin`; a `terraform_data` that bcrypt-patches the `argocd-secret`
-in a `local-exec` (compute bcrypt IN the provisioner — `argocd account
-bcrypt` or `htpasswd -nbBC 10` — NOT Terraform's `bcrypt()`, which re-salts
-every plan); outputs `argocd_admin_password` (sensitive) + `argocd_server_url`.
-This unblocks driving the XR sync from CI.
+**A. (DONE — PR #141, merged) ArgoCD creds are a Terraform output — AGENTS §10.1.**
+✅ Completed. `terraform/management/argocd-credentials.tf` provides
+`random_password.argocd_admin` + a `terraform_data.argocd_admin_password`
+that bcrypt-patches `argocd-secret` via `htpasswd -nbBC 10` in a
+`local-exec` (with the `$2y`→`$2a` rewrite Go's bcrypt needs), and
+`outputs.tf` exposes `argocd_admin_password` (sensitive) + `argocd_server_url`.
+The next run starts at **B** below — no action needed for A. (To drive
+ArgoCD from CI: `terraform -chdir=terraform/management output -raw
+argocd_admin_password` / `... argocd_server_url`, then `argocd login`.)
 
 **B. (CI) Bring up the stack on the fresh account, phase by phase:**
 1. `terraform-test.yml phase=base action=apply-and-verify` → VPC, subnets,
