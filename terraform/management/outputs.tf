@@ -30,6 +30,6 @@ output "irsa_eso_role_arn" {
 }
 
 output "argocd_url" {
-  description = "ArgoCD UI URL (valid after cert-manager issues the certificate)"
+  description = "ArgoCD UI URL (valid once the ACM cert is bound to the ingress NLB)"
   value       = "https://argocd.management.${var.domain}"
 }

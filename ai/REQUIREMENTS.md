@@ -43,7 +43,7 @@ These goals reinforce each other: the learning platform *is* the blog subject, a
 - Management cluster provisioned by Terraform (minimal scope)
 - Platform services cluster and workload clusters provisioned by Crossplane
 - ArgoCD hub-spoke GitOps managing all clusters from the management cluster
-- Ingress (ingress-nginx) + ExternalDNS + cert-manager on each cluster
+- Ingress (ingress-nginx) + ExternalDNS + ACM TLS (via Crossplane) on each cluster
 - Keycloak as the platform identity provider, federated to an upstream OIDC/SAML provider
 - External Secrets Operator on all clusters, backed by AWS Secrets Manager
 - Crossplane XRDs abstracting secrets and cluster provisioning
@@ -112,7 +112,7 @@ REQ-PLAT-03: ingress-nginx must be installed and functional on the platform serv
 
 REQ-PLAT-04: ExternalDNS must be installed and must automatically create Route53 records for any Ingress resource created on the platform services cluster, under `platform.<domain>`.
 
-REQ-PLAT-05: cert-manager must be installed and must automatically provision and renew TLS certificates for all Ingress resources using Let's Encrypt.
+REQ-PLAT-05: Each cluster must automatically provision and renew a DNS-validated wildcard TLS certificate (`*.<subdomain>.<domain>`) via AWS Certificate Manager (ACM), provisioned by the cluster's Crossplane Composition and terminated at the ingress-nginx NLB. No cert-manager / ACME issuer is used (see `docs/decisions/0003`); cert-manager + Let's Encrypt is retained as a future option in `docs/future-enhancements.md`.
 
 REQ-PLAT-06: At completion of Iteration 3, a test application deployed to the platform services cluster must be reachable at a subdomain of `platform.<domain>` with a valid TLS certificate, with no manual DNS or certificate steps required.
 
@@ -154,7 +154,7 @@ REQ-AUTH-10: The repository must document the kubectl client setup for Keycloak-
 
 REQ-WL-01: A workload cluster must be provisionable by creating a Crossplane claim against the base cluster XRD with no manual AWS steps.
 
-REQ-WL-02: A newly provisioned workload cluster must automatically receive: ingress-nginx, ExternalDNS, cert-manager, ESO, and a Prometheus/Loki agent — all via ArgoCD.
+REQ-WL-02: A newly provisioned workload cluster must automatically receive: ingress-nginx, ExternalDNS, a DNS-validated wildcard ACM certificate (provisioned by the cluster Crossplane Composition; docs/decisions/0003), ESO, and a Prometheus/Loki agent — all via ArgoCD.
 
 REQ-WL-03: The workload cluster must have its own subdomain (`workload1.<domain>`).
 
@@ -172,7 +172,7 @@ REQ-NF-02: **GitOps.** After Iteration 1, all changes to the platform must be ex
 
 REQ-NF-03: **No long-lived credentials.** All AWS API access from cluster workloads must use IRSA. No static AWS credentials may appear in any manifest, secret, or Helm values file committed to Git.
 
-REQ-NF-04: **Real domain and real TLS.** All platform services must use a real registered domain and Let's Encrypt certificates. Self-signed certificates are not acceptable.
+REQ-NF-04: **Real domain and real TLS.** All platform services must use a real registered domain and real CA-issued certificates (DNS-validated AWS ACM certificates; see docs/decisions/0003). Self-signed certificates are not acceptable.
 
 REQ-NF-05: **Explainability.** Every architectural decision must be documentable with a clear "why." The implementation serves the blog series, so anything that cannot be explained clearly to a practitioner audience is a signal to simplify.
 
@@ -199,7 +199,7 @@ The previous implementation (`lago-morph/ai-k8s`) stalled for a documented reaso
 
 **Retained from the previous attempt:**
 - The three-tier cluster architecture concept (though bootstrap cluster replaced by Terraform)
-- The toolchain choices: EKS, Crossplane, ArgoCD, Helm, ExternalDNS, cert-manager
+- The toolchain choices: EKS, Crossplane, ArgoCD, Helm, ExternalDNS, ACM
 - The security practices: IRSA over static credentials, secure file permissions, secret masking
 - The separation of "base environment" from "what we build"
 - The read-only verification tooling pattern (kubectl/AWS CLI preferred over MCP servers for maturity reasons)

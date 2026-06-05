@@ -28,7 +28,7 @@ query via `aws sts`):
 
 **Immediate next step — START PHASE 3 (phases 0/1/2 are DONE):**
 1. **D1 decision (blocks phase 3):** the `XPlatformCluster` XR can't hardcode subnet IDs (§8.1). Recommended D1-a = add a `subnet-tier=private` (or similar) tag in `terraform/base`, re-apply phase 0, switch the Composition to a tag-based `subnetIdSelector`, re-render the SPEC-S9 golden. Run the D1 decision brief (2 rounds, ≥3 real reviewers) first — this changes the base module, so confirm with the user per their stated caution about account/infra changes.
-2. Then: fill `clusters/platform/platform-cluster-claim.yaml` (drop placeholders + kubeconform-skip), sync it (manual) to provision the platform EKS cluster (~20 min), author `platform-services/{ingress,external-dns,cert-manager}` + a hello app, verify `hello.platform.<domain>` with TLS (REQ-PLAT-01..06).
+2. Then: sync the platform XR (manual) to provision the platform EKS cluster + its wildcard ACM cert (~20 min), author `platform-services/{ingress,external-dns}` + a hello app, verify `hello.platform.<domain>` with TLS (REQ-PLAT-01..06). TLS is the cluster's ACM cert (docs/decisions/0003), not cert-manager.
 
 **Open follow-ups (non-blocking):**
 - **OI-2026-05-28-1 Issue A permanent fix:** `claim-rotation` flake is transient but recurring. Root-cause fix: set `crossplane.io/external-name` on the ASM secret MR (so the provider adopts the existing secret instead of re-issuing CreateSecret), or run chainsaw scenarios serially. Tracked in `docs/open-issues.md`.
