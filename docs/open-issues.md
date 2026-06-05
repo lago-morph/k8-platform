@@ -168,4 +168,46 @@ brief `decisions/auto-006-asm-external-name-fix.md`.)
 
 ---
 
+## OI-2026-06-05-2 — `charts.crossplane.io` 403s the GitHub Actions runner
+
+**Status:** **mitigated** (chart vendored); root cause still **hypothesis**.
+**Surfaced:** 2026-06-05 auto-005 long-run — `phase=management
+apply-and-verify` failed twice in a row (runs 27021786260, 27022894643), both
+ONLY on `helm_release.crossplane`:
+```
+Error: could not download chart: looks like "https://charts.crossplane.io/stable"
+is not a valid chart repository or cannot be reached: failed to fetch
+https://charts.crossplane.io/stable/index.yaml : 403 Forbidden
+```
+Everything else applied (EKS cluster, ArgoCD, ESO, Kyverno, ingress-nginx,
+external-dns, the bootstrap + argocd-admin-password provisioners).
+
+**Evidence:**
+- The same URL returns **HTTP 200** from the sandbox (and `master/index.yaml`
+  too), and the index still lists `crossplane-2.3.0.tgz` — so the repo is up
+  and the chart was NOT migrated/yanked.
+- Two deterministic failures 4 min apart rule out a one-off transient.
+- The prior successful management build (2026-05-29, run 26621556820) used the
+  same URL — so this is a recent change in how the CDN treats the runner.
+
+**Hypothesis (labelled, §6.17):** the CDN fronting `charts.crossplane.io`
+(S3/CloudFront-class) is returning 403 to the GitHub-hosted runner egress
+range specifically (IP/geo/UA based or rate-limited), while other networks get
+200. NOT confirmed — I cannot curl from the runner directly. No public incident
+found via web search.
+
+**Mitigation applied:** vendored the digest-verified chart into
+`terraform/management/vendor/crossplane-2.3.0.tgz` (sha256
+`2ceff920…cd7f`, matches the upstream index digest) and switched
+`helm.tf`'s `helm_release.crossplane` to install from that local path. The
+apply is now hermetic and independent of the CDN. `terraform validate` passes.
+
+**Next / revert:** if the CDN restriction lifts (re-check from a runner via a
+probe step), restore the `repository`/`version` form and delete the tarball.
+Consider asking Crossplane to publish the chart via OCI (xpkg/ghcr) — neither
+`oci://xpkg.crossplane.io/crossplane/crossplane` nor `oci://ghcr.io/crossplane/
+crossplane` exists today, so OCI was not an option.
+
+---
+
 <!-- New entries go above this line, newest first. -->

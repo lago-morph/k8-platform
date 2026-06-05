@@ -123,10 +123,14 @@ resource "helm_release" "eso" {
 # ---- Crossplane ----
 
 resource "helm_release" "crossplane" {
-  name             = "crossplane"
-  repository       = "https://charts.crossplane.io/stable"
-  chart            = "crossplane"
-  version          = var.crossplane_version
+  name = "crossplane"
+  # Vendored chart, NOT a live repo fetch. charts.crossplane.io/stable/index.yaml
+  # returns 403 Forbidden to the GitHub Actions runner network (the same URL
+  # serves 200 from elsewhere) — OI-2026-06-05-2. Installing from the
+  # digest-verified local tarball (vendor/README.md) makes the apply hermetic
+  # and independent of that CDN. The version is encoded in the filename via
+  # var.crossplane_version, so a version bump = vendor the matching .tgz.
+  chart            = "${path.module}/vendor/crossplane-${var.crossplane_version}.tgz"
   namespace        = "crossplane-system"
   create_namespace = true
 
