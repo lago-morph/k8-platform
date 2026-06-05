@@ -82,6 +82,48 @@ resource "aws_iam_policy" "crossplane_aws" {
         ]
         Resource = "arn:aws:secretsmanager:${local.region}:${local.account_id}:secret:k8-platform/*"
       },
+      {
+        # ACM — the XPlatformCluster Composition provisions and
+        # DNS-validates a per-cluster wildcard certificate
+        # (docs/decisions/0003). ACM certificate ARNs are not known ahead
+        # of issuance, so the management actions are account-wide; they are
+        # cert-scoped operations, not data access.
+        Sid    = "ACM"
+        Effect = "Allow"
+        Action = [
+          "acm:RequestCertificate", "acm:DeleteCertificate",
+          "acm:DescribeCertificate", "acm:GetCertificate",
+          "acm:ListCertificates", "acm:ListTagsForCertificate",
+          "acm:AddTagsToCertificate", "acm:RemoveTagsFromCertificate",
+          "acm:RenewCertificate",
+        ]
+        Resource = "*"
+      },
+      {
+        # Route53 — write the ACM DNS-validation CNAME into the cluster's
+        # hosted zone and poll the change. Record-write is scoped to the
+        # base hosted zone; the list/change operations are global by API
+        # shape. Mirrors the ExternalDNS route53_editor policy below.
+        Sid    = "Route53Validation"
+        Effect = "Allow"
+        Action = [
+          "route53:ChangeResourceRecordSets",
+          "route53:ListResourceRecordSets",
+          "route53:GetHostedZone",
+        ]
+        Resource = "arn:aws:route53:::hostedzone/${local.zone_id}"
+      },
+      {
+        Sid    = "Route53Read"
+        Effect = "Allow"
+        Action = [
+          "route53:GetChange",
+          "route53:ListHostedZones",
+          "route53:ListHostedZonesByName",
+          "route53:ListTagsForResource",
+        ]
+        Resource = "*"
+      },
     ]
   })
 }

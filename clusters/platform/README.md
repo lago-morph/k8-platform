@@ -22,7 +22,7 @@ platform abstractions into a running platform cluster:
 4. Once `Ready=True`, the cluster is up. Subsequent phase-3 PRs add:
    - ArgoCD ApplicationSet targeting the new cluster
    - ingress-nginx, ExternalDNS (scoped to `platform.<domain>`),
-     cert-manager + Let's Encrypt ClusterIssuer
+     wildcard ACM certificate (provisioned by the cluster Composition; docs/decisions/0003)
    - A `hello.platform.<domain>` test app
 
 ## Why a separate directory

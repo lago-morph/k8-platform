@@ -1085,6 +1085,39 @@ correct action was a from-scratch phase-0 `apply-and-verify`, not a
 - Both modules (`terraform/base/` and `terraform/management/`) must pass
   `terraform validate` before a PR is considered ready.
 
+### 10.1 ArgoCD credentials are a Terraform output (so a session can drive ArgoCD)
+
+**When Terraform installs ArgoCD on the management cluster, it MUST create
+a dedicated ArgoCD credential and expose it — plus the ArgoCD server URL —
+as Terraform outputs.** The agent has no standing kube/ArgoCD credentials
+in the sandbox (verified: no AWS env, no `~/.aws`, IMDS blocked, no
+kubeconfig — AWS egress works but returns 401/403 unauthenticated). The
+ONLY supported way for a session to trigger anything in ArgoCD during
+implementation (sync the platform-cluster XR, query Application
+sync/health, force a refresh) is:
+
+1. Read the credential from Terraform state: `terraform -chdir=terraform/management output -raw argocd_admin_password` and `... output -raw argocd_server_url`. This runs in the CI workflow that holds the AWS/state creds (e.g. a `terraform-test.yml` action), not the sandbox.
+2. `argocd login "$ARGOCD_SERVER_URL" --username admin --password "$ARGOCD_ADMIN_PASSWORD" --grpc-web` then `argocd app sync platform-cluster-claim` / `argocd app get <app> -o json`.
+
+**Do NOT** depend on `argocd-initial-admin-secret` (it's ephemeral, not in
+Terraform state, and unreadable without standing cluster creds) and do NOT
+hand the user a "click Sync in the UI" step — the agent drives ArgoCD
+itself, via the Terraform-output credential, through CI.
+
+**Implementation note (avoid the bcrypt non-determinism trap):** generate
+the password with `random_password`, and apply the bcrypt hash to the
+`argocd-secret` in a `terraform_data` `local-exec` (compute the hash in the
+provisioner, e.g. `argocd account bcrypt` / `htpasswd -nbBC 10`, NOT via
+Terraform's `bcrypt()` in a resource argument — `bcrypt()` re-salts every
+plan and causes a perpetual diff). Trigger the provisioner on
+`random_password.result` so it only re-runs when the password changes.
+Output `argocd_admin_password` (sensitive) and `argocd_server_url`.
+
+*Grounded in: 2026-06-05 phase-3 session — the agent repeatedly framed the
+platform-cluster sync as a "manual operator step" because it could not
+reach ArgoCD; the user pointed out the session should create ArgoCD creds
+in Terraform and read them from the outputs to drive ArgoCD itself.*
+
 ---
 
 ## 11. File layout

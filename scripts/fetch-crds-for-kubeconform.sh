@@ -144,6 +144,13 @@ CRD_URLS=(
   "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/eks.aws.m.upbound.io_nodegroups.yaml"
   "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/iam.aws.m.upbound.io_roles.yaml"
   "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/iam.aws.m.upbound.io_rolepolicyattachments.yaml"
+  # Phase 3 — per-cluster ACM certificate provisioned inside the cluster
+  # Composition (acm Certificate + route53 validation Record + acm
+  # CertificateValidation). Pinned to the same provider-upjet-aws v2.5.0
+  # as the EKS/IAM/secretsmanager CRDs above.
+  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/acm.aws.m.upbound.io_certificates.yaml"
+  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/acm.aws.m.upbound.io_certificatevalidations.yaml"
+  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/route53.aws.m.upbound.io_records.yaml"
 )
 
 KYVERNO_BUNDLE_URL="https://github.com/kyverno/kyverno/raw/v1.13.0/config/install-latest-testing.yaml"

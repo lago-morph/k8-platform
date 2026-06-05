@@ -12,10 +12,10 @@ Three-tier cluster topology:
 Management Cluster (EKS, Terraform)
   └── ArgoCD hub + Crossplane + ESO
       ├── Platform Services Cluster (EKS, Crossplane)
-      │     └── ingress-nginx, ExternalDNS, cert-manager,
+      │     └── ingress-nginx, ExternalDNS, ACM TLS (Crossplane),
       │         Keycloak, Prometheus, Grafana, Loki
       └── Workload Clusters (EKS, Crossplane)
-            └── ingress-nginx, ExternalDNS, cert-manager,
+            └── ingress-nginx, ExternalDNS, ACM TLS (Crossplane),
                 ESO, Prometheus/Loki agent
 ```
 
@@ -86,6 +86,6 @@ After `apply`, ArgoCD takes over. All subsequent changes are GitOps — commit t
 - **Crossplane XRDs** (`PlatformCluster`, `PlatformSecret`) — platform abstractions hide AWS specifics from consumers
 - **IRSA everywhere** — no static AWS credentials in any manifest or secret
 - **AWS Secrets Manager + ESO** — no secrets in Git, ever
-- **Real domain + Let's Encrypt** — no self-signed certificates; DNS-01 challenge for private clusters
+- **Real domain + ACM (via Crossplane)** — no self-signed certificates; DNS-validated wildcard certs terminated at the ingress NLB (see docs/decisions/0003)
 
 Full rationale in [`ai/DESIGN.md`](ai/DESIGN.md). Requirements in [`ai/REQUIREMENTS.md`](ai/REQUIREMENTS.md).

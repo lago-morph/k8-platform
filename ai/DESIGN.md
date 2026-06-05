@@ -30,7 +30,7 @@ This platform is an attempt to build that missing layer — the "boring infrastr
 ┌─────────────────────────────────────────────────────────────────┐
 │  Platform Services Cluster (EKS)                                │
 │  Provisioned by: Crossplane                                     │
-│  Runs: ingress-nginx, ExternalDNS, cert-manager, Keycloak,     │
+│  Runs: ingress-nginx, ExternalDNS, ACM TLS, Keycloak,          │
 │        Prometheus, Grafana, Loki                                │
 │  DNS: platform.<domain>                                         │
 └───────────────────┬─────────────────────────────────────────────┘
@@ -110,11 +110,11 @@ Once the management cluster exists, using Terraform to provision additional clus
 
 *Why:* Manually creating Route53 records for every service defeats the purpose of a self-service platform. ExternalDNS watches Ingress resources and creates/updates Route53 records automatically. This is the pattern real platforms use.
 
-**cert-manager + Let's Encrypt** — automatic TLS.
+**ACM (AWS Certificate Manager) via Crossplane** — automatic TLS.
 
-*Why:* Same reasoning. Manual certificate management doesn't scale and teaches bad habits. cert-manager with Let's Encrypt ACME (DNS-01 challenge via Route53) is the production pattern. It also demonstrates why you need a real domain — self-signed certificates can't be used here.
+*Why:* Manual certificate management doesn't scale and teaches bad habits. Each cluster's Crossplane Composition provisions a DNS-validated **ACM** wildcard certificate (`*.<subdomain>.<domain>`) and terminates TLS at the ingress-nginx NLB — the same mechanism the management cluster already uses, so the platform runs a single TLS path. The DNS validation also demonstrates why you need a real domain — self-signed certificates can't be used here. See `docs/decisions/0003`.
 
-*Why DNS-01 and not HTTP-01:* DNS-01 works for private clusters and wildcards. Since the platform clusters will be in private subnets, HTTP-01 (which requires the ACME server to reach the cluster) would not work.
+*Why ACM and not cert-manager + ACME:* The clusters are private and TLS terminates at the load balancer, so an in-cluster ACME issuer adds a second issuance/renewal mechanism (and ACME rate limits) for no benefit over the AWS-native, auto-renewing ACM cert the LB already consumes. cert-manager + Let's Encrypt is retained as a future option for in-cluster cert material — see `docs/future-enhancements.md`.
 
 ### 2.5 Identity and Authentication
 
@@ -218,7 +218,7 @@ k8s-platform/
 │   └── workload-template/     # Template for workload cluster resources
 ├── platform-services/
 │   ├── ingress/               # ingress-nginx Helm values
-│   ├── cert-manager/          # cert-manager configuration and ClusterIssuers
+│   ├── cert-manager/          # (deferred — see docs/future-enhancements.md; TLS is ACM via Crossplane)
 │   ├── external-dns/          # ExternalDNS configuration
 │   ├── keycloak/              # Keycloak Helm values and realm config
 │   ├── observability/         # Prometheus, Grafana, Loki stack
@@ -259,10 +259,10 @@ Each iteration has a defined end state — a thing you can use or demonstrate �
 - Helm install of ArgoCD (via Terraform helm provider)
 - Helm install of Crossplane with AWS provider (via Terraform)
 - Helm install of ESO (via Terraform)
-- Ingress for ArgoCD UI with ExternalDNS annotation and cert-manager annotation
+- Ingress for ArgoCD UI with ExternalDNS annotation; TLS terminated at the ingress NLB by the base ACM wildcard certificate
 - ArgoCD accessible at `argocd.management.<domain>` with valid TLS
 
-**Design note:** cert-manager and ingress-nginx are also installed on the management cluster by Terraform so that the ArgoCD UI is accessible at the end of this iteration. This is the only exception to the "ArgoCD manages everything" rule — the management cluster's own ingress stack is Terraform-managed to avoid the chicken-and-egg problem.
+**Design note:** ingress-nginx is installed on the management cluster by Terraform so that the ArgoCD UI is accessible at the end of this iteration. TLS uses the ACM wildcard certificate from `terraform/base` terminated at the NLB (no cert-manager — see `docs/decisions/0003`). This is the only exception to the "ArgoCD manages everything" rule — the management cluster's own ingress stack is Terraform-managed to avoid the chicken-and-egg problem.
 
 **End state:** `kubectl get pods -A` on the management cluster shows everything running. ArgoCD UI loads at `argocd.management.<domain>` with a valid certificate.
 
@@ -287,14 +287,14 @@ Each iteration has a defined end state — a thing you can use or demonstrate �
 **What:** Crossplane provisions the platform cluster; ArgoCD deploys the standard platform stack to it.
 
 **Components:**
-- Crossplane `PlatformCluster` claim creating: subnets, EKS cluster, node group, IRSA roles, kubeconfig secret
+- Crossplane `XPlatformCluster` XR creating: EKS cluster, node group, IRSA roles, and a DNS-validated wildcard ACM certificate (`*.platform.<domain>`) — see `docs/decisions/0003`
 - ArgoCD ApplicationSet targeting the platform cluster
-- ingress-nginx, ExternalDNS (scoped to `platform.<domain>`), cert-manager with Let's Encrypt ClusterIssuer
+- ingress-nginx (NLB terminates TLS with the cluster's ACM cert), ExternalDNS (scoped to `platform.<domain>`)
 - A test application deployed at `hello.platform.<domain>` with automatic DNS and TLS
 
 **End state:** Navigate to `hello.platform.<domain>` in a browser. Valid TLS certificate. No manual DNS or cert steps were taken.
 
-**Blog angle:** "Automatic TLS and DNS — what cert-manager and ExternalDNS actually do and why you need them."
+**Blog angle:** "Automatic TLS and DNS — what ACM (via Crossplane) and ExternalDNS actually do and why you need them."
 
 ### Iteration 4: Observability
 
@@ -338,7 +338,7 @@ Each iteration has a defined end state — a thing you can use or demonstrate �
 
 **Components:**
 - `PlatformCluster` claim for `workload1`
-- ArgoCD ApplicationSet entry for workload1 cluster, deploying: ingress-nginx, ExternalDNS (scoped to `workload1.<domain>`), cert-manager, ESO, Alloy observability agent
+- ArgoCD ApplicationSet entry for workload1 cluster, deploying: ingress-nginx, ExternalDNS (scoped to `workload1.<domain>`), ESO, Alloy observability agent (TLS is the ACM cert from the cluster Composition — docs/decisions/0003)
 - Workload1 cluster metrics and logs appear in platform Grafana
 - Test application at `hello.workload1.<domain>` with TLS
 
@@ -358,7 +358,7 @@ Key IRSA roles:
 - Crossplane AWS provider: EC2, EKS, IAM (for cluster provisioning), Secrets Manager (for `PlatformSecret`)
 - ESO: Secrets Manager read-only
 - ExternalDNS: Route53 change access scoped to the cluster's subdomain zone
-- cert-manager: Route53 change access for DNS-01 challenges
+- Crossplane AWS provider: ACM + Route53 change access to provision and DNS-validate each cluster's wildcard certificate
 
 ### 5.2 Secrets
 

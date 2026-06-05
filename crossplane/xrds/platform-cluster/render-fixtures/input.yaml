@@ -1,18 +1,20 @@
 # Probe XPlatformCluster used by `crossplane render` for SPEC-S9 dry-run.
 #
 # v2 migration (SEG-1 step 1g): rewritten as a v2 namespaced XR.
-# spec.claimRef is REMOVED — v2 XRs are namespaced and use
-# metadata.{name,namespace} directly. spec.writeConnectionSecretToRef
-# is added because the production XR (clusters/platform/platform-
-# cluster-claim.yaml) carries it; the render output should reflect
-# realistic connection-secret routing.
+# Phase 3: subnets/zone/domain are NO LONGER on the XR — they are
+# account-ephemeral (AGENTS §8.1) and injected from the cluster-network
+# EnvironmentConfig (see required-resources.yaml in this dir), which
+# terraform/management materializes from the base Terraform output. The
+# XR carries only stable values; spec.dns.subdomain is the per-cluster
+# DNS label.
 #
-# Renders 8 managed resources: 2 IAM roles + 4 RolePolicyAttachments +
-# 1 EKS Cluster + 1 NodeGroup, all under *.aws.m.upbound.io API groups.
+# Renders 11 managed resources: 2 IAM roles + 4 RolePolicyAttachments +
+# 1 EKS Cluster + 1 NodeGroup + 1 ACM Certificate + 1 route53 Record +
+# 1 ACM CertificateValidation, all under *.aws.m.upbound.io API groups.
 #
 # metadata.uid is pinned for deterministic render output (see SPEC-S9
-# §5 "Diff strategy"). subnetIds use plausible test values — the
-# render is fully offline so no real subnets are queried.
+# §5 "Diff strategy"). The render is fully offline; no real AWS resources
+# are queried.
 apiVersion: platform.k8-platform.io/v1alpha1
 kind: XPlatformCluster
 metadata:
@@ -23,10 +25,8 @@ spec:
   name: render-probe
   region: us-east-1
   version: "1.32"
-  vpc:
-    subnetIds:
-      - subnet-00000000000000001
-      - subnet-00000000000000002
+  dns:
+    subdomain: platform
   nodeGroup:
     instanceTypes:
       - t3.medium

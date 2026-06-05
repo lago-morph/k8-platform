@@ -1,35 +1,30 @@
-# kubeconform-skip — spec.vpc.subnetIds carries `subnet-REPLACE-ME-AZ*`
-# placeholders that intentionally fail the XRD's `^subnet-[a-z0-9]+$`
-# pattern so admission rejects this manifest until the operator
-# substitutes real subnet IDs (see the TODO comment further down).
-# The XRD's regex is the load-bearing admission gate; static lint would
-# only flag the same fact. SPEC-S6 §5.4 allowlist.
-#
 # XPlatformCluster — provisions the platform-services EKS cluster.
 #
-# v2 migration (SEG-1 step 1f): rewritten from a v1 `PlatformCluster`
-# claim into a v2 namespaced XR (XPlatformCluster, apiextensions.
-# crossplane.io/v2 + scope: Namespaced). The XR lives in the `platform`
-# namespace (Namespace object is in clusters/platform/00-namespace.yaml).
+# v2 migration (SEG-1 step 1f): a v2 namespaced XR (XPlatformCluster,
+# apiextensions.crossplane.io/v2 + scope: Namespaced). The XR lives in the
+# `platform` namespace (Namespace object is in clusters/platform/
+# 00-namespace.yaml).
 #
-# Connection-secret routing (v2): the eks-cluster MR publishes
-# `kubeconfig` to its provider connection-secret; the Composition
-# re-exports that key to the XR's connection-details; the XR (this
-# object) writes the merged secret to ref `platform-cluster-kubeconfig`
-# in its OWN namespace (`platform`) — NOT `crossplane-system` as in v1.
-# Phase 3 consumers must read `platform/platform-cluster-kubeconfig`.
+# Phase 3 / Iteration 3 (REQ-PLAT-01..06). Provisioning this XR creates,
+# as one unit:
+#   - EKS cluster + managed node group + IAM roles, in the shared private
+#     subnets from the base module
+#   - a DNS-validated wildcard ACM certificate `*.platform.<domain>`
+#     (REQ-PLAT-05 — ACM via Crossplane, no cert-manager/ACME; see
+#     docs/decisions/0003)
+# The issued cert ARN is published on status.certificateArn and consumed
+# by the platform cluster's ingress-nginx NLB.
 #
-# Phase 3 / Iteration 3 (REQ-PLAT-01..06).
+# Account-ephemeral inputs (private subnet IDs, Route53 zone id, root
+# domain) are NOT in this file (AGENTS §8.1). They are injected from the
+# base Terraform output via the `cluster-network` EnvironmentConfig that
+# terraform/management materializes (ADR-e557a40123 / docs/decisions/0003),
+# so this manifest carries no placeholders and needs no per-account edits.
 #
-# WARNING: when this XR is synced by ArgoCD, Crossplane provisions a
-# REAL EKS cluster + managed node group + IAM roles. The corresponding
-# ArgoCD Application (argocd/apps/platform-cluster-claim.yaml) is
-# configured WITHOUT automated sync — sync is a deliberate operator
-# action.
-#
-# Substitute spec.vpc.subnetIds with the actual private subnet IDs
-# from the base module BEFORE syncing. The placeholders below cause
-# admission to fail closed at sync time.
+# WARNING: when this XR is synced by ArgoCD, Crossplane provisions REAL
+# AWS resources. The corresponding ArgoCD Application
+# (argocd/apps/platform-cluster-claim.yaml) is configured WITHOUT
+# automated sync — sync is a deliberate operator action.
 apiVersion: platform.k8-platform.io/v1alpha1
 kind: XPlatformCluster
 metadata:
@@ -45,13 +40,11 @@ spec:
   name: k8-platform-services
   region: us-east-1
   version: "1.32"
-  vpc:
-    subnetIds:
-      # TODO(phase-3): replace with `terraform output -raw private_subnet_ids`
-      # from the base module. Two subnets in two different AZs are
-      # required by EKS HA.
-      - subnet-REPLACE-ME-AZ1
-      - subnet-REPLACE-ME-AZ2
+  dns:
+    # Platform services are published at <service>.platform.<domain>; the
+    # wildcard ACM cert covers *.platform.<domain>. ExternalDNS on the
+    # cluster is scoped to this subdomain.
+    subdomain: platform
   nodeGroup:
     # t3.medium x 2 sized for the 9-instance EC2 quota in this account
     # (management cluster uses 2 already; this leaves 5 headroom for
@@ -60,9 +53,3 @@ spec:
     desiredSize: 2
     minSize: 1
     maxSize: 3
-  # v2 migration: XR-level connection secrets are explicitly NOT
-  # supported in apiextensions.crossplane.io/v2 (the v2 admission
-  # webhook rejects them, even though the static schema accepts).
-  # Phase 3 ApplicationSet must read kubeconfig directly from the
-  # EKS Cluster MR's own writeConnectionSecretToRef secret. Tracked
-  # as Phase 3 follow-up.
