@@ -882,6 +882,24 @@ posed decision and the agent appeared to keep building a different
 approach, prompting "I told you what to do and ignored me." See
 `retrospective/2026-06-05-01/AGENTS-MD-af34f513e7-act-on-the-answer-to-a-question-you-asked.md`.*
 
+### 6.22 Distinguish provisioning from verification in a GitOps repo
+
+**In a GitOps repository, do not tell the user they must "provision" or
+"apply" something manually when ArgoCD/Crossplane/CI converge it from
+git.** Before describing any step as a manual user action, ask whether
+GitOps or a CI workflow already performs it; reserve "manual" for the
+genuine gaps (a deliberately-disabled auto-sync, a Terraform bootstrap
+the agent itself dispatches). When you cannot complete a step, name the
+real blocker — usually verification access, not provisioning. To drive
+ArgoCD itself, read the ArgoCD credential from the Terraform outputs
+(§10.1) and run the `argocd` CLI via CI.
+
+*Grounded in: 2026-06-05 phase-3 session — the agent framed the spoke as
+"you must provision"; the user replied "aren't we using gitops here?" The
+real limit was verification access (no sandbox cluster creds), not
+provisioning. See
+`retrospective/2026-06-05-140/AGENTS-MD-429a56a4b8-distinguish-provisioning-from-verification.md`.*
+
 ---
 
 ## 7. Testing loops — companion skills
