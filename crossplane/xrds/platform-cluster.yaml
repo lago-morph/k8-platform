@@ -1,15 +1,32 @@
 # PlatformCluster — the platform's EKS cluster abstraction (REQ-XP-02).
 #
-# A claim against this XRD provisions a complete EKS cluster:
+# A claim against this XRD provisions a complete EKS cluster AND its TLS
+# identity, so cert provisioning is an intrinsic part of bringing up any
+# cluster (platform or tenant), not a one-off attached to one cluster:
 #   1. Cluster IAM role (AmazonEKSClusterPolicy)
 #   2. Node group IAM role (worker / CNI / ECR-read policies)
 #   3. EKS Cluster (control plane)
 #   4. EKS Managed Node Group
+#   5. Wildcard ACM Certificate `*.<subdomain>.<domain>` (DNS validation)
+#   6. Route53 validation Record for (5)
+#   7. ACM CertificateValidation gating on ISSUED
+# The issued cert ARN is published on status.certificateArn and bound to
+# the cluster's ingress-nginx NLB — no cert-manager / ACME (docs/decisions/
+# 0003-acm-via-crossplane-for-cluster-tls.md).
+#
+# Subnets, the Route53 zone id, and the root domain are account-ephemeral
+# (AGENTS §8.1) and are NOT carried in the XR. They are injected from the
+# base Terraform output (`private_subnet_ids`, `route53_zone_id`, `domain`)
+# via the `cluster-network` Crossplane EnvironmentConfig that
+# terraform/management materializes — see ADR-e557a40123 /
+# docs/decisions/0003. The XR therefore carries no ephemeral values and is
+# safe to commit verbatim.
 #
 # Out-of-scope for v1alpha1 (deliberately):
-#   - VPC creation. The claim references existing private subnets from
-#     the base module. Platform/workload clusters share the management
-#     account's VPC; cross-VPC clusters belong to a future v1beta1.
+#   - VPC creation. The cluster lands in the shared private subnets from
+#     the base module (injected via EnvironmentConfig). Platform/workload
+#     clusters share the management account's VPC; cross-VPC clusters
+#     belong to a future v1beta1.
 #   - OIDC provider for IRSA. The cluster issuer URL is published on
 #     status.oidcIssuer; the actual aws_iam_openid_connect_provider is
 #     created out-of-band in the consuming module (phase 3) where the
@@ -100,23 +117,31 @@ spec:
                     clusters share an upgrade cadence.
                   pattern: "^[0-9]+\\.[0-9]+$"
                   default: "1.32"
-                vpc:
+                dns:
                   type: object
                   description: >-
-                    Existing VPC + subnets to attach the cluster to.
-                    No VPC creation in this XRD by design (see header).
+                    DNS identity for the cluster. Services on the cluster
+                    are published at `<service>.<subdomain>.<domain>` and
+                    the cluster's wildcard ACM certificate covers
+                    `*.<subdomain>.<domain>`. The root `<domain>` and the
+                    Route53 zone are NOT set here — they are account-
+                    ephemeral (AGENTS §8.1) and injected from the base
+                    Terraform output via the `cluster-network`
+                    EnvironmentConfig (see ADR-e557a40123 / docs/decisions/
+                    0003). Only the stable per-cluster subdomain label
+                    lives in git.
                   properties:
-                    subnetIds:
-                      type: array
+                    subdomain:
+                      type: string
                       description: >-
-                        Private subnet IDs the cluster ENIs land in.
-                        At least 2 subnets across 2 AZs (EKS HA req).
-                      items:
-                        type: string
-                        pattern: "^subnet-[a-z0-9]+$"
-                      minItems: 2
+                        DNS label for this cluster under the root domain
+                        (e.g. "platform" → platform.<domain>; "workload1"
+                        → workload1.<domain>). ExternalDNS on the cluster
+                        is scoped to this subdomain and the wildcard ACM
+                        cert covers `*.<subdomain>.<domain>`.
+                      pattern: "^[a-z][a-z0-9-]{0,30}[a-z0-9]$"
                   required:
-                    - subnetIds
+                    - subdomain
                 nodeGroup:
                   type: object
                   description: Managed node group sizing + instance choice.
@@ -154,7 +179,7 @@ spec:
                     maxSize: 3
               required:
                 - name
-                - vpc
+                - dns
             status:
               type: object
               properties:
@@ -173,3 +198,34 @@ spec:
                 nodeGroupArn:
                   type: string
                   description: ARN of the managed node group.
+                certificateArn:
+                  type: string
+                  description: >-
+                    ARN of the cluster's wildcard ACM certificate
+                    (`*.<subdomain>.<domain>`) once ISSUED. Consumed by the
+                    cluster's ingress-nginx NLB (aws-load-balancer-ssl-cert
+                    annotation) to terminate TLS — no cert-manager / ACME
+                    on the cluster. Published by the acm Certificate MR.
+                certificateDomain:
+                  type: string
+                  description: >-
+                    The wildcard domain the certificate covers
+                    (`*.<subdomain>.<domain>`), echoed for observability.
+                # ---- cross-resource validation plumbing (not user-facing) ----
+                # The acm Certificate MR emits its DNS-validation CNAME in
+                # status.atProvider.domainValidationOptions[0]; Crossplane
+                # patches route them through the XR so the route53 Record MR
+                # and the acm CertificateValidation MR can consume them
+                # (P&T cross-resource refs travel via the composite).
+                certValidationRecordName:
+                  type: string
+                  description: DNS-validation CNAME record name (provider-emitted).
+                certValidationRecordValue:
+                  type: string
+                  description: DNS-validation CNAME record value (provider-emitted).
+                certValidationRecordType:
+                  type: string
+                  description: DNS-validation record type (CNAME).
+                certValidationRecordFqdn:
+                  type: string
+                  description: FQDN of the created validation record, fed to CertificateValidation.

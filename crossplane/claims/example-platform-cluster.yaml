@@ -1,32 +1,27 @@
-# Example v2 XR — apply in your namespace; no separate claim needed.
-#
-# kubeconform-skip — `subnet-REPLACE-ME-AZ*` placeholders are
-# documentation; this example is a copy/paste starting point that the
-# user edits with real subnet IDs before applying. The XRD's
-# `^subnet-[a-z0-9]+$` regex remains the load-bearing admission gate.
-# SPEC-S6 §5.4 allowlist.
-#
 # Example XPlatformCluster — copy/paste starting point.
 #
-# v2 migration (SEG-1 step 1d): under Crossplane v2 there is no
-# separate `PlatformCluster` claim type — XPlatformCluster is the
-# user-facing namespaced XR (apiextensions.crossplane.io/v2 + scope:
-# Namespaced). The XR's spec.writeConnectionSecretToRef.name controls
-# where the kubeconfig secret lands (in the XR's namespace; v1's
-# `writeConnectionSecretsToNamespace: crossplane-system` removed).
+# v2 migration (SEG-1 step 1d): under Crossplane v2 there is no separate
+# `PlatformCluster` claim type — XPlatformCluster is the user-facing
+# namespaced XR (apiextensions.crossplane.io/v2 + scope: Namespaced).
 #
-# WARNING: applying this `kubectl apply -f` will create a REAL EKS
-# cluster + managed node group in AWS. Provisioning takes ~15 minutes.
-# Teardown is ~10 minutes more.
+# Phase 3: the cluster's networking and DNS root (private subnet IDs,
+# Route53 zone id, root domain) are account-ephemeral and are NOT set on
+# the XR. They are injected from the base Terraform output via the
+# `cluster-network` Crossplane EnvironmentConfig that terraform/management
+# materializes (ADR-e557a40123 / docs/decisions/0003). The XR carries only
+# stable values, so this example needs no per-account edits — no
+# placeholders, no kubeconform-skip.
 #
-# Substitute spec.vpc.subnetIds with the actual private subnet IDs
-# from your base module's output (terraform output -json | jq).
+# WARNING: applying this with `kubectl apply -f` will provision a REAL EKS
+# cluster + managed node group + a DNS-validated wildcard ACM certificate
+# (`*.<subdomain>.<domain>`) in AWS. Provisioning takes ~15-20 minutes.
 #
 # After apply:
 #   - kubectl get xplatformcluster -A
 #   - kubectl get cluster.eks.aws.m.upbound.io
 #   - kubectl get nodegroup.eks.aws.m.upbound.io
-#   - aws eks describe-cluster --name workload1 --region us-east-1
+#   - kubectl get certificate.acm.aws.m.upbound.io
+#   - kubectl get certificatevalidation.acm.aws.m.upbound.io
 apiVersion: platform.k8-platform.io/v1alpha1
 kind: XPlatformCluster
 metadata:
@@ -36,17 +31,13 @@ spec:
   name: k8-platform-workload1
   region: us-east-1
   version: "1.32"
-  vpc:
-    subnetIds:
-      - subnet-REPLACE-ME-AZ1
-      - subnet-REPLACE-ME-AZ2
+  dns:
+    # DNS label for this cluster: services land at
+    # <service>.workload1.<domain>; the wildcard ACM cert covers
+    # *.workload1.<domain>.
+    subdomain: workload1
   nodeGroup:
     instanceTypes: ["t3.medium"]
     desiredSize: 2
     minSize: 1
     maxSize: 3
-  # v2 NOTE: XR-level connection secrets aren't supported by
-  # apiextensions.crossplane.io/v2 — `writeConnectionSecretToRef`
-  # on the XR is rejected by the v2 admission webhook. Phase 3
-  # consumers should read kubeconfig from the EKS Cluster MR's
-  # own connection-secret instead.

@@ -67,12 +67,43 @@ spec:
   #      kubeconfig (was crossplane-system/...); see plan §3 Open Q #7.
   mode: Pipeline
   pipeline:
+    # ---------- step 0: load account-ephemeral network/DNS values --------
+    # function-environment-configs merges the `cluster-network`
+    # EnvironmentConfig's data into the pipeline environment. That config
+    # is materialized by terraform/management from the base Terraform
+    # output (private_subnet_ids, route53_zone_id, domain) — see
+    # ADR-e557a40123 / docs/decisions/0003. The patch-and-transform step
+    # below reads those values via FromEnvironmentFieldPath, so the XR in
+    # git carries no account-ephemeral identifiers (AGENTS §8.1).
+    - step: load-environment
+      functionRef:
+        name: function-environment-configs
+      input:
+        apiVersion: environmentconfigs.fn.crossplane.io/v1beta1
+        kind: Input
+        spec:
+          environmentConfigs:
+            - type: Reference
+              ref:
+                name: cluster-network
     - step: patch-and-transform
       functionRef:
         name: function-patch-and-transform
       input:
         apiVersion: pt.fn.crossplane.io/v1beta1
         kind: Resources
+        # Top-level environment patches run BEFORE resource patches, so the
+        # per-cluster subdomain (XR spec) lands in the pipeline environment
+        # — which already carries `domain` from the cluster-network
+        # EnvironmentConfig — in time for the ACM Certificate resource's
+        # CombineFromEnvironment [subdomain, domain] → wildcard domainName.
+        # (Per-resource ToEnvironment writes are NOT visible to a combine in
+        # the same pass; top-level environment patches are.)
+        environment:
+          patches:
+            - type: FromCompositeFieldPath
+              fromFieldPath: spec.dns.subdomain
+              toFieldPath: subdomain
         resources:
 
           # ---------- 1. Control-plane IAM role ---------------------
@@ -304,8 +335,10 @@ spec:
                 toFieldPath: spec.forProvider.version
               # v2 deviation: vpcConfig is now an object (not array);
               # subnetIds lives directly under vpcConfig.
-              - type: FromCompositeFieldPath
-                fromFieldPath: spec.vpc.subnetIds
+              # Subnets come from the `cluster-network` EnvironmentConfig
+              # (base Terraform output), not the XR — see ADR-e557a40123.
+              - type: FromEnvironmentFieldPath
+                fromFieldPath: privateSubnetIds
                 toFieldPath: spec.forProvider.vpcConfig.subnetIds
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.name
@@ -373,8 +406,8 @@ spec:
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.region
                 toFieldPath: spec.forProvider.region
-              - type: FromCompositeFieldPath
-                fromFieldPath: spec.vpc.subnetIds
+              - type: FromEnvironmentFieldPath
+                fromFieldPath: privateSubnetIds
                 toFieldPath: spec.forProvider.subnetIds
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.nodeGroup.instanceTypes
@@ -395,6 +428,151 @@ spec:
               - type: ToCompositeFieldPath
                 fromFieldPath: status.atProvider.arn
                 toFieldPath: status.nodeGroupArn
+            readinessChecks:
+              - type: MatchCondition
+                matchCondition:
+                  type: Ready
+                  status: "True"
+
+          # ---------- 9. Wildcard ACM certificate --------------------
+          # Every cluster gets its own `*.<subdomain>.<domain>` cert,
+          # DNS-validated via Route53. The issued ARN is published on the
+          # XR status and bound to the cluster's ingress-nginx NLB — no
+          # cert-manager / ACME (docs/decisions/0003). domainName is built
+          # by CombineFromEnvironment from `subdomain` (copied into the
+          # environment by the cluster-role resource above) and `domain`
+          # (from the cluster-network EnvironmentConfig).
+          - name: cluster-certificate
+            base:
+              apiVersion: acm.aws.m.upbound.io/v1beta1
+              kind: Certificate
+              metadata:
+                labels:
+                  platform.k8-platform.io/role: cluster-certificate
+              spec:
+                forProvider:
+                  region: us-east-1
+                  validationMethod: DNS
+                  tags:
+                    ManagedBy: crossplane
+                    PlatformAbstraction: PlatformCluster
+                managementPolicies: [Observe, Create, Update, Delete]
+                providerConfigRef:
+                  kind: ClusterProviderConfig
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+              # Build the wildcard domain `*.<subdomain>.<domain>` from the
+              # environment. `subdomain` is placed in the environment by the
+              # top-level environment.patches (above, runs first); `domain`
+              # comes from the cluster-network EnvironmentConfig. Both are
+              # now env-native, so CombineFromEnvironment resolves them.
+              - type: CombineFromEnvironment
+                combine:
+                  variables:
+                    - fromFieldPath: subdomain
+                    - fromFieldPath: domain
+                  strategy: string
+                  string:
+                    fmt: "*.%s.%s"
+                toFieldPath: spec.forProvider.domainName
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.name
+                toFieldPath: spec.forProvider.tags.ClusterName
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.arn
+                toFieldPath: status.certificateArn
+              - type: ToCompositeFieldPath
+                fromFieldPath: spec.forProvider.domainName
+                toFieldPath: status.certificateDomain
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.domainValidationOptions[0].resourceRecordName
+                toFieldPath: status.certValidationRecordName
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.domainValidationOptions[0].resourceRecordValue
+                toFieldPath: status.certValidationRecordValue
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.domainValidationOptions[0].resourceRecordType
+                toFieldPath: status.certValidationRecordType
+            readinessChecks:
+              - type: NonEmpty
+                fieldPath: status.atProvider.arn
+
+          # ---------- 10. Route53 DNS-validation record --------------
+          # route53 Record is a GLOBAL resource — its CRD has no `region`
+          # field, so none is set here. zoneId comes from the
+          # cluster-network EnvironmentConfig (base route53_zone_id); the
+          # name/type/value are the CNAME the ACM cert emitted above,
+          # routed through the XR status (P&T cross-resource refs travel
+          # via the composite).
+          - name: cluster-cert-validation-record
+            base:
+              apiVersion: route53.aws.m.upbound.io/v1beta1
+              kind: Record
+              metadata:
+                labels:
+                  platform.k8-platform.io/role: cluster-cert-validation-record
+              spec:
+                forProvider:
+                  ttl: 300
+                  allowOverwrite: true
+                managementPolicies: [Observe, Create, Update, Delete]
+                providerConfigRef:
+                  kind: ClusterProviderConfig
+                  name: default
+            patches:
+              - type: FromEnvironmentFieldPath
+                fromFieldPath: route53ZoneId
+                toFieldPath: spec.forProvider.zoneId
+              - type: FromCompositeFieldPath
+                fromFieldPath: status.certValidationRecordName
+                toFieldPath: spec.forProvider.name
+              - type: FromCompositeFieldPath
+                fromFieldPath: status.certValidationRecordType
+                toFieldPath: spec.forProvider.type
+              - type: FromCompositeFieldPath
+                fromFieldPath: status.certValidationRecordValue
+                toFieldPath: spec.forProvider.records[0]
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.fqdn
+                toFieldPath: status.certValidationRecordFqdn
+            readinessChecks:
+              - type: NonEmpty
+                fieldPath: status.atProvider.fqdn
+
+          # ---------- 11. ACM certificate validation -----------------
+          # Gates on the cert reaching ISSUED. certificateArnSelector
+          # resolves to the Certificate MR (9) by controller-ref + label;
+          # validationRecordFqdns is the FQDN of the record (10). When this
+          # MR is Ready the cert is confirmed issued — this is the
+          # "confirm the cert" step, done as part of provisioning.
+          - name: cluster-cert-validation
+            base:
+              apiVersion: acm.aws.m.upbound.io/v1beta1
+              kind: CertificateValidation
+              metadata:
+                labels:
+                  platform.k8-platform.io/role: cluster-cert-validation
+              spec:
+                forProvider:
+                  region: us-east-1
+                  certificateArnSelector:
+                    matchControllerRef: true
+                    matchLabels:
+                      platform.k8-platform.io/role: cluster-certificate
+                managementPolicies: [Observe, Create, Update, Delete]
+                providerConfigRef:
+                  kind: ClusterProviderConfig
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+              - type: FromCompositeFieldPath
+                fromFieldPath: status.certValidationRecordFqdn
+                toFieldPath: spec.forProvider.validationRecordFqdns[0]
             readinessChecks:
               - type: MatchCondition
                 matchCondition:

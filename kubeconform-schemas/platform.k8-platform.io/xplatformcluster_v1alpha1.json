@@ -21,22 +21,18 @@
           "pattern": "^[0-9]+\\.[0-9]+$",
           "default": "1.32"
         },
-        "vpc": {
+        "dns": {
           "type": "object",
-          "description": "Existing VPC + subnets to attach the cluster to. No VPC creation in this XRD by design (see header).",
+          "description": "DNS identity for the cluster. Services on the cluster are published at `<service>.<subdomain>.<domain>` and the cluster's wildcard ACM certificate covers `*.<subdomain>.<domain>`. The root `<domain>` and the Route53 zone are NOT set here \u2014 they are account- ephemeral (AGENTS \u00a78.1) and injected from the base Terraform output via the `cluster-network` EnvironmentConfig (see ADR-e557a40123 / docs/decisions/ 0003). Only the stable per-cluster subdomain label lives in git.",
           "properties": {
-            "subnetIds": {
-              "type": "array",
-              "description": "Private subnet IDs the cluster ENIs land in. At least 2 subnets across 2 AZs (EKS HA req).",
-              "items": {
-                "type": "string",
-                "pattern": "^subnet-[a-z0-9]+$"
-              },
-              "minItems": 2
+            "subdomain": {
+              "type": "string",
+              "description": "DNS label for this cluster under the root domain (e.g. \"platform\" \u2192 platform.<domain>; \"workload1\" \u2192 workload1.<domain>). ExternalDNS on the cluster is scoped to this subdomain and the wildcard ACM cert covers `*.<subdomain>.<domain>`.",
+              "pattern": "^[a-z][a-z0-9-]{0,30}[a-z0-9]$"
             }
           },
           "required": [
-            "subnetIds"
+            "subdomain"
           ],
           "additionalProperties": false
         },
@@ -87,7 +83,7 @@
       },
       "required": [
         "name",
-        "vpc"
+        "dns"
       ],
       "additionalProperties": false
     },
@@ -109,6 +105,30 @@
         "nodeGroupArn": {
           "type": "string",
           "description": "ARN of the managed node group."
+        },
+        "certificateArn": {
+          "type": "string",
+          "description": "ARN of the cluster's wildcard ACM certificate (`*.<subdomain>.<domain>`) once ISSUED. Consumed by the cluster's ingress-nginx NLB (aws-load-balancer-ssl-cert annotation) to terminate TLS \u2014 no cert-manager / ACME on the cluster. Published by the acm Certificate MR."
+        },
+        "certificateDomain": {
+          "type": "string",
+          "description": "The wildcard domain the certificate covers (`*.<subdomain>.<domain>`), echoed for observability."
+        },
+        "certValidationRecordName": {
+          "type": "string",
+          "description": "DNS-validation CNAME record name (provider-emitted)."
+        },
+        "certValidationRecordValue": {
+          "type": "string",
+          "description": "DNS-validation CNAME record value (provider-emitted)."
+        },
+        "certValidationRecordType": {
+          "type": "string",
+          "description": "DNS-validation record type (CNAME)."
+        },
+        "certValidationRecordFqdn": {
+          "type": "string",
+          "description": "FQDN of the created validation record, fed to CertificateValidation."
         }
       },
       "additionalProperties": false

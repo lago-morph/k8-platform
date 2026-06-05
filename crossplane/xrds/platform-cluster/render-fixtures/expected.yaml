@@ -1,3 +1,55 @@
+apiVersion: acm.aws.m.upbound.io/v1beta1
+kind: Certificate
+metadata:
+  annotations: {}
+  generateName: render-probe-cluster-
+  labels:
+    crossplane.io/composite: render-probe-cluster
+    platform.k8-platform.io/role: cluster-certificate
+  name: render-probe-cluster-132e67b41d9b
+  namespace: default
+spec:
+  forProvider:
+    domainName: '*.platform.render-probe.example.test'
+    region: us-east-1
+    tags:
+      ClusterName: render-probe
+      ManagedBy: crossplane
+      PlatformAbstraction: PlatformCluster
+    validationMethod: DNS
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
+apiVersion: acm.aws.m.upbound.io/v1beta1
+kind: CertificateValidation
+metadata:
+  annotations: {}
+  generateName: render-probe-cluster-
+  labels:
+    crossplane.io/composite: render-probe-cluster
+    platform.k8-platform.io/role: cluster-cert-validation
+  name: render-probe-cluster-88b4ceffbc75
+  namespace: default
+spec:
+  forProvider:
+    certificateArnSelector:
+      matchControllerRef: true
+      matchLabels:
+        platform.k8-platform.io/role: cluster-certificate
+    region: us-east-1
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
 apiVersion: eks.aws.m.upbound.io/v1beta1
 kind: Cluster
 metadata:
@@ -69,6 +121,29 @@ spec:
       ClusterName: render-probe
       ManagedBy: crossplane
       PlatformAbstraction: PlatformCluster
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
+apiVersion: route53.aws.m.upbound.io/v1beta1
+kind: Record
+metadata:
+  annotations: {}
+  generateName: render-probe-cluster-
+  labels:
+    crossplane.io/composite: render-probe-cluster
+    platform.k8-platform.io/role: cluster-cert-validation-record
+  name: render-probe-cluster-ef1365dce72a
+  namespace: default
+spec:
+  forProvider:
+    allowOverwrite: true
+    ttl: 300
+    zoneId: Z00000000000000000000Q
   managementPolicies:
     - Observe
     - Create
@@ -238,6 +313,12 @@ metadata:
 spec:
   crossplane:
     resourceRefs:
+      - apiVersion: acm.aws.m.upbound.io/v1beta1
+        kind: CertificateValidation
+        name: render-probe-cluster-88b4ceffbc75
+      - apiVersion: acm.aws.m.upbound.io/v1beta1
+        kind: Certificate
+        name: render-probe-cluster-132e67b41d9b
       - apiVersion: eks.aws.m.upbound.io/v1beta1
         kind: Cluster
         name: render-probe-cluster-69f9d71223c3
@@ -262,6 +343,11 @@ spec:
       - apiVersion: iam.aws.m.upbound.io/v1beta1
         kind: Role
         name: render-probe-cluster-441cc3b1ccc8
+      - apiVersion: route53.aws.m.upbound.io/v1beta1
+        kind: Record
+        name: render-probe-cluster-ef1365dce72a
+  dns:
+    subdomain: platform
   name: render-probe
   nodeGroup:
     desiredSize: 2
@@ -271,10 +357,6 @@ spec:
     minSize: 1
   region: us-east-1
   version: "1.32"
-  vpc:
-    subnetIds:
-      - subnet-00000000000000001
-      - subnet-00000000000000002
 status:
   conditions:
     - reason: WatchCircuitClosed
@@ -283,7 +365,7 @@ status:
     - reason: ReconcileSuccess
       status: "True"
       type: Synced
-    - message: 'Unready resources: cluster-role, cluster-role-policy, eks-cluster, and 5 more'
+    - message: 'Unready resources: cluster-cert-validation, cluster-cert-validation-record, cluster-certificate, and 8 more'
       reason: Creating
       status: "False"
       type: Ready

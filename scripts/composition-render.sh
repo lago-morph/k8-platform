@@ -121,6 +121,25 @@ read_function_version() {
 }
 
 # ------------------------------------------------------------------------
+# Read the pinned function-environment-configs version from versions.env
+# (FUNCTION_ENVIRONMENT_CONFIGS_VERSION). Only needed for Compositions
+# whose pipeline references function-environment-configs.
+# ------------------------------------------------------------------------
+read_env_function_version() {
+  if [ ! -f "$VERSIONS_ENV" ]; then
+    err "$VERSIONS_ENV not found — required for pinned function version."
+    return 2
+  fi
+  # shellcheck disable=SC1090
+  . "$VERSIONS_ENV"
+  if [ -z "${FUNCTION_ENVIRONMENT_CONFIGS_VERSION:-}" ]; then
+    err "FUNCTION_ENVIRONMENT_CONFIGS_VERSION not set in $VERSIONS_ENV"
+    return 2
+  fi
+  echo "$FUNCTION_ENVIRONMENT_CONFIGS_VERSION"
+}
+
+# ------------------------------------------------------------------------
 # normalize_stream <input-yaml-stream-on-stdin>
 #
 # Strips fields that are non-deterministic between renders (status
@@ -180,7 +199,7 @@ normalize_stream() {
 # the OCI registry if a runtime is provided).
 # ------------------------------------------------------------------------
 render_one() {
-  local xrd="$1" comp="$2" input="$3"
+  local xrd="$1" comp="$2" input="$3" required="${4:-}"
   local func_ver
   func_ver=$(read_function_version) || return 2
 
@@ -200,11 +219,40 @@ spec:
   package: xpkg.upbound.io/crossplane-contrib/function-patch-and-transform:${func_ver}
 EOF
 
-  local out err_out rc
+  # If the Composition's pipeline uses function-environment-configs, add
+  # it to the functions file too, otherwise render rejects the unknown
+  # functionRef. The EnvironmentConfig objects it reads are supplied via
+  # --required-resources (the fixture's required-resources.yaml).
+  local render_args=(--include-full-xr --include-function-results)
+  if grep -q "function-environment-configs" "$comp"; then
+    local env_ver
+    env_ver=$(read_env_function_version) || return 2
+    cat >>"$fn_yaml" <<EOF
+---
+apiVersion: pkg.crossplane.io/v1beta1
+kind: Function
+metadata:
+  name: function-environment-configs
+  annotations:
+    render.crossplane.io/runtime: Docker
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/function-environment-configs:${env_ver}
+EOF
+    if [ -n "$required" ] && [ -f "$required" ]; then
+      render_args+=(--required-resources "$required")
+    else
+      err "Composition $comp uses function-environment-configs but no"
+      err "required-resources.yaml found alongside the fixture ($required)."
+      err "Supply the cluster-network EnvironmentConfig there (SPEC-S9)."
+      rm -f "$fn_yaml"
+      return 2
+    fi
+  fi
+
+  local out rc
   out=$(crossplane render \
     "$input" "$comp" "$fn_yaml" \
-    --include-full-xr \
-    --include-function-results 2>&1)
+    "${render_args[@]}" 2>&1)
   rc=$?
   rm -f "$fn_yaml"
 
@@ -232,6 +280,9 @@ run_one() {
 
   local input="${fixtures%/}/input.yaml"
   local expected="${fixtures%/}/expected.yaml"
+  # Optional: EnvironmentConfig(s) the Composition reads via
+  # function-environment-configs, supplied to render as required resources.
+  local required="${fixtures%/}/required-resources.yaml"
 
   if [ ! -f "$input" ]; then
     err "input.yaml not found: $input"
@@ -239,7 +290,7 @@ run_one() {
   fi
 
   local rendered
-  rendered=$(render_one "$xrd" "$comp" "$input") || return $?
+  rendered=$(render_one "$xrd" "$comp" "$input" "$required") || return $?
 
   local normalized
   normalized=$(printf '%s\n' "$rendered" | normalize_stream)

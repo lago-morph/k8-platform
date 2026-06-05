@@ -1,0 +1,17 @@
+# EnvironmentConfig consumed by the platform-cluster Composition's
+# function-environment-configs step, supplied to `crossplane render` via
+# --required-resources (SPEC-S9). In production this object is
+# materialized by terraform/management from the base Terraform output
+# (private_subnet_ids, route53_zone_id, domain) — see ADR-e557a40123 /
+# docs/decisions/0003. Here it carries deterministic probe values so the
+# render golden is stable and fully offline.
+apiVersion: apiextensions.crossplane.io/v1beta1
+kind: EnvironmentConfig
+metadata:
+  name: cluster-network
+data:
+  privateSubnetIds:
+    - subnet-00000000000000001
+    - subnet-00000000000000002
+  route53ZoneId: Z00000000000000000000Q
+  domain: render-probe.example.test
