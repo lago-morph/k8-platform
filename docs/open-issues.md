@@ -11,6 +11,62 @@ is the sequence number for that date.
 
 ---
 
+## OI-2026-06-05-5 — live ArgoCD sync unreachable from the Claude-Code-web sandbox
+
+**Status:** **open — environmental blocker characterized, not a code bug.**
+**Surfaced:** 2026-06-05, auto-007. Needed to sync `platform-cluster-claim` to
+provision the phase-3 platform EKS cluster.
+
+**Symptom / observations (§6.17):**
+- **Observation:** sandbox `curl https://argocd.management.<domain>/healthz` →
+  **503** on every path (`/`, `/healthz`, `/api/version`), with a clean TLS
+  handshake (public ACM cert). Persisted >10 min.
+- **Exclusion (by CI evidence):** `management verify` (run 27037148562)
+  **succeeded**, and its `[mgmt] e2e-verify` curls ArgoCD expecting HTTP 200 — so
+  **ArgoCD is healthy from CI/internet**; the 503 is sandbox-egress-specific (the
+  same sandbox 403s `api.github.com`). The handoff's "sandbox has permissive
+  egress; call ArgoCD directly" was true in a prior sandbox, FALSE here.
+- **Exclusion:** sandbox `kubectl` to the EKS API fails TLS (`x509: certificate
+  signed by unknown authority`) — the private cluster CA can't be validated
+  through the sandbox proxy. Known per handoff ("only the EKS kube-API needs CI").
+
+**What's ruled out:** ArgoCD being down (CI sees 200); stale creds (base+mgmt
+applies green); a code bug.
+
+**Why it blocks:** the only sandbox-reachable trigger for the manual-sync
+`platform-cluster-claim` app is ArgoCD, which the sandbox can't reach. Worsened by
+**OI-2026-06-05-6** (can't create a CI sync workflow).
+
+**Next diagnostic / fix:** drive the sync from CI (§10.1). The reusable workflow is
+authored at `docs/runbooks/argocd-sync-from-ci.md` (couldn't be committed under
+`.github/workflows/` — see OI-2026-06-05-6). Once it's on main, dispatch it for
+`platform-cluster-claim`, then follow `decisions/auto-009-phase3-live-completion-runbook.md`.
+
+---
+
+## OI-2026-06-05-6 — cannot create/modify GitHub Actions workflows in this environment
+
+**Status:** **open — environmental constraint.**
+**Surfaced:** 2026-06-05, auto-007, trying to add `.github/workflows/argocd-app-sync.yml`.
+
+**Observations:**
+- `git push` of a branch containing a new workflow file → **rejected**: *"refusing
+  to allow an OAuth App to create or update workflow … without `workflow` scope."*
+- `mcp__github__create_or_update_file` on a `.github/workflows/*.yml` path → **404
+  Not Found** (the GitHub App backing the MCP also lacks the `workflows`
+  permission; GitHub returns 404 rather than 403 for this).
+
+**Impact:** no new CI workflow can be added, and existing workflows
+(`terraform-test.yml`, etc.) cannot be edited, from this session. This is why the
+argocd-sync mechanism (OI-2026-06-05-5) is delivered as a runbook doc with the YAML
+inline for a human/another context to add, rather than as a committed workflow.
+
+**Next step:** a maintainer adds `docs/runbooks/argocd-sync-from-ci.md`'s YAML to
+`.github/workflows/argocd-app-sync.yml` on main (or the run is performed from a
+context whose token carries the `workflow` scope).
+
+---
+
 ## OI-2026-05-28-1 — `composition-drift` first-scenario timeout on chainsaw
 
 **Status:** **partially resolved** — Issue B (cleanup path bug) **RESOLVED**
