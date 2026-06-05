@@ -239,4 +239,35 @@ both fresh-install and DRC-change-upgrade cases.
 
 ---
 
+## OI-2026-06-05-4 — v2.5.0 family-provider Deployment lacks the `pkg.crossplane.io/provider` label the provisioner selected on
+
+**Status:** **mitigated** (provisioner no longer depends on the label).
+**Surfaced:** 2026-06-05 auto-005, run 27023830973 — with the OI-2026-06-05-3
+Healthy-wait in place, the log showed:
+```
+provider.pkg.crossplane.io/provider-family-aws condition met   (Healthy)
+No resources found                                             (delete -l … matched nothing)
+ERROR: provider Deployment never reappeared after delete
+```
+**Root cause:** `terraform_data.crossplane_aws_provider`'s provisioner did
+`kubectl -n crossplane-system delete deploy -l pkg.crossplane.io/provider=provider-family-aws`
+and `kubectl rollout status -l <same>`. The Provider is Healthy (so its
+Deployment+SA exist) but **nothing in crossplane-system carries that label** on
+the Upbound v2.5.0 family provider — `kubectl rollout status -l <sel>` /
+`delete -l <sel>` therefore match nothing. This delete+rollout-by-label was a
+re-roll mechanism for a DRC SA-name *change*; it is unnecessary on a fresh
+install (the DRC is applied WITH the Provider, so the Deployment is created with
+the pinned SA from the start). It is also where OI-2026-06-05-3's first fix still
+failed.
+**Fix:** drop the by-label delete/rollout. Keep `kubectl wait
+--for=condition=Healthy provider/provider-family-aws`, add a label-agnostic poll
+for the `upbound-provider-family-aws` SA to materialise, and a diagnostics dump
+(`get deploy,sa --show-labels`, pod serviceAccounts, providers/providerrevisions)
+so the real labels are visible in the log. The existing hard gate (SA object
+name == `upbound-provider-family-aws`) is retained. The diagnostics will reveal
+the actual provider-Deployment label for a future, precise re-roll if a DRC
+SA-name change is ever needed. terraform validate passes.
+
+---
+
 <!-- New entries go above this line, newest first. -->

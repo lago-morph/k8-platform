@@ -226,7 +226,11 @@ resource "terraform_data" "crossplane_aws_provider" {
     # of the provider Deployment after the apply. v2-migration: added
     # rollout-status wait + SA post-check to turn a silent IRSA
     # misconfiguration into a hard terraform apply failure.
-    "provisioner-command-v2-migration-2026-05-26",
+    # 2026-06-05: dropped the by-label delete/rollout (the v2.5.0
+    # family-provider Deployment isn't labelled
+    # pkg.crossplane.io/provider=provider-family-aws — OI-2026-06-05-4),
+    # replaced with a Healthy-wait + SA-readiness wait + diagnostics dump.
+    "provisioner-command-2026-06-05-sa-readiness",
   ]
 
   provisioner "local-exec" {
@@ -241,47 +245,39 @@ MANIFEST
       # On a FRESH Crossplane install the Provider object is created above but
       # the package manager lags creating its ProviderRevision + Deployment +
       # ServiceAccount (cold xpkg image pull on a t3.medium). Wait for the
-      # provider to be Healthy so its Deployment + SA exist BEFORE we touch
-      # them. Without this the delete/rollout/SA-check below race the package
-      # manager and fail with "No resources found" / SA MISSING (OI-2026-06-05-3,
-      # run 27023573285).
+      # provider to be Healthy so its Deployment + SA exist before we verify
+      # them (OI-2026-06-05-3, run 27023573285).
       KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl wait \
         --for=condition=Healthy provider.pkg.crossplane.io/provider-family-aws \
         --timeout=300s
 
-      # Crossplane's Provider controller only re-renders its provider
-      # Deployment when the Provider object changes — DeploymentRuntimeConfig
-      # edits alone don't roll the Deployment, so an SA-name change
-      # creates the new SA but leaves the running pod mounted on the
-      # old hash-suffixed SA. Delete the Deployment so Crossplane
-      # recreates it from the current DeploymentRuntimeConfig.
-      # Observed in phase-2-diagnose run 26355033199.
-      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl -n crossplane-system \
-        delete deploy -l "pkg.crossplane.io/provider=provider-family-aws" \
-        --ignore-not-found --wait=false || true
+      # Diagnostics (best-effort, never fails the apply). The v2.5.0
+      # family-provider Deployment is NOT labelled
+      # pkg.crossplane.io/provider=provider-family-aws — that selector matched
+      # nothing in run 27023830973 even though the Provider was Healthy — so the
+      # old delete+rollout-by-label dance is gone. Dump what the package manager
+      # actually created so any future label/SA drift is visible in the log.
+      echo "--- crossplane-system deploy/sa (labels) ---"
+      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl -n crossplane-system get deploy,sa --show-labels 2>&1 || true
+      echo "--- crossplane-system pod serviceAccounts ---"
+      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl -n crossplane-system get pods \
+        -o 'jsonpath={range .items[*]}{.metadata.name}{"  sa="}{.spec.serviceAccountName}{"\n"}{end}' 2>&1 || true
+      echo "--- providers / providerrevisions ---"
+      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl get providers.pkg.crossplane.io,providerrevisions.pkg.crossplane.io 2>&1 || true
 
-      # The package manager does NOT recreate the Deployment instantly after
-      # the delete, and `kubectl rollout status -l <sel>` returns "No resources
-      # found" (non-zero) immediately when no Deployment matches yet — the same
-      # race that broke run 27023573285. Poll for the Deployment to reappear
-      # first (up to ~180s), THEN wait for it to roll out. POSIX /bin/sh.
+      # The DRC (applied WITH the Provider above) pins the family-provider SA to
+      # upbound-provider-family-aws so it matches the IRSA trust subject in
+      # irsa.tf. On a fresh install the package manager creates the Deployment
+      # with that SA from the start — no Deployment re-roll is needed; just wait
+      # for the SA to materialise (poll up to ~3 min for a cold pull). The hard
+      # gate below then asserts the SA name. POSIX /bin/sh.
       i=0
-      until KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl -n crossplane-system \
-            get deploy -l pkg.crossplane.io/provider=provider-family-aws \
-            -o name 2>/dev/null | grep -q .; do
+      until KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl get sa -n crossplane-system \
+            upbound-provider-family-aws -o name >/dev/null 2>&1; do
         i=$((i + 1))
-        [ "$i" -ge 36 ] && { echo "ERROR: provider Deployment never reappeared after delete" >&2; exit 1; }
+        [ "$i" -ge 36 ] && break
         sleep 5
       done
-
-      # Wait for the package-manager-recreated Deployment to actually roll out
-      # before claiming success, so downstream verification (chainsaw,
-      # e2e-verify) doesn't race the pod start. 180s covers a cold provider
-      # image pull on a t3.medium node.
-      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl rollout status deployment \
-        -l pkg.crossplane.io/provider=provider-family-aws \
-        -n crossplane-system \
-        --timeout=180s
 
       # v2-migration: post-check that the package manager honoured the DRC
       # SA-name override (spec.serviceAccountTemplate.metadata.name in the
