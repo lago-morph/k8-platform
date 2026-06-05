@@ -118,11 +118,19 @@ kubectl wait --for=condition=Ready node --all --timeout=120s
 # ---------- install Crossplane ----------------------------------------------
 echo ""
 echo "── installing Crossplane ──────────────────────────────────────"
-helm repo add crossplane-stable https://charts.crossplane.io/stable >/dev/null
-helm repo update crossplane-stable >/dev/null
+# Install from the vendored chart, NOT charts.crossplane.io — that repo's
+# index.yaml 403s the GitHub Actions runner network (OI-2026-06-05-2). The
+# tarball is shared with terraform/management (same pinned version); the
+# CROSSPLANE_CHART_VERSION still drives the filename so the two stay in
+# lockstep. See terraform/management/vendor/README.md.
+CROSSPLANE_CHART_TGZ="${SCRIPT_DIR}/../../terraform/management/vendor/crossplane-${CROSSPLANE_CHART_VERSION}.tgz"
+if [ ! -f "$CROSSPLANE_CHART_TGZ" ]; then
+  echo "ERROR: vendored crossplane chart not found at $CROSSPLANE_CHART_TGZ" >&2
+  echo "Vendor crossplane-${CROSSPLANE_CHART_VERSION}.tgz per terraform/management/vendor/README.md." >&2
+  exit 1
+fi
 
-helm install crossplane crossplane-stable/crossplane \
-  --version "$CROSSPLANE_CHART_VERSION" \
+helm install crossplane "$CROSSPLANE_CHART_TGZ" \
   --namespace crossplane-system \
   --create-namespace \
   --set 'args[0]=--enable-realtime-compositions=false' \
