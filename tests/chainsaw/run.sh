@@ -38,6 +38,11 @@ SCRIPT_DIR="$(pwd)"
 # shellcheck disable=SC1091
 . ./versions.env
 
+# ASM cleanup helpers (asm_cleanup_run / asm_cleanup_targets / asm_delete_one).
+# Sourcing is side-effect-free; the cleanup trap below calls asm_cleanup_run.
+# shellcheck disable=SC1091
+. ./_lib/asm-cleanup.sh
+
 CLUSTER_NAME="k8-platform-chainsaw"
 KUBECONFIG_TMP="${RUNNER_TEMP:-/tmp}/chainsaw-kubeconfig"
 export KUBECONFIG="$KUBECONFIG_TMP"
@@ -65,30 +70,19 @@ cleanup() {
   echo ""
   echo "── cleanup (rc=$rc) ───────────────────────────────────────────"
 
-  # Best-effort: nuke any ASM secrets created under this run's prefix.
-  # --force-delete-without-recovery skips the 7-30 day recovery window;
-  # the chainsaw harness intentionally treats these as ephemeral.
+  # Best-effort: delete the ASM secrets THIS run created. We enumerate the
+  # real names from the Secret MRs in the (still-alive) kind cluster rather
+  # than guessing a name prefix — the Composition names secrets
+  # `k8-platform/<XR-uid>`, which never matched the old `${ASM_RUN_PREFIX}/`
+  # filter (OI-2026-05-28-1). MUST run BEFORE `kind delete` below: the
+  # cluster has to be alive to enumerate. See tests/chainsaw/_lib/asm-cleanup.sh.
   if command -v aws >/dev/null 2>&1 && [ -n "${AWS_ACCESS_KEY_ID:-}" ]; then
-    echo "  aws secretsmanager: deleting any leftover ${ASM_RUN_PREFIX}/* secrets"
-    local leftover
-    leftover=$(aws secretsmanager list-secrets \
-      --filters "Key=name,Values=${ASM_RUN_PREFIX}/" \
-      --query 'SecretList[].Name' --output text 2>/dev/null || true)
-    if [ -n "$leftover" ]; then
-      for s in $leftover; do
-        aws secretsmanager delete-secret \
-          --secret-id "$s" \
-          --force-delete-without-recovery \
-          --output text >/dev/null 2>&1 || \
-          echo "    WARN: could not delete $s"
-        echo "    deleted: $s"
-      done
-    else
-      echo "    (none)"
-    fi
+    echo "  aws secretsmanager: sweeping ASM secrets by MR enumeration"
+    asm_cleanup_run
   fi
 
-  # Best-effort kind destroy.
+  # Best-effort kind destroy. AFTER the ASM sweep above (which needs the
+  # cluster alive to list Secret MRs).
   if command -v kind >/dev/null 2>&1; then
     kind delete cluster --name "$CLUSTER_NAME" >/dev/null 2>&1 || true
     echo "  kind:           cluster destroyed"
