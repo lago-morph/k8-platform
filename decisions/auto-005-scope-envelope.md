@@ -1,7 +1,14 @@
 # Scope envelope — `long-run-BYIB6` (auto-005)
 
+> **⚠️ SCOPE CORRECTED — see `auto-005-session-plan.md`.** This envelope
+> wrongly bounded the live build OUT, on a mistaken assumption that the
+> rotated account's creds were stale. The user corrected: credentials are
+> **current**, and the mandate is to **build phases 0→3 and work live**
+> (AGENTS §8.5/§8.6). The code-only deliverables below were still completed
+> and pushed, but they were NOT the point of the session. The live build is.
+
 **Author.** Lead agent, autonomous-run session 2026-06-05.
-**Status.** Awaiting user confirmation (or implicit confirmation after a short wait).
+**Status.** SUPERSEDED by `auto-005-session-plan.md`.
 
 This document aligns intent before the unattended run begins. The morning
 user reviews the run against this envelope.
