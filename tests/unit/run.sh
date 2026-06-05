@@ -71,6 +71,8 @@ run_suite tests/unit/test_external_dns_disjoint_filters.sh
 run_suite tests/unit/test_spoke_values_no_ephemeral.sh
 run_suite tests/unit/test_hello_chart_render.sh
 run_suite tests/unit/test_spoke_apps.sh
+# phase-5 auth (Keycloak)
+run_suite tests/unit/test_keycloak_apps.sh
 
 echo ""
 if [ "$OVERALL" -eq 0 ]; then

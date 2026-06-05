@@ -38,6 +38,11 @@ spec:
     - "https://github.com/lago-morph/k8-platform.git"
     - "https://kubernetes.github.io/ingress-nginx"
     - "https://kubernetes-sigs.github.io/external-dns/"
+    # phase-5 auth (REQ-AUTH-01): Keycloak via the Bitnami chart. Pinned EXACT
+    # (no wildcard — CI-gated by test_platform_spoke_appproject.sh). The chart
+    # VERSION is pinned in argocd/apps/spoke/keycloak.yaml (Bitnami keycloak
+    # 21.4.4 → Keycloak 24.0.x).
+    - "https://charts.bitnami.com/bitnami"
   # Destinations: spoke clusters only. Explicitly NOT
   # https://kubernetes.default.svc (the hub in-cluster destination) — that is
   # `k8-platform`'s exclusive territory. Spokes are addressed by NAME (the

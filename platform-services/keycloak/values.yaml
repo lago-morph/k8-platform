@@ -1,0 +1,104 @@
+# Keycloak Helm values for the platform (spoke) cluster (REQ-AUTH-01/06).
+#
+# Chart: bitnami/keycloak 21.4.4 (→ Keycloak 24.0.x). The version is PINNED in
+# the ArgoCD Application (argocd/apps/spoke/keycloak.yaml targetRevision); this
+# values file carries only the in-git configuration (multi-source: chart repo +
+# $values from this repo, exactly like ingress-nginx/external-dns).
+#
+# TLS model (REQ-AUTH-06): same NLB-terminates-TLS pattern as ingress-nginx on
+# the spoke. The NLB owns the wildcard ACM cert (*.platform.<domain>); ingress
+# objects carry NO tls block. Keycloak is reached through the spoke's
+# ingress-nginx at auth.platform.<domain> over HTTPS terminated at the NLB.
+#
+# EPHEMERAL DATA (AGENTS §8.1): the real <domain> is account-ephemeral and is
+# NOT committed. `auth.platform.PLACEHOLDER_DOMAIN` is overlaid at registration
+# time via the Application's helm.valuesObject, the same mechanism the spoke
+# ingress/hello apps use. CI-gated by tests/unit/test_spoke_values_no_ephemeral.sh.
+#
+# DATABASE (separate brief — NOT decided here): this file assumes an EXTERNAL
+# Postgres reached via a Kubernetes Secret named `keycloak-db` in the keycloak
+# namespace. The bundled Bitnami postgresql sub-chart is DISABLED — a production
+# Keycloak must not run on an ephemeral in-cluster Postgres. The connection
+# host/user/password/database come from that Secret (provisioned out of band:
+# the DB-decision brief covers RDS-via-Crossplane vs. an in-cluster operator;
+# OPEN QUESTION, see docs/operations.md "Keycloak database").
+
+## Production mode: HTTP behind the TLS-terminating NLB. Keycloak trusts the
+## X-Forwarded-* headers the NLB/ingress set so it builds correct https issuer
+## URLs (proxy: edge).
+production: true
+proxy: edge
+
+## Admin bootstrap user. The username is fixed; the PASSWORD is sourced from the
+## `keycloak-admin` Secret materialized by the XPlatformSecret XR
+## (platform-services/keycloak/secrets/keycloak-secrets.yaml), NOT inline here
+## (REQ-AUTH design: PlatformSecret claims back every Keycloak secret). NO inline
+## password — the chart reads it from existingSecret.
+auth:
+  adminUser: admin
+  existingSecret: keycloak-admin
+  passwordSecretKey: admin-password
+
+## External database (REQ: no bundled ephemeral Postgres). The Bitnami chart
+## reads these from the `keycloak-db` Secret. host/port live here (non-secret
+## topology, overlaid at registration if account-specific); credentials come
+## from the Secret keys.
+postgresql:
+  enabled: false
+externalDatabase:
+  host: PLACEHOLDER_DB_HOST          # overlaid at registration (or a stable CNAME)
+  port: 5432
+  database: keycloak
+  existingSecret: keycloak-db
+  existingSecretUserKey: db-username
+  existingSecretPasswordKey: db-password
+
+## Ingress at auth.platform.<domain> via the spoke's nginx. No tls: block — the
+## NLB terminates TLS with the wildcard ACM cert (REQ-AUTH-06). hostname is a
+## placeholder overlaid at registration (ephemeral domain).
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  hostname: auth.platform.PLACEHOLDER_DOMAIN
+  tls: false
+  annotations:
+    # Keycloak admin endpoints can exceed the default proxy body size on token
+    # exchange; bump it modestly.
+    nginx.ingress.kubernetes.io/proxy-body-size: "16m"
+
+## Import the `platform` realm at startup (REQ-AUTH-02/07/08). The realm JSON is
+## mounted from the keycloak-realm-platform ConfigMap
+## (platform-services/keycloak/realm-platform-configmap.yaml). Cognito IdP
+## issuer/clientSecret are TODO placeholders resolved at live-wiring time.
+extraStartupArgs: "--import-realm"
+extraVolumes:
+  - name: realm-import
+    configMap:
+      name: keycloak-realm-platform
+extraVolumeMounts:
+  - name: realm-import
+    mountPath: /opt/bitnami/keycloak/data/import
+    readOnly: true
+
+## Small but production-shaped: 2 replicas for availability, modest requests.
+replicaCount: 2
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+## Surface Keycloak metrics for the phase-4 observability stack.
+metrics:
+  enabled: true
+
+## Run as non-root (Bitnami default hardening kept explicit).
+podSecurityContext:
+  enabled: true
+  fsGroup: 1001
+containerSecurityContext:
+  enabled: true
+  runAsUser: 1001
+  runAsNonRoot: true

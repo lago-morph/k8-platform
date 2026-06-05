@@ -1,0 +1,32 @@
+# REQ-AUTH-09 — bind the Keycloak group kc:k8s-admins to the built-in
+# cluster-admin ClusterRole on the platform (spoke) cluster.
+#
+# The EKS API server's OIDC identity-provider config (aws_eks_identity_provider_config,
+# pointing at the Keycloak `platform` realm) prefixes Keycloak groups with `kc:`
+# (REQ-AUTH-07) so they cannot collide with IAM-mapped identities. A Cognito user
+# in the `k8s-admins` group → Keycloak lifts it into the `groups` claim
+# (REQ-AUTH-08) → the API server sees the group `kc:k8s-admins`.
+#
+# Name prefix `kc-k8s-admins-` is LOAD-BEARING: policies/audit/10-spoke-no-
+# cluster-admin-binding.yaml allowlists `kc-k8s-admins-*` (and `k8-platform-*`)
+# as the only subjects permitted to bind cluster-admin on a spoke. A binding
+# named anything else that grants cluster-admin trips the Kyverno guard. This is
+# reviewed PLATFORM RBAC (REQ-AUTH-09), not an add-on chart grabbing root — hence
+# the allowlist. Deployed via ArgoCD (REQ-AUTH-09: bindings live under
+# clusters/<cluster>/ and sync from git).
+#
+# Break-glass: AWS IAM access via EKS Access Entries stays available
+# independently of Keycloak (REQ-AUTH-09), so a Keycloak/Cognito outage does not
+# lock admins out of the cluster.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kc-k8s-admins-cluster-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: "kc:k8s-admins"

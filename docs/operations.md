@@ -254,3 +254,99 @@ Runbooks document specific failure classes with step-by-step recovery procedures
 | How does CI work in detail? | `ai/testing-overview.md` |
 | What are the full requirements? | `ai/REQUIREMENTS.md` |
 | What secrets does CI need? | `CLAUDE.md` → Required Secrets table |
+
+---
+
+## Keycloak-authenticated kubectl (REQ-AUTH-10)
+
+Phase 5 federates EKS API-server authentication to the Keycloak `platform`
+realm (which itself brokers to Cognito). An operator authenticates to a
+cluster with **only** the `oidc-login` kubectl plugin and a kubeconfig stanza
+— **no AWS credentials and no IAM principal mapping**. Removing a user from
+their Cognito group revokes cluster access on the next token refresh.
+
+The federation path:
+
+```
+Cognito user (group k8s-admins)
+  → Keycloak `platform` realm (brokers Cognito, lifts cognito:groups → groups claim)
+  → public PKCE `kubernetes` client (no secret)
+  → EKS aws_eks_identity_provider_config (usernameClaim preferred_username,
+                                          groupsClaim groups, prefix `kc:`)
+  → ClusterRoleBinding kc-k8s-admins-cluster-admin → cluster-admin
+```
+
+### 1. Install the `oidc-login` krew plugin
+
+```sh
+# Install krew (the kubectl plugin manager) if you don't have it, then:
+kubectl krew install oidc-login
+# Verify:
+kubectl oidc-login --help
+```
+
+### 2. kubeconfig stanza
+
+Point the cluster's `user` at the `oidc-login` plugin. Replace `<domain>`
+with the live root domain (the Keycloak ingress host is
+`auth.platform.<domain>`). The `kubernetes` client is **public + PKCE**, so
+there is **no client secret**.
+
+```yaml
+# ~/.kube/config (user section)
+users:
+  - name: keycloak
+    user:
+      exec:
+        apiVersion: client.authentication.k8s.io/v1beta1
+        command: kubectl
+        args:
+          - oidc-login
+          - get-token
+          - --oidc-issuer-url=https://auth.platform.<domain>/realms/platform
+          - --oidc-client-id=kubernetes
+          - --oidc-extra-scope=openid
+          - --oidc-extra-scope=email
+          - --oidc-extra-scope=profile
+          # public client + PKCE: no --oidc-client-secret
+        interactiveMode: IfAvailable
+```
+
+Wire it to a context whose `cluster` entry is the EKS API endpoint (from the
+cluster connection secret / `aws eks update-kubeconfig`, but with the `user`
+swapped for `keycloak`):
+
+```sh
+kubectl config set-context platform-keycloak \
+  --cluster=<eks-cluster> --user=keycloak
+kubectl --context platform-keycloak get pods   # opens a browser to Cognito on first use
+```
+
+The first call opens a browser, you log in as a Cognito user, and the plugin
+caches the token. Subsequent calls reuse the cached token until it expires.
+
+### Keycloak database (OPEN QUESTION — separate brief)
+
+`platform-services/keycloak/values.yaml` disables the bundled Bitnami
+PostgreSQL sub-chart and points Keycloak at an **external** Postgres reached
+via a Kubernetes Secret named `keycloak-db` (keys `db-username`/`db-password`,
+host/port/database in the values). **Which external Postgres is NOT yet
+decided** — the candidates are (a) an RDS instance provisioned via a Crossplane
+XR (consistent with the platform's Crossplane-first stance, durable, costs an
+always-on instance), or (b) an in-cluster Postgres operator (cheaper for a
+learning platform, but Keycloak's own state is then only as durable as the
+cluster). Until the DB brief resolves this, `keycloak-db` must be created out
+of band before the Keycloak Application can become Healthy.
+
+### Keycloak realm — live wiring (DEFERRED)
+
+`platform-services/keycloak/realm-platform-configmap.yaml` imports the
+`platform` realm with Cognito as an OIDC IdP, the `cognito:groups → groups`
+attribute mapper, and the public PKCE `kubernetes` client. The Cognito
+issuer/auth/token/jwks URLs and the confidential client id/secret are
+**TODO placeholders** (account-ephemeral, AGENTS §8.1). At live-coupling time,
+source them from `terraform/base` outputs (`cognito_issuer_url`,
+`cognito_client_id`, `cognito_client_secret`) and deliver the client secret via
+the `keycloak-oidc-clients` XPlatformSecret — never commit it. The EKS
+`aws_eks_identity_provider_config` (issuer = the Keycloak realm) is part of the
+cluster bring-up and likewise wired live once Keycloak is Healthy.
