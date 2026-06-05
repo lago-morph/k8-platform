@@ -192,8 +192,72 @@ Each artifact is its own commit on its own stacked branch; the morning summary
 maps SHAs. No live AWS resource is created until the platform-cluster sync +
 spoke registration, so all authoring is pure-git-reversible until then.
 
-### Round-2 second adversarial wave
+### Round-2 second adversarial wave — findings (FINAL)
 
-Dispatched on the revised design (2 reviewers, different angles: a
-Crossplane-composition specialist + a security/blast-radius reviewer). Findings
-folded into the implementing PRs.
+Two reviewers (Crossplane-composition specialist + security/blast-radius) on the
+revised design. Both surfaced real blockers; the design is FINAL with these
+amendments. Crucially they confirm the **live-coupled spoke infra is NOT safely
+authorable blind** — it is built iteratively against the live cluster.
+
+**Crossplane-MR amendments (all adopted):**
+- **C1 (blocker).** `OpenIDConnectProvider` (`iam.aws.m.upbound.io/v1beta1`)
+  requires `thumbprintList` — NOT auto-derived. Use the well-known Amazon root
+  thumbprint `9e99a48a9960b14926bb7f3b02e22da2b0ab7280` as a literal (constant,
+  not account-ephemeral) + `clientIdList: ["sts.amazonaws.com"]`,
+  `url: <status.oidcIssuer>`.
+- **C2 (architecture).** Do NOT cram spoke-access MRs into the cluster
+  Composition — P&T has no conditional gating, so an empty `status.oidcIssuer`
+  patches `url: ""` and hard-fails. Use a **separate `XSpokeAccess` XR +
+  Composition** that consumes the cluster's published status; gate creation on
+  the cluster XR being Ready via ArgoCD sync-wave/dependency. This also makes the
+  render-golden representable (C6).
+- **C3.** `AccessEntry` / `AccessPolicyAssociation` are `eks.aws.m.upbound.io/
+  v1beta1` (this repo is the `.m.upbound.io` modern family — confirmed in
+  compositions). `principalArn` needs the FULL role ARN incl. account id →
+  publish `accountId` + the `${cluster_name}-argocd` role ARN into the
+  `cluster-network` EnvironmentConfig (terraform/management already materializes
+  it; ADR-e557a40123) and patch via `FromEnvironmentFieldPath`.
+- **C4.** Use an **inline `RolePolicy` MR** for external-dns (the IRSA policy has
+  `iam:PutRolePolicy` but NOT `iam:CreatePolicy`), avoiding a managed-`Policy` MR
+  + an IRSA-policy change.
+- **C5.** Writing the ArgoCD cluster Secret (hub-local) and any spoke ConfigMap
+  needs **provider-kubernetes** (currently NOT installed). Add it to the
+  management install with a hub ProviderConfig. Deliver the cert ARN to the spoke
+  ingress via the **ArgoCD values path** (cluster-Secret annotation → Application
+  values), NOT a Crossplane-written spoke ConfigMap — avoids a spoke
+  ProviderConfig (the rejected-C surface).
+- **C6.** Add kubeconform schemas + SPEC-S9 render fixtures for every new MR kind
+  (`openidconnectprovider`, `rolepolicy`/`role`, `accessentry`,
+  `accesspolicyassociation`) and an EnvironmentConfig fixture carrying
+  `oidcIssuer`/`accountId`/`argocdRoleArn`/`certificateArn`.
+
+**Security amendments (all adopted):**
+- **S1.** `AmazonEKSClusterAdminPolicy` for the argocd role is defensible ONLY
+  paired with the AppProject lockdown. Make pinned **exact** `sourceRepos` URLs
+  (no wildcards) + the scoped kind whitelist hard CI-gated invariants, and add a
+  **Kyverno guard on the spoke** denying any `ClusterRoleBinding` to
+  `cluster-admin` from non-allowlisted SAs.
+- **S2.** external-dns spoke trust policy: `StringEquals` on BOTH
+  `<oidc>:sub = system:serviceaccount:external-dns:external-dns` AND
+  `<oidc>:aud = sts.amazonaws.com` — never `StringLike` on `:sub`.
+- **S3.** **Stage the ExternalDNS cutover in TWO PRs**: (1) narrow the hub filter
+  to `management.<domain>` keeping `upsert-only`, verify existing hub records all
+  live under `management.` BEFORE narrowing (else the hub deletes orphans incl.
+  `argocd.management.<domain>`); (2) enable the spoke instance. Land the
+  disjoint-filter unit test as a GATE.
+- **S4.** CI grep denying ACM ARNs / account-id patterns / `*.amazonaws.com` ARNs
+  in `argocd/apps/spoke/**` and `platform-services/**` values (AGENTS §8.1).
+
+### Build split (what is authorable now vs live-coupled)
+
+- **Authorable now (CI-verifiable, this run):** `platform-spoke` AppProject
+  (pinned sourceRepos + scoped whitelist), egress-probe Job, spoke ingress-nginx
+  + external-dns Helm values (static), hello app, plain Applications, the hub
+  external-dns narrowing fix + disjoint-filter unit test, the spoke Kyverno CRB
+  guard, kubeconform + unit tests.
+- **Live-coupled (execute when the platform cluster is Active):** the
+  `XSpokeAccess` Composition (OIDC provider + external-dns RolePolicy + access
+  entry), provider-kubernetes install, EnvironmentConfig extension, ArgoCD spoke
+  registration, cert-ARN delivery, and the `hello.platform.<domain>` verify.
+  Captured as a spec for live execution; if the cluster is not Active before the
+  run ends, it is the documented morning next-step.
