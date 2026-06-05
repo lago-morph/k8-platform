@@ -1,0 +1,50 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: spoke-no-cluster-admin-binding
+  annotations:
+    policies.kyverno.io/title: Deny cluster-admin ClusterRoleBindings from add-ons
+    policies.kyverno.io/category: RBAC
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Backstops the platform-spoke blast-radius control (auto-008 S1/S2). The hub
+      ArgoCD application-controller is mapped to AmazonEKSClusterAdminPolicy on
+      the spoke so it can apply arbitrary add-on RBAC; the AppProject's pinned
+      sourceRepos + kind whitelist are the primary control, and THIS policy is the
+      runtime backstop: any ClusterRoleBinding that grants the built-in
+      cluster-admin ClusterRole is flagged unless it targets an allowlisted,
+      platform-owned subject. A poisoned upstream chart that tries to bind
+      cluster-admin to its own ServiceAccount trips this audit.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: no-cluster-admin-crb
+      match:
+        any:
+          - resources:
+              kinds: [ClusterRoleBinding]
+      # Allowlist the platform's own break-glass bindings (phase 5 adds the
+      # Keycloak kc:k8s-admins binding under a named prefix; that is reviewed
+      # platform RBAC, not an add-on grabbing root).
+      exclude:
+        any:
+          - resources:
+              names:
+                - "k8-platform-*"
+                - "kc-k8s-admins-*"
+      validate:
+        message: >-
+          ClusterRoleBinding binds the built-in cluster-admin ClusterRole. On a
+          spoke cluster only platform-owned (k8-platform-*) bindings may grant
+          cluster-admin — an add-on chart binding cluster-admin to its own
+          ServiceAccount is a privilege-escalation smell (auto-008 S1).
+        deny:
+          conditions:
+            all:
+              - key: "{{ request.object.roleRef.kind }}"
+                operator: Equals
+                value: "ClusterRole"
+              - key: "{{ request.object.roleRef.name }}"
+                operator: Equals
+                value: "cluster-admin"

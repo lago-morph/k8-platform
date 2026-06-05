@@ -65,6 +65,12 @@ run_suite tests/unit/test_runbook_apply_zero_resources.sh
 run_suite tests/unit/test_wait_for_claim.sh
 run_suite tests/unit/test_crossplane_trace.sh
 run_suite tests/unit/test_kubeconform_manifests.sh
+# phase-3 spoke foundation (auto-007)
+run_suite tests/unit/test_platform_spoke_appproject.sh
+run_suite tests/unit/test_external_dns_disjoint_filters.sh
+run_suite tests/unit/test_spoke_values_no_ephemeral.sh
+run_suite tests/unit/test_hello_chart_render.sh
+run_suite tests/unit/test_spoke_apps.sh
 
 echo ""
 if [ "$OVERALL" -eq 0 ]; then

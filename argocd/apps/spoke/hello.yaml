@@ -1,0 +1,41 @@
+# ArgoCD Application — the phase-3 "hello" demo app on the platform (spoke)
+# cluster (REQ-PLAT-06). Single in-repo Helm chart (platform-services/hello).
+# Reachable at hello.platform.<domain> over TLS once ingress-nginx + ExternalDNS
+# converge. Plain per-service Application; INERT until the spoke is registered.
+#
+# OVERLAID-AT-REGISTRATION (ephemeral, AGENTS §8.1): helm.valuesObject.domain :=
+# the live root domain. subdomain (platform) is stable and committed.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: spoke-hello
+  namespace: argocd
+  annotations:
+    # After ingress-nginx + external-dns (wave 20) are Healthy.
+    argocd.argoproj.io/sync-wave: "30"
+spec:
+  project: platform-spoke
+  source:
+    repoURL: https://github.com/lago-morph/k8-platform.git
+    targetRevision: main
+    path: platform-services/hello
+    helm:
+      # domain overlaid at registration; subdomain is stable.
+      valuesObject:
+        subdomain: platform
+  destination:
+    name: platform-spoke
+    namespace: hello
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m

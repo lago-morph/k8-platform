@@ -71,8 +71,17 @@ resource "helm_release" "external_dns" {
     value = "upsert-only"
   }
   set {
+    # Narrowed from var.domain (the whole zone) to management.<domain> so the
+    # hub instance only owns its own subdomain and cannot clobber the platform
+    # (spoke) external-dns records in the shared account zone (auto-008 S3 /
+    # dual-instance TXT-registry safety). Safe to narrow because policy is
+    # upsert-only (this instance never deletes records), so existing records
+    # outside the new filter are simply left alone, not pruned. The hub only
+    # publishes argocd.management.<domain>, so nothing it owns falls outside.
+    # Disjointness from the spoke filter (platform.<domain>) is gated by
+    # tests/unit/test_external_dns_disjoint_filters.sh.
     name  = "domainFilters[0]"
-    value = var.domain
+    value = "management.${var.domain}"
   }
   set {
     name  = "txtOwnerId"

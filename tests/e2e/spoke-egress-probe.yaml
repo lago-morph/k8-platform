@@ -1,0 +1,73 @@
+# Egress probe Job (auto-008 §7 / reviewers 1+2).
+#
+# OI-2026-06-05-2 showed charts.crossplane.io 403s the GitHub *runner* (a CDN
+# reputation block on the runner IP range) — that does NOT imply the EKS cluster
+# (egressing via the base VPC NAT GW, a different IP reputation) is blocked. This
+# Job confirms, on the live cluster, that ArgoCD's repo-server can reach the
+# upstream Helm chart indexes AND that kubelet can pull images from registry.k8s.io
+# BEFORE we commit to upstream charts for phases 4-6. If any probe fails, the
+# per-chart fallback is Option B (vendor rendered manifests) for that chart only.
+#
+# Run live once the cluster is Active:
+#   kubectl apply -f tests/e2e/spoke-egress-probe.yaml
+#   kubectl -n default wait --for=condition=complete job/spoke-egress-probe --timeout=120s
+#   kubectl -n default logs job/spoke-egress-probe
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: spoke-egress-probe
+  namespace: default
+  labels:
+    app.kubernetes.io/part-of: platform-services
+    k8-platform.io/purpose: egress-probe
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        k8-platform.io/purpose: egress-probe
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: probe
+          # curlimages/curl is tiny; if THIS image can't pull, that itself is the
+          # answer (dockerhub egress). The script also probes registry.k8s.io HEAD.
+          image: curlimages/curl:8.11.1
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -u
+              rc=0
+              probe() {
+                code=$(curl -m 15 -s -o /dev/null -w '%{http_code}' "$1" || echo "ERR")
+                echo "[$2] $1 -> $code"
+                case "$code" in 200|301|302|401) ;; *) rc=1 ;; esac
+              }
+              echo "=== chart indexes (repo-server egress) ==="
+              probe https://kubernetes.github.io/ingress-nginx/index.yaml ingress-nginx
+              probe https://kubernetes-sigs.github.io/external-dns/index.yaml external-dns
+              probe https://prometheus-community.github.io/helm-charts/index.yaml kube-prometheus-stack
+              probe https://grafana.github.io/helm-charts/index.yaml loki-alloy
+              probe https://charts.bitnami.com/bitnami/index.yaml keycloak
+              echo "=== image registries (kubelet egress proxies via these hosts) ==="
+              probe https://registry.k8s.io/v2/ registry-k8s-io
+              probe https://ghcr.io/v2/ ghcr
+              probe https://quay.io/v2/ quay
+              echo "=== overall rc=$rc ==="
+              exit $rc
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 65534
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault

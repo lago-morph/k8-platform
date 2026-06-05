@@ -1,0 +1,47 @@
+# ArgoCD Application — ExternalDNS on the platform (spoke) cluster.
+#
+# Scoped to platform.<domain> with a distinct txt-owner-id/prefix so it never
+# collides with the hub's external-dns in the shared zone (auto-008 §6 / S3).
+# Plain per-service Application targeting the spoke by name (see ingress-nginx
+# Application header for the auto-008 rationale). INERT until the spoke is
+# registered.
+#
+# OVERLAID-AT-REGISTRATION (ephemeral, AGENTS §8.1): domainFilters[0] :=
+# platform.${domain}, env AWS_REGION, and serviceAccount role-arn := the spoke
+# external-dns IRSA role created by the XSpokeAccess Composition. Patched into
+# helm.valuesObject at registration; absent in git.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: spoke-external-dns
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+spec:
+  project: platform-spoke
+  sources:
+    - repoURL: https://kubernetes-sigs.github.io/external-dns/
+      chart: external-dns
+      targetRevision: 1.15.0
+      helm:
+        valueFiles:
+          - $values/platform-services/external-dns/values.yaml
+    - repoURL: https://github.com/lago-morph/k8-platform.git
+      targetRevision: main
+      ref: values
+  destination:
+    name: platform-spoke
+    namespace: external-dns
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m

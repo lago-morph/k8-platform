@@ -1,0 +1,33 @@
+# ingress-nginx Helm values for the platform (spoke) cluster.
+#
+# Mirrors the management cluster's NLB-terminates-TLS pattern
+# (terraform/management/helm.tf ingress_nginx) so tests/unit/test_helm_render.sh
+# assertions hold for both. The NLB terminates TLS using the cluster's wildcard
+# ACM cert (*.platform.<domain>); nginx receives plain HTTP on :80.
+#
+# DYNAMIC cert ARN (auto-008 §5): the `aws-load-balancer-ssl-cert` annotation
+# value is account-ephemeral (AGENTS §8.1) and is NOT committed here. It is
+# overlaid by the ArgoCD Application (argocd/apps/spoke/ingress-nginx.yaml) via
+# helm `valuesObject`, sourced from the spoke cluster-Secret annotation
+# `k8-platform.io/certificate-arn` (set at registration once
+# XPlatformCluster.status.certificateArn is ISSUED). The placeholder below is
+# overridden at sync time; it must never carry a real ARN in git
+# (CI-gated by tests/unit/test_spoke_values_no_ephemeral.sh).
+controller:
+  service:
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+      service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+      # Overlaid by the Application's valuesObject at sync time:
+      service.beta.kubernetes.io/aws-load-balancer-ssl-cert: "PLACEHOLDER_OVERRIDDEN_BY_APPLICATION"
+      service.beta.kubernetes.io/aws-load-balancer-ssl-ports: "443"
+      service.beta.kubernetes.io/aws-load-balancer-backend-protocol: "http"
+    targetPorts:
+      # NLB :443 decrypts TLS and proxies to nginx's plain HTTP port (http=80),
+      # NOT nginx's https port — TLS terminates at the NLB. Mirrors mgmt.
+      https: "http"
+  # Single replica is enough for the platform services cluster's ingress.
+  replicaCount: 1
+  ingressClassResource:
+    name: nginx
+    default: true

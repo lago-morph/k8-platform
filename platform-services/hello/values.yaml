@@ -1,0 +1,26 @@
+# hello chart values. domain is account-ephemeral (AGENTS §8.1) — the committed
+# value is a placeholder the ArgoCD Application overrides at sync time. subdomain
+# is the stable per-cluster label (platform). No real domain belongs in git
+# (CI-gated by tests/unit/test_spoke_values_no_ephemeral.sh).
+subdomain: platform
+domain: PLACEHOLDER_DOMAIN
+
+replicaCount: 2
+
+image:
+  # http-echo is a tiny static responder — exactly a "hello" page. Pinned by tag.
+  repository: hashicorp/http-echo
+  tag: "1.0.0"
+  pullPolicy: IfNotPresent
+
+# The message the app serves. Static; the host it's reached at is templated.
+message: "hello from the k8-platform platform-services cluster"
+
+service:
+  port: 80
+  targetPort: 5678
+
+ingress:
+  className: nginx
+  # TLS is terminated at the ingress-nginx NLB by the cluster's ACM cert; the
+  # Ingress itself is plain HTTP backend. No tls: block / cert-manager (0003).
