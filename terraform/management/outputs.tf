@@ -33,3 +33,19 @@ output "argocd_url" {
   description = "ArgoCD UI URL (valid once the ACM cert is bound to the ingress NLB)"
   value       = "https://argocd.management.${var.domain}"
 }
+
+# ArgoCD driving credentials (AGENTS §10.1) — read via
+#   terraform -chdir=terraform/management output -raw argocd_server_url
+#   terraform -chdir=terraform/management output -raw argocd_admin_password
+# then `argocd login "$URL" --username admin --password "$PW" --grpc-web`
+# to sync/query Applications from CI without standing cluster creds.
+output "argocd_server_url" {
+  description = "ArgoCD server URL for `argocd login` (AGENTS §10.1)."
+  value       = "https://argocd.management.${var.domain}"
+}
+
+output "argocd_admin_password" {
+  description = "ArgoCD admin password for `argocd login` (AGENTS §10.1)."
+  value       = random_password.argocd_admin.result
+  sensitive   = true
+}
