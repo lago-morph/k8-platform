@@ -868,6 +868,20 @@ envelope on resume; the user's `Check on run` was what prompted the
 direct query that surfaced the green status. See
 `retrospective/2026-05-28-129/AGENTS-MD-6163a071e9-verify-inflight-after-resume.md`.*
 
+### 6.21 Act on the answer to a question you asked
+
+**When you ask the user a question — via AskUserQuestion or in prose —
+and they answer, that answer overrides your prior plan.** Implement what
+they chose, not what you were about to do. Do not re-ask the same
+decision, do not re-open the options you just presented, and do not
+pivot back to your own preferred approach after they have picked a
+different one.
+
+*Grounded in: 2026-06-05 subnet-injection session — the user answered a
+posed decision and the agent appeared to keep building a different
+approach, prompting "I told you what to do and ignored me." See
+`retrospective/2026-06-05-01/AGENTS-MD-af34f513e7-act-on-the-answer-to-a-question-you-asked.md`.*
+
 ---
 
 ## 7. Testing loops — companion skills
