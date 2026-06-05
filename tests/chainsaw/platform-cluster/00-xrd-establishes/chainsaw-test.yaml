@@ -76,10 +76,8 @@ spec:
                 name: chainsaw-valid
                 region: us-east-1
                 version: "1.32"
-                vpc:
-                  subnetIds:
-                    - subnet-0123456789abcdef0
-                    - subnet-0fedcba9876543210
+                dns:
+                  subdomain: platform
                 nodeGroup:
                   instanceTypes: ["t3.medium"]
                   desiredSize: 2
@@ -105,10 +103,8 @@ spec:
               spec:
                 name: chainsaw-bad
                 region: NOT-A-REGION
-                vpc:
-                  subnetIds:
-                    - subnet-0123456789abcdef0
-                    - subnet-0fedcba9876543210
+                dns:
+                  subdomain: platform
               YAML
               then
                 echo "FAIL: invalid region was accepted"
@@ -116,8 +112,11 @@ spec:
               fi
               grep -q "spec.region" /tmp/err.log
 
-    - name: assert a missing-vpc claim is REJECTED
-      # vpc is a required field; omitting it must fail at admission.
+    - name: assert a missing-dns claim is REJECTED
+      # dns is a required field (phase 3); omitting it must fail at
+      # admission. Subnets are NO LONGER on the XR — they come from the
+      # cluster-network EnvironmentConfig (docs/decisions/0003) — so the
+      # required-field under test is now dns, not vpc.
       try:
         - script:
             content: |
@@ -126,17 +125,17 @@ spec:
               apiVersion: platform.k8-platform.io/v1alpha1
               kind: XPlatformCluster
               metadata:
-                name: schema-invalid-novpc
+                name: schema-invalid-nodns
                 namespace: default
               spec:
-                name: chainsaw-novpc
+                name: chainsaw-nodns
                 region: us-east-1
               YAML
               then
-                echo "FAIL: claim without vpc was accepted"
+                echo "FAIL: claim without dns was accepted"
                 exit 1
               fi
-              grep -qE "spec\.vpc|required" /tmp/err.log
+              grep -qE "spec\.dns|required" /tmp/err.log
   # SPEC-A4 canonical catch block — keep in sync with
   # tests/chainsaw/_lib/catch-block.yaml (enforced by
   # tests/unit/test_chainsaw_catch_block.sh).

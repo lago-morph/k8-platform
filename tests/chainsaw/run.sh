@@ -198,6 +198,22 @@ spec:
 MANIFEST
 kubectl wait --for=condition=Healthy function.pkg.crossplane.io/function-patch-and-transform --timeout=300s
 
+# ---------- install function-environment-configs ---------------------------
+# The platform-cluster Composition (phase 3) merges the cluster-network
+# EnvironmentConfig into the pipeline environment via this function. Install
+# it so applying that Composition validates cleanly in the kind cluster.
+echo ""
+echo "── installing function-environment-configs ────────────────────"
+kubectl apply -f - <<MANIFEST
+apiVersion: pkg.crossplane.io/v1beta1
+kind: Function
+metadata:
+  name: function-environment-configs
+spec:
+  package: "xpkg.upbound.io/crossplane-contrib/function-environment-configs:${FUNCTION_ENVIRONMENT_CONFIGS_VERSION}"
+MANIFEST
+kubectl wait --for=condition=Healthy function.pkg.crossplane.io/function-environment-configs --timeout=300s
+
 # ---------- install ESO + AWS ProviderConfig + ClusterSecretStore -----------
 #
 # These were previously inside `tests/chainsaw/platform-secret/_setup/`
