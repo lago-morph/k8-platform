@@ -50,8 +50,8 @@ Phase 1 surfaced **3 real bugs** on the fresh account, all FIXED on PR #142
    - `chainsaw.yml` full set. If `composition-drift` / `claim-deletion-cleanup`
      time out on the ResourceExistsException flake (OI-2026-05-28-1 Issue A),
      re-kick once — established remedy.
-3. **Phase 3 — provision the platform cluster.** ⛔ BLOCKED on a mechanism
-   decision (see below). Once unblocked: ArgoCD syncs `platform-cluster-claim`
+3. **Phase 3 — provision the platform cluster.** Needs a small sync decision
+   (see below). Once decided: ArgoCD syncs `platform-cluster-claim`
    → platform EKS cluster + `*.platform.<domain>` ACM cert (~20 min). Verify
    `status.certificateArn` + `CertificateValidation` Ready.
    **Pre-check:** `provider-aws-eks` and `provider-aws-route53` were still
@@ -62,22 +62,24 @@ Phase 1 surfaced **3 real bugs** on the fresh account, all FIXED on PR #142
    with the cross-cluster cert ARN, ExternalDNS + spoke OIDC/IRSA, hello app,
    ApplicationSet; verify `https://hello.platform.<domain>`).
 
-### ⛔ Phase-3 mechanism blocker (needs a decision)
+### Phase-3 sync — a small decision
 
 To provision the platform cluster, ArgoCD must sync `platform-cluster-claim`,
-which is **deliberately manual-sync** and tracks `main`. There is **no
-`argocd app sync` CI workflow**, and the agent **cannot create one**: the git
-push OAuth app, the GitHub MCP, AND the jentic `ext-github` PAT
-(`k8-platform-actions-only`) all lack `workflow`/`repo` write scope. The
-sandbox cannot reach the cluster directly either. Resolve via ONE of:
-- **(a, simplest GitOps)** enable `syncPolicy.automated` on
-  `argocd/apps/platform-cluster-claim.yaml` (non-workflow file — the agent CAN
-  push this) and merge to main → ArgoCD auto-provisions. Reverts the deliberate
-  manual gate (which existed to avoid *accidental* provisioning).
-- **(b)** add an `argocd-sync` workflow (needs an actor with `workflow` scope)
-  that reads the §10.1 Terraform-output ArgoCD cred and runs `argocd app sync`.
-- **(c)** a human runs `argocd app sync platform-cluster-claim` (Terraform-output
-  admin cred, or the ArgoCD UI at `argocd.management.<domain>`).
+which is **deliberately manual-sync** (so an everyday push can't kick off a real
+EKS-cluster provision) and tracks `main`. The XRD/Composition it needs are
+already on `main` (PR #140). Pick one:
+- **(a, recommended)** enable `syncPolicy.automated` on
+  `argocd/apps/platform-cluster-claim.yaml` (a one-line manifest change) and
+  merge to `main` → ArgoCD auto-provisions. This flips the deliberate manual
+  gate — fine when you *want* the cluster built, which is the case here.
+- **(b)** a human runs `argocd app sync platform-cluster-claim` once — using the
+  Terraform-output admin cred (AGENTS §10.1) or the ArgoCD UI at
+  `argocd.management.<domain>`.
+
+**How CI is driven (for context):** the agent dispatches and reads GitHub
+Actions via the `ext-github` skill / the Actions API (e.g. `terraform-test.yml`,
+`chainsaw.yml`) — that's how phases 0-2 were built. It does **not** author
+workflow files; the phase-3 sync above needs no new workflow.
 
 **Sandbox limits (durable):** no standing AWS/cluster creds; cannot `kubectl`
 the EKS endpoint (TLS/egress). All AWS/cluster work runs through CI workflows.
@@ -89,7 +91,7 @@ To CHECK creds, dispatch a workflow (AGENTS §8.5) — do not assume they're sta
 
 | Field | Value |
 |---|---|
-| Active phase | **Account EXPIRED at end of auto-005. Phases 0-2 were built+verified live this session (run IDs above); nothing is live now. Next: merge #142 → rebuild 0-2 → decide phase-3 mechanism → phase 3.** |
+| Active phase | **Account EXPIRED at end of auto-005. Phases 0-2 were built+verified live this session (run IDs above); nothing is live now. Next: merge #142 → rebuild 0-2 → enable platform-cluster sync → phase 3.** |
 | Last update | 2026-06-05 (auto-005 long-run wrap-up) |
 | AWS account | **ephemeral — derive from `aws sts get-caller-identity`** (AGENTS §8.1) |
 | Route53 zone | `<account-id>.realhandsonlabs.net.` |
@@ -130,7 +132,7 @@ Run `scripts/whereami.sh` first to confirm the account (AGENTS §8.1).
 ## Open follow-ups (roughly prioritized)
 
 1. **Merge PR #142** (see QUICKSTART step 1) — unblocks the rebuild.
-2. **Phase-3 mechanism decision** (QUICKSTART blocker) — pick (a)/(b)/(c).
+2. **Phase-3 sync decision** (QUICKSTART) — enable auto-sync (a) or human sync (b).
 3. **OI-2026-05-28-1 Issue A** (ASM `ResourceExistsException` flake on
    `composition-drift`/`claim-deletion-cleanup`): durable fix is the
    `crossplane.io/external-name` change in `decisions/auto-006-asm-external-name-fix.md`
