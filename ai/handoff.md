@@ -241,8 +241,8 @@ Crossplane-core compat per minor release.
 
 | Field | Value |
 |---|---|
-| Active phase | **Phase 3 — code complete on PR #140. ACCOUNT ROTATED AWAY; nothing applied. Next run: rebuild phase 0→1→2→3 from scratch on a fresh account, then finish the phase-3 spoke. See QUICKSTART.** |
-| Last update | 2026-06-05 (phase-3 session; account torn down mid-session, §8.4) |
+| Active phase | **Phase 2 verify in flight (auto-005 long-run). Phase 0 + Phase 1 APPLIED + VERIFIED this session on the current account (see run IDs below). Phase 2 chainsaw dispatched; phase 3 (platform cluster + spoke) next.** |
+| Last update | 2026-06-05 (auto-005 long-run — building 0→3 live on the current account) |
 | AWS account | **ephemeral — derive from `aws sts get-caller-identity`** (see AGENTS.md §8.1) |
 | Route53 zone | `<account-id>.realhandsonlabs.net.` |
 | EKS cluster | `k8-platform-mgmt` in the region from `$AWS_REGION` |
@@ -256,11 +256,11 @@ Cross-session `applied`/`verified` are NOT durable (AGENTS.md §8.1).
 
 | Phase | State (fresh account) | Notes |
 |---|---|---|
-| 0 base | **code-only (account rotated — must re-apply)** | Code unchanged + durable. Re-apply `phase=base action=apply-and-verify` on the new account. |
-| 1 management | **code-only (account rotated — must re-apply)** | Re-apply after phase 0. NOTE PR #140 adds eks/iam/acm/route53 providers + function-environment-configs + cluster-network EnvironmentConfig + ACM/Route53 IRSA; merge #140 first so the apply includes them. Also add the ArgoCD-cred output (next-run task A / AGENTS §10.1). |
-| 2 xrds | **code-only (account rotated — must re-apply)** | Verify via `chainsaw.yml` full set after phase 1. |
-| 3 cluster+cert | **code complete on PR #140 (not applied — account gone)** | Cluster Composition + per-cluster ACM cert + terraform plumbing. render + kubeconform + unit + live chainsaw `xrd-establishes` (run 26993676391) GREEN before rotation. Apply via the §C sequence in QUICKSTART. |
-| 3 spoke | **not started** | REQ-PLAT-02/03/04/06 — built live against the platform cluster (QUICKSTART §D). |
+| 0 base | **VERIFIED (auto-005, run 27021589131)** | apply-and-verify GREEN: VPC, subnets, Route53, Cognito, base ACM wildcard, state backend. |
+| 1 management | **VERIFIED (auto-005, run 27024349261)** | apply-and-verify GREEN: EKS mgmt cluster ACTIVE, 2 nodes Ready, ArgoCD (UI reachable HTTP 200 via ExternalDNS Route53 record), Crossplane + family-aws/secretsmanager/eks/iam/acm/route53 providers + functions, ESO, Kyverno, IRSA, cluster-network EnvironmentConfig. Required 3 fixes this session (OI-2026-06-05-2/3/4): vendored crossplane chart (CDN 403s runner), provider Healthy-wait, dropped by-label provider re-roll. NOTE: provider-aws-eks + provider-aws-route53 were HEALTHY=False at 14m — re-check before phase 3. |
+| 2 xrds | **verify in flight (chainsaw run on bc95384)** | `chainsaw.yml` full set dispatched. Chainsaw run.sh now installs crossplane from the vendored chart too. |
+| 3 cluster+cert | **not applied yet (next)** | Sync the `platform-cluster-claim` ArgoCD Application via the §10.1 ArgoCD-output cred → platform EKS cluster + `*.platform.<domain>` ACM cert (~20 min). Needs live eks/route53/acm providers Healthy. |
+| 3 spoke | **not started** | REQ-PLAT-02/03/04/06 — built live (QUICKSTART §D / decisions/auto-005-session-plan.md). |
 | 3 spoke | **paused (needs live cluster)** | hub-spoke registration, platform-services (ingress/external-dns), spoke IRSA/OIDC, hello app — REQ-PLAT-02/03/04/06. Consumers read kubeconfig from the EKS Cluster MR's own connection-secret (v2 removed the XR-level secret). |
 
 ### Live AWS resource shape
