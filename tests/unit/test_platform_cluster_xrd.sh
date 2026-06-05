@@ -62,25 +62,41 @@ if [ -f "$COMP" ]; then
   assert_eq "xrd_default_composition_matches_composition_file" "$DEFAULT_COMP" "$COMP_NAME"
 fi
 
-# Required-fields contract: name and vpc must both be required at the
-# top level. Without name, two claims collide on resource-naming
-# patches; without vpc, the EKS Cluster has no place to put its ENIs
-# and only fails at apply time.
+# Required-fields contract: name and dns must both be required at the
+# top level. Without name, two clusters collide on resource-naming
+# patches; without dns.subdomain, the wildcard ACM cert domain
+# (*.<subdomain>.<domain>) cannot be built and ExternalDNS has no scope.
+#
+# Phase 3 (docs/decisions/0003): spec.vpc was REMOVED — private subnet
+# IDs are account-ephemeral (AGENTS §8.1) and are injected from the
+# cluster-network EnvironmentConfig (base Terraform output), not carried
+# on the XR. So vpc is intentionally NOT required (and not present).
 REQUIRED=$(yq -r '.spec.versions[0].schema.openAPIV3Schema.properties.spec.required[]' "$XRD")
 echo "$REQUIRED" | grep -qx 'name' \
   && _pass "xrd_spec_name_required" \
   || _fail "xrd_spec_name_required" "spec.name not in required"
+echo "$REQUIRED" | grep -qx 'dns' \
+  && _pass "xrd_spec_dns_required" \
+  || _fail "xrd_spec_dns_required" "spec.dns not in required"
 echo "$REQUIRED" | grep -qx 'vpc' \
-  && _pass "xrd_spec_vpc_required" \
-  || _fail "xrd_spec_vpc_required" "spec.vpc not in required"
+  && _fail "xrd_spec_vpc_removed" "spec.vpc should be removed (subnets come from EnvironmentConfig)" \
+  || _pass "xrd_spec_vpc_removed"
 
-# Subnets must require at least 2 (EKS HA requirement). Without this,
-# the EKS provider returns a confusing "at least two subnets in two
-# different AZs" error well after admission.
-MIN_SUBNETS=$(yq -r \
-  '.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.vpc.properties.subnetIds.minItems' \
+# dns.subdomain must exist with a DNS-label pattern. It is the per-cluster
+# label used to build *.<subdomain>.<domain> and scope ExternalDNS.
+SUBDOMAIN_PATTERN=$(yq -r \
+  '.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.dns.properties.subdomain.pattern' \
   "$XRD")
-assert_eq "xrd_subnets_minItems_2" "2" "$MIN_SUBNETS"
+[ -n "$SUBDOMAIN_PATTERN" ] && [ "$SUBDOMAIN_PATTERN" != "null" ] \
+  && _pass "xrd_dns_subdomain_pattern_present" \
+  || _fail "xrd_dns_subdomain_pattern_present" "spec.dns.subdomain.pattern missing"
+
+# The cluster's issued ACM cert ARN must be published on status so the
+# cluster's ingress-nginx NLB can consume it (docs/decisions/0003).
+CERT_ARN_STATUS=$(yq -r \
+  '.spec.versions[0].schema.openAPIV3Schema.properties.status.properties.certificateArn.type' \
+  "$XRD")
+assert_eq "xrd_status_certificateArn_present" "string" "$CERT_ARN_STATUS"
 
 # Strict schema: no x-kubernetes-preserve-unknown-fields: true anywhere.
 # (per adversarial-reviewer A finding 14 — preserve-unknown-fields
