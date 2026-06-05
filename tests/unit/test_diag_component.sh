@@ -55,9 +55,11 @@ components=$(printf '%s\n' "$banner" \
 
 [ -n "$components" ] || _fail "diag_script_banner_lists_components" "usage banner is empty"
 
+# Capture the case block once (here-string grep below avoids the
+# pipefail+grep-q SIGPIPE flake — OI-2026-06-05-1).
+_case_block="$(awk '/^case "\$COMPONENT" in/,/^esac/' "$SCRIPT")"
 for c in $components; do
-  if awk '/^case "\$COMPONENT" in/,/^esac/' "$SCRIPT" \
-       | grep -qE "^[[:space:]]*${c}[)|]"; then
+  if grep -qE "^[[:space:]]*${c}[)|]" <<<"$_case_block"; then
     _pass "diag_script_branch_present:$c"
   else
     _fail "diag_script_branch_present:$c" "usage banner lists '$c' but no case branch implements it"
@@ -70,8 +72,8 @@ done
 # helm-installed component. It does NOT have a single namespace/label.
 # If it accidentally falls through to the default NS/SEL block, the
 # output is nonsensical.
-if awk '/platform-secret/,/^fi$/' "$SCRIPT" \
-     | grep -qE 'kubectl get (platformsecret|xplatformsecret|clustersecretstore|externalsecret)'; then
+_platform_secret_block="$(awk '/platform-secret/,/^fi$/' "$SCRIPT")"
+if grep -qE 'kubectl get (platformsecret|xplatformsecret|clustersecretstore|externalsecret)' <<<"$_platform_secret_block"; then
   _pass "diag_platform_secret_uses_xrd_apis"
 else
   _fail "diag_platform_secret_uses_xrd_apis" "platform-secret branch must call kubectl on the XRD/ESO APIs"

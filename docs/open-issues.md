@@ -119,4 +119,53 @@ the flake hypothesis (auto-004).
 
 ---
 
+## OI-2026-06-05-1 — `yq/awk | grep -q` under `set -o pipefail` flakes unit tests
+
+**Status:** **RESOLVED** (diagnosed + fixed, auto-005 long-run).
+**Surfaced:** 2026-06-05, full local `tests/unit/run.sh` run during the
+auto-005 audit — `test_platform_cluster_composition.sh`'s
+`composition_policy_AmazonEKSWorkerNodePolicy` assertion failed
+intermittently (`missing policyArn arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy`).
+
+**Root cause (CONFIRMED by repro + fix, not hypothesis):** the assertion ran
+`yq -r "...resources[]...policyArn..." "$COMP" | grep -qF "$arn"` under
+`set -uo pipefail`. `grep -q` exits on its first match and closes the pipe;
+the still-writing `yq` then takes `SIGPIPE` (exit 141), and `pipefail`
+propagates that 141 as the pipeline's status, so the `if` intermittently
+takes the `else` branch and emits a false FAIL. Measured **~10% (2-3/20-30)**
+before the fix.
+
+**Fix:** capture the producer's output to a variable, then `grep -q … <<<"$var"`
+(here-string — no upstream process to receive SIGPIPE). Applied to every
+instance of the class found in `tests/unit/`:
+- `test_platform_cluster_composition.sh` (the observed one),
+- `test_argocd_bootstrap.sh` (2 sites, `awk … | grep -q`),
+- `test_diag_component.sh` (2 sites, `awk … | grep -q`).
+`yq --version | grep -q mikefarah` sites were left as-is (single-line output,
+producer already exited — no SIGPIPE window).
+
+**Verification:** the previously-flaky test ran **0/30** failures after the
+fix (was ~3/30). All three touched tests pass standalone.
+
+**Prevention note (candidate AGENTS rule / lint):** "Never `producer | grep
+-q` under `pipefail` when the producer emits more than one line — capture and
+`grep -q <<<"$var"`." Surfaced for the retro.
+
+---
+
+## OI-2026-05-28-1 Issue B-adjacent — ASM cleanup-trap gap: **RESOLVED**
+
+**Status:** **RESOLVED** (auto-005 long-run). The "Also noted" item in
+OI-2026-05-28-1 below — `tests/chainsaw/run.sh` swept ASM secrets by
+`${ASM_RUN_PREFIX}/` (`k8-platform-chainsaw-<id>/`) while the Composition
+names them `k8-platform/<uid>`, so they never matched and leaked — is fixed.
+The cleanup now enumerates the real names from the Secret MRs in the live
+kind cluster (`tests/chainsaw/_lib/asm-cleanup.sh`) and deletes exactly
+those, before `kind delete`. Behavioral unit test:
+`tests/unit/test_chainsaw_asm_cleanup.sh`. (Issue A — the
+`ResourceExistsException` rotation race itself — remains open; see decision
+brief `decisions/auto-006-asm-external-name-fix.md`.)
+
+---
+
 <!-- New entries go above this line, newest first. -->

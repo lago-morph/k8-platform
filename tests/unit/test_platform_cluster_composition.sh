@@ -78,8 +78,12 @@ for arn in \
   "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy" \
   "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy" \
   "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"; do
-  if yq -r "${PT}.resources[].base.spec.forProvider.policyArn // \"\"" "$COMP" \
-       | grep -qF "$arn"; then
+  # Capture-then-grep (NOT `yq ... | grep -qF`): under `set -o pipefail`,
+  # grep -q exits on first match and SIGPIPEs the still-writing yq, whose 141
+  # then propagates as the pipeline's status — an intermittent false FAIL
+  # (~10% observed; OI-2026-06-05-1). A here-string has no upstream process.
+  policy_arns="$(yq -r "${PT}.resources[].base.spec.forProvider.policyArn // \"\"" "$COMP")"
+  if grep -qF "$arn" <<<"$policy_arns"; then
     _pass "composition_policy_$(basename "$arn")"
   else
     _fail "composition_policy_$(basename "$arn")" "missing policyArn $arn"
