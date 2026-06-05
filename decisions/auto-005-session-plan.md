@@ -61,6 +61,48 @@ myself via Actions per §8.5 (apply-and-verify fails fast on bad creds).
 - pipefail+grep-q SIGPIPE flake fix across the unit suite (OI-2026-06-05-1, 0/30).
 - Handoff staleness corrections; auto-006 external-name brief (Round 1).
 
+## Phase-3 spoke execution plan (do LIVE once the platform cluster is Ready)
+
+The `XPlatformCluster` XR publishes on `status`: `clusterArn`, `endpoint`,
+`oidcIssuer`, `nodeGroupArn`, `certificateArn` (the issued `*.platform.<domain>`
+ACM ARN), and the DNS-validation record fields. The cluster Composition does
+NOT create the cluster's own OIDC provider or the external-dns IAM role (XRD
+header note) — the spoke must add those. Steps, in order:
+
+1. **Spoke registration (REQ-PLAT-02).** Register the platform EKS cluster with
+   the management ArgoCD as a spoke. Kubeconfig endpoint/CA come from the EKS
+   **Cluster MR's own connection secret** (v2 removed the XR-level secret); auth
+   via an EKS access entry / IRSA for the ArgoCD application-controller. Create
+   an `argocd.argoproj.io/secret-type: cluster` Secret in `argocd`. Drive from
+   CI using the §10.1 Terraform-output ArgoCD credential. **Live-coupled** (real
+   endpoint/CA/token).
+2. **OIDC provider + external-dns IRSA (supports REQ-PLAT-04).** Create the
+   `aws_iam_openid_connect_provider` for the platform cluster (issuer =
+   `status.oidcIssuer`) and an external-dns IAM role scoped to the zone. Either
+   Crossplane MRs (iam provider already installed) on the hub, or a small
+   terraform addition. **Live-coupled** (issuer + thumbprint).
+3. **ingress-nginx (REQ-PLAT-03).** Helm release on the spoke: internet-facing
+   NLB, `aws-load-balancer-type: nlb`, TLS terminated at the NLB via
+   `service.beta.kubernetes.io/aws-load-balancer-ssl-cert: <status.certificateArn>`,
+   ssl-ports=443, backend http (mirrors the management cluster's pattern that
+   `test_helm_render.sh` already asserts). **cert ARN is cross-cluster** — inject
+   from the XR `status.certificateArn` into the spoke ingress values (ApplicationSet
+   param or a sync pre-hook). Design finalized live.
+4. **ExternalDNS (REQ-PLAT-04).** Helm release scoped to `--domain-filter=platform.<domain>`,
+   `--source=ingress`, `--policy=upsert-only`, `--provider=aws`, IRSA = the role
+   from step 2. (`test_helm_render.sh` already asserts these args for the mgmt
+   instance — reuse the shape.)
+5. **Hello app (REQ-PLAT-06).** Deployment + Service + Ingress at
+   `hello.platform.<domain>` (host is ephemeral-domain-coupled). ExternalDNS
+   creates the Route53 record; the NLB serves it under the wildcard ACM cert.
+6. **ArgoCD ApplicationSet/Apps** targeting the spoke cluster deploy steps 3-5.
+7. **Verify (REQ-PLAT-06):** `curl -v https://hello.platform.<domain>` returns
+   200 with a valid (ACM-issued, not self-signed) cert chain, no manual DNS/cert
+   steps. Build this live with convergence feedback (handoff §D, AGENTS §6.17) —
+   the cross-cluster cert-ARN handoff + ephemeral-domain substitution + spoke
+   registration are the parts that must be confirmed against the live cluster,
+   not authored blind.
+
 ## Stop conditions (unchanged)
 
 Account constraint missing, destructive op outside scope, hard dependency
