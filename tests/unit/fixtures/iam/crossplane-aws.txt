@@ -11,3 +11,11 @@ iam:PassRole
 iam:CreateOpenIDConnectProvider
 secretsmanager:GetSecretValue
 secretsmanager:DescribeSecret
+# Phase 3 (docs/decisions/0003): the XPlatformCluster Composition
+# provisions and DNS-validates a per-cluster wildcard ACM certificate, so
+# the provider needs ACM issuance + Route53 record-write permissions.
+acm:RequestCertificate
+acm:DescribeCertificate
+acm:DeleteCertificate
+route53:ChangeResourceRecordSets
+route53:GetChange

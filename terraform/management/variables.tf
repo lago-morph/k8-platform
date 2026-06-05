@@ -107,6 +107,62 @@ variable "crossplane_function_patch_and_transform_version" {
   default     = "v0.10.6"
 }
 
+variable "crossplane_function_environment_configs_version" {
+  description = <<-EOT
+    crossplane-contrib/function-environment-configs package version.
+    Merges named EnvironmentConfig data into the pipeline environment so
+    the platform-cluster Composition can read account-ephemeral infra
+    values (private subnet IDs, route53 zone id, root domain) from the
+    cluster-network EnvironmentConfig that this module materializes from
+    the base Terraform output. Must match
+    tests/chainsaw/versions.env (FUNCTION_ENVIRONMENT_CONFIGS_VERSION).
+  EOT
+  type        = string
+  default     = "v0.3.0"
+}
+
+variable "crossplane_provider_aws_eks_version" {
+  description = <<-EOT
+    Upbound provider-aws-eks package version. Child of provider-family-aws
+    needed by the XPlatformCluster Composition to reconcile the EKS
+    Cluster and NodeGroup managed resources. Pin to the family version.
+  EOT
+  type        = string
+  default     = "v2.5.0"
+}
+
+variable "crossplane_provider_aws_iam_version" {
+  description = <<-EOT
+    Upbound provider-aws-iam package version. Child of provider-family-aws
+    needed by the XPlatformCluster Composition to reconcile the cluster /
+    node-group IAM Roles and RolePolicyAttachments. Pin to the family.
+  EOT
+  type        = string
+  default     = "v2.5.0"
+}
+
+variable "crossplane_provider_aws_acm_version" {
+  description = <<-EOT
+    Upbound provider-aws-acm package version. Child of provider-family-aws
+    needed by the XPlatformCluster Composition to provision the wildcard
+    ACM Certificate + CertificateValidation for the cluster's TLS
+    (docs/decisions/0003). Pin to the family version.
+  EOT
+  type        = string
+  default     = "v2.5.0"
+}
+
+variable "crossplane_provider_aws_route53_version" {
+  description = <<-EOT
+    Upbound provider-aws-route53 package version. Child of
+    provider-family-aws needed by the XPlatformCluster Composition to
+    create the ACM DNS-validation Record (docs/decisions/0003). Pin to
+    the family version.
+  EOT
+  type        = string
+  default     = "v2.5.0"
+}
+
 variable "eso_version" {
   description = "External Secrets Operator Helm chart version"
   type        = string
