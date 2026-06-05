@@ -119,4 +119,155 @@ the flake hypothesis (auto-004).
 
 ---
 
+## OI-2026-06-05-1 — `yq/awk | grep -q` under `set -o pipefail` flakes unit tests
+
+**Status:** **RESOLVED** (diagnosed + fixed, auto-005 long-run).
+**Surfaced:** 2026-06-05, full local `tests/unit/run.sh` run during the
+auto-005 audit — `test_platform_cluster_composition.sh`'s
+`composition_policy_AmazonEKSWorkerNodePolicy` assertion failed
+intermittently (`missing policyArn arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy`).
+
+**Root cause (CONFIRMED by repro + fix, not hypothesis):** the assertion ran
+`yq -r "...resources[]...policyArn..." "$COMP" | grep -qF "$arn"` under
+`set -uo pipefail`. `grep -q` exits on its first match and closes the pipe;
+the still-writing `yq` then takes `SIGPIPE` (exit 141), and `pipefail`
+propagates that 141 as the pipeline's status, so the `if` intermittently
+takes the `else` branch and emits a false FAIL. Measured **~10% (2-3/20-30)**
+before the fix.
+
+**Fix:** capture the producer's output to a variable, then `grep -q … <<<"$var"`
+(here-string — no upstream process to receive SIGPIPE). Applied to every
+instance of the class found in `tests/unit/`:
+- `test_platform_cluster_composition.sh` (the observed one),
+- `test_argocd_bootstrap.sh` (2 sites, `awk … | grep -q`),
+- `test_diag_component.sh` (2 sites, `awk … | grep -q`).
+`yq --version | grep -q mikefarah` sites were left as-is (single-line output,
+producer already exited — no SIGPIPE window).
+
+**Verification:** the previously-flaky test ran **0/30** failures after the
+fix (was ~3/30). All three touched tests pass standalone.
+
+**Prevention note (candidate AGENTS rule / lint):** "Never `producer | grep
+-q` under `pipefail` when the producer emits more than one line — capture and
+`grep -q <<<"$var"`." Surfaced for the retro.
+
+---
+
+## OI-2026-05-28-1 Issue B-adjacent — ASM cleanup-trap gap: **RESOLVED**
+
+**Status:** **RESOLVED** (auto-005 long-run). The "Also noted" item in
+OI-2026-05-28-1 below — `tests/chainsaw/run.sh` swept ASM secrets by
+`${ASM_RUN_PREFIX}/` (`k8-platform-chainsaw-<id>/`) while the Composition
+names them `k8-platform/<uid>`, so they never matched and leaked — is fixed.
+The cleanup now enumerates the real names from the Secret MRs in the live
+kind cluster (`tests/chainsaw/_lib/asm-cleanup.sh`) and deletes exactly
+those, before `kind delete`. Behavioral unit test:
+`tests/unit/test_chainsaw_asm_cleanup.sh`. (Issue A — the
+`ResourceExistsException` rotation race itself — remains open; see decision
+brief `decisions/auto-006-asm-external-name-fix.md`.)
+
+---
+
+## OI-2026-06-05-2 — `charts.crossplane.io` 403s the GitHub Actions runner
+
+**Status:** **mitigated** (chart vendored); root cause still **hypothesis**.
+**Surfaced:** 2026-06-05 auto-005 long-run — `phase=management
+apply-and-verify` failed twice in a row (runs 27021786260, 27022894643), both
+ONLY on `helm_release.crossplane`:
+```
+Error: could not download chart: looks like "https://charts.crossplane.io/stable"
+is not a valid chart repository or cannot be reached: failed to fetch
+https://charts.crossplane.io/stable/index.yaml : 403 Forbidden
+```
+Everything else applied (EKS cluster, ArgoCD, ESO, Kyverno, ingress-nginx,
+external-dns, the bootstrap + argocd-admin-password provisioners).
+
+**Evidence:**
+- The same URL returns **HTTP 200** from the sandbox (and `master/index.yaml`
+  too), and the index still lists `crossplane-2.3.0.tgz` — so the repo is up
+  and the chart was NOT migrated/yanked.
+- Two deterministic failures 4 min apart rule out a one-off transient.
+- The prior successful management build (2026-05-29, run 26621556820) used the
+  same URL — so this is a recent change in how the CDN treats the runner.
+
+**Hypothesis (labelled, §6.17):** the CDN fronting `charts.crossplane.io`
+(S3/CloudFront-class) is returning 403 to the GitHub-hosted runner egress
+range specifically (IP/geo/UA based or rate-limited), while other networks get
+200. NOT confirmed — I cannot curl from the runner directly. No public incident
+found via web search.
+
+**Mitigation applied:** vendored the digest-verified chart into
+`terraform/management/vendor/crossplane-2.3.0.tgz` (sha256
+`2ceff920…cd7f`, matches the upstream index digest) and switched
+`helm.tf`'s `helm_release.crossplane` to install from that local path. The
+apply is now hermetic and independent of the CDN. `terraform validate` passes.
+
+**Next / revert:** if the CDN restriction lifts (re-check from a runner via a
+probe step), restore the `repository`/`version` form and delete the tarball.
+Consider asking Crossplane to publish the chart via OCI (xpkg/ghcr) — neither
+`oci://xpkg.crossplane.io/crossplane/crossplane` nor `oci://ghcr.io/crossplane/
+crossplane` exists today, so OCI was not an option.
+
+---
+
+## OI-2026-06-05-3 — provider-family-aws install races the package manager on fresh Crossplane
+
+**Status:** **RESOLVED** (fix landed; pending live re-confirmation on the re-run).
+**Surfaced:** 2026-06-05 auto-005 — management `apply-and-verify` run
+27023573285 (branch ref, vendored-chart fix applied) failed at
+`terraform_data.crossplane_aws_provider` (helm.tf:232):
+```
+deploymentruntimeconfig.../aws-provider-config created
+provider.../provider-family-aws created
+No resources found ... ERROR: expected SA upbound-provider-family-aws, got: MISSING
+```
+**Root cause (CONFIRMED by reading the log):** the provisioner applied the
+`DeploymentRuntimeConfig` + `Provider`, then immediately `delete deploy -l … --wait=false`
+and `kubectl rollout status -l …`. On a **fresh** Crossplane install the package
+manager has not yet pulled the package image and created the provider's
+Deployment + ServiceAccount, so `rollout status -l <sel>` returns "No resources
+found" (non-zero) **immediately** (it does not wait for a matching resource to
+appear), and the SA post-check then fails with `MISSING`. The prior successful
+build (2026-05-29) won the race by luck (faster pull).
+
+**Fix (helm.tf):** (1) `kubectl wait --for=condition=Healthy
+provider.pkg.crossplane.io/provider-family-aws --timeout=300s` BEFORE the delete
+(guarantees the Deployment+SA exist); (2) after the delete, poll for the
+Deployment to reappear (the package manager doesn't recreate it instantly)
+before `rollout status`. POSIX /bin/sh. `terraform validate` passes. Handles
+both fresh-install and DRC-change-upgrade cases.
+
+---
+
+## OI-2026-06-05-4 — v2.5.0 family-provider Deployment lacks the `pkg.crossplane.io/provider` label the provisioner selected on
+
+**Status:** **mitigated** (provisioner no longer depends on the label).
+**Surfaced:** 2026-06-05 auto-005, run 27023830973 — with the OI-2026-06-05-3
+Healthy-wait in place, the log showed:
+```
+provider.pkg.crossplane.io/provider-family-aws condition met   (Healthy)
+No resources found                                             (delete -l … matched nothing)
+ERROR: provider Deployment never reappeared after delete
+```
+**Root cause:** `terraform_data.crossplane_aws_provider`'s provisioner did
+`kubectl -n crossplane-system delete deploy -l pkg.crossplane.io/provider=provider-family-aws`
+and `kubectl rollout status -l <same>`. The Provider is Healthy (so its
+Deployment+SA exist) but **nothing in crossplane-system carries that label** on
+the Upbound v2.5.0 family provider — `kubectl rollout status -l <sel>` /
+`delete -l <sel>` therefore match nothing. This delete+rollout-by-label was a
+re-roll mechanism for a DRC SA-name *change*; it is unnecessary on a fresh
+install (the DRC is applied WITH the Provider, so the Deployment is created with
+the pinned SA from the start). It is also where OI-2026-06-05-3's first fix still
+failed.
+**Fix:** drop the by-label delete/rollout. Keep `kubectl wait
+--for=condition=Healthy provider/provider-family-aws`, add a label-agnostic poll
+for the `upbound-provider-family-aws` SA to materialise, and a diagnostics dump
+(`get deploy,sa --show-labels`, pod serviceAccounts, providers/providerrevisions)
+so the real labels are visible in the log. The existing hard gate (SA object
+name == `upbound-provider-family-aws`) is retained. The diagnostics will reveal
+the actual provider-Deployment label for a future, precise re-roll if a DRC
+SA-name change is ever needed. terraform validate passes.
+
+---
+
 <!-- New entries go above this line, newest first. -->

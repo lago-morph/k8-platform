@@ -1082,6 +1082,64 @@ correct action was a from-scratch phase-0 `apply-and-verify`, not a
 
 ---
 
+### 8.5 Check credentials via Actions — do NOT assume they are stale
+
+**Verify the AWS credentials yourself before claiming they are stale or
+deferring work on that basis.** §8.1/§8.2/§8.4 say "assume the account may
+be rotated and verify with the live API" — that is about *resource
+existence*, NOT a license to assume the GitHub Actions AWS secrets are
+invalid. The sandbox has no standing creds, but CI does, and you can check
+at any time by dispatching a workflow:
+
+- `terraform-test.yml` with `phase=test action=test-e2e` is the read-only
+  credential/account probe (a few seconds of real AWS calls, no mutation).
+- Any `apply-and-verify` also exercises the creds and fails fast and loudly
+  if they are invalid (`InvalidClientTokenId` / `403`).
+
+So the correct move when you need to know whether creds work is **dispatch
+the probe and read the result**, not assume stale and stop. Telling the
+user "I can't, the creds are probably stale" without having dispatched a
+check is the wrong shape of "unavailable" (cf. §6.12). Stale creds are a
+*verified* state, not a default assumption.
+
+*Grounded in: 2026-06-05 auto-005 long-run — the agent assumed the rotated
+account's GHA secrets were stale, scoped out the live build on that basis,
+and asked the user instead of checking. The user: "The credentials are
+current. In the future check yourself. You can do that any time via
+actions."*
+
+### 8.6 Build everything already tested; plan the session while long builds run
+
+**The default for a delegated/long session is to BUILD — bring up every
+phase that has already been tested — not to hunt for code-only side
+quests.** Unless the user directs otherwise:
+
+1. **Start the long pole first.** Cluster/infra builds take ~20 minutes
+   (the management EKS apply especially). Dispatch the build pipeline
+   (`phase=base` → `phase=management` → phase-2 chainsaw → phase-3) at the
+   very start of the session so the slow apply is running while you do
+   everything else.
+2. **Plan the session's work while the build runs.** Do not idle waiting on
+   a dispatched apply (§6.10 forbids foreground-polling anyway). Write the
+   session plan, prep the next phase's manifests/checks, draft live-verify
+   steps — all the work that does not depend on the in-flight apply.
+3. **Build what is tested before proposing new work.** Phases 0-3 are
+   tested (terraform-validate, unit, kubeconform, render fixtures, chainsaw
+   `xrd-establishes`); the mandate is to instantiate them on the live
+   account and then work in the live environment (the hub-spoke,
+   `platform-services`, the hello app — handoff §D), NOT to re-litigate the
+   already-tested code.
+
+*Grounded in: 2026-06-05 auto-005 — the agent spent the session on code-only
+follow-ups and a decision brief while the real mandate was to build phases
+0-3 and work live. The user: "You are supposed to be building phases 0-3
+then working in the live environment… unless directed otherwise build
+everything that has already been tested and plan work for the session while
+waiting. Building clusters takes 20 or so minutes, so start that process
+first."*
+
+---
+
 ## 9. Commit standards
 
 - **One logical change per commit.** Don't bundle unrelated fixes.

@@ -171,12 +171,17 @@ else
   _fail "runsh_installs_exit_trap" "no 'trap <fn> EXIT' line found"
 fi
 
-# ---- 13. run.sh cleanup uses --force-delete-without-recovery -----------
+# ---- 13. chainsaw cleanup uses --force-delete-without-recovery ---------
 #
 # Defends contract: AWS Secrets Manager normally enforces a 7-day recovery
 # window on delete. Chainsaw secrets are ephemeral and a re-run would
 # fail with "scheduled for deletion" unless we force-delete.
-if grep -q 'force-delete-without-recovery' tests/chainsaw/run.sh; then
+#
+# The ASM cleanup logic was extracted into tests/chainsaw/_lib/asm-cleanup.sh
+# (sourced by run.sh's cleanup trap) so it can be unit-tested behaviorally —
+# see tests/unit/test_chainsaw_asm_cleanup.sh. Check both the lib and run.sh
+# so the contract holds wherever the delete call lives.
+if grep -qrs 'force-delete-without-recovery' tests/chainsaw/_lib/asm-cleanup.sh tests/chainsaw/run.sh; then
   _pass "runsh_cleanup_force_deletes_asm_secrets"
 else
   _fail "runsh_cleanup_force_deletes_asm_secrets" "cleanup must force-delete to avoid 7-day recovery window"

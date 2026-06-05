@@ -126,8 +126,11 @@ fi
 #
 # Defends contract: without depends_on, Terraform may try to kubectl
 # apply before argocd-server is up, producing flaky first-run failures.
-if awk '/resource "terraform_data" "argocd_bootstrap"/,/^}/' "$HELM_TF" \
-     | grep -q 'depends_on.*helm_release.argocd'; then
+# Capture-then-grep (here-string) rather than `awk ... | grep -q`: the latter
+# can intermittently false-FAIL under `set -o pipefail` when grep -q exits on
+# first match and SIGPIPEs the still-writing awk (OI-2026-06-05-1).
+_argocd_bootstrap_block="$(awk '/resource "terraform_data" "argocd_bootstrap"/,/^}/' "$HELM_TF")"
+if grep -q 'depends_on.*helm_release.argocd' <<<"$_argocd_bootstrap_block"; then
   _pass "tf_argocd_bootstrap_depends_on_helm_release"
 else
   _fail "tf_argocd_bootstrap_depends_on_helm_release" "missing depends_on = [helm_release.argocd]"
@@ -137,8 +140,7 @@ fi
 #
 # Defends contract: kubectl wait must precede kubectl apply, otherwise
 # the API call lands before ArgoCD's CRDs are registered.
-if awk '/resource "terraform_data" "argocd_bootstrap"/,/^}/' "$HELM_TF" \
-     | grep -qE 'kubectl wait.*argocd'; then
+if grep -qE 'kubectl wait.*argocd' <<<"$_argocd_bootstrap_block"; then
   _pass "tf_argocd_bootstrap_waits_for_server"
 else
   _fail "tf_argocd_bootstrap_waits_for_server" "missing kubectl wait for argocd-server before apply"
