@@ -265,7 +265,14 @@ you don't reinvent them per brief.
 - Reduce per-subagent return verbosity as you approach context limits.
   A 100-word summary becomes 50; per-primitive sketches become per-cluster.
 - When approaching ~70% context budget: write the morning summary +
-  retrospective NOW, then continue if possible. Don't wait until 90%.
+  retrospective NOW, then continue if possible. Don't wait until 90%. The
+  "retrospective" here means the **full self-retrospective package** (main
+  report + sibling `AGENTS-MD-`/`ADR-`/`SKILL-SPEC-` artifacts — see
+  [End-of-run protocol](#end-of-run-protocol) item 5), not a lean note.
+  Reserving budget for it is exactly *why* you write it early: budget
+  pressure is NOT a license to abbreviate the package. If you genuinely
+  cannot fit the full package, write it first and shed lower-priority work
+  instead.
 - Track in-flight subagents per
   [`in-flight-workflow-tracking`](../in-flight-workflow-tracking/SKILL.md).
 
@@ -343,10 +350,28 @@ When the run stops (any of the allowed stop conditions above):
 3. **Write the morning summary** if not already written. Push as its own PR
    at the top of the stack.
 4. **Update the handoff document** if a phase closed during the run.
-5. **Auto-invoke [`self-retrospective`](../self-retrospective/SKILL.md).**
-   The retro captures durable lessons from the run before they're lost to
-   context truncation. Even if you think the run was uneventful, the retro
-   surfaces subtle patterns. Run it before the final stop.
+5. **Auto-invoke [`self-retrospective`](../self-retrospective/SKILL.md) in
+   FORWARD mode and produce its FULL structured package — not a summary of
+   it.** The deliverable is the complete artifact set the skill specifies:
+   the main report authored from
+   [`template-retrospective-report.md`](../self-retrospective/resources/template-retrospective-report.md)
+   (header, commit-hashes-by-PR, Parts 1–4, metrics table) PLUS the sibling
+   `retrospective/<UTC_DATE>-<PR>/` directory, every file in it authored from
+   its canonical template with a frozen hash ID:
+   - per-rule `AGENTS-MD-<hash>-<name>.md` files in the strict two-section
+     `# agent instruction` / `# justification` format (no metadata bullets),
+     one rule per file;
+   - `ADR-<hash>-<name>.md` drafts for every architectural decision made
+     during the run; and
+   - `SKILL-SPEC-<hash>-<name>.md` specs for any genuinely reusable skill the
+     run demonstrated (omit if none — do not invent speculative skills).
+
+   The retro captures durable lessons before they're lost to context
+   truncation; even if the run felt uneventful, the structured scan surfaces
+   subtle patterns. Run it before the final stop. **A single freehand
+   markdown file is NOT a self-retrospective.** Writing one lean/compressed
+   retro note in place of invoking the skill and emitting the full package
+   does not satisfy this protocol item.
 6. **Subscribe to all PRs opened** (per
    [`in-flight-workflow-tracking`](../in-flight-workflow-tracking/SKILL.md)).
    Even if the run is ending, the user may merge PRs which trigger webhook
@@ -378,6 +403,14 @@ review under-served.
 - **Skipping the morning summary.** Required, always.
 - **Skipping the self-retrospective at end of run.** The retro captures
   durable lessons; skipping it is a slow-burn cost over many runs.
+- **Substituting a lean/compressed/freehand retro for the self-retrospective
+  skill's structured package because "budget is tight".** The structured
+  package (main report + per-rule `AGENTS-MD-<hash>` files + `ADR-<hash>`
+  drafts + any `SKILL-SPEC-<hash>` specs, each from its canonical template
+  with frozen hash IDs) is the required deliverable — a single freehand
+  markdown file does not count. Reserve budget for it per the
+  [context-budget rule](#context-budget-self-management) and write it early;
+  budget pressure is the reason to start it sooner, not to abbreviate it.
 - **Pushing more work to a merged branch.** Each chunk gets a new branch
   off the previous tip.
 - **Burying deferrals in the summary.** "What I deliberately did NOT do"
