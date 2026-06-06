@@ -12,7 +12,7 @@ Supersedes `run-summary.md` (auto-007, dead account 730335382332) for current st
 - **A working `.github/workflows/*` write path now exists** for web sandboxes — the git-push OAuth token and GitHub MCP both lack `workflow` scope (anthropics/claude-code #61189; confirmed a regression against this repo's own history). The jentic PAT was granted Contents+Workflows write and wired into the `ext-github` skill (new Contents-PUT endpoint `op_12ee1daaad73b14b`, SKILL.md §8); live-fired on `unit-tests.yml`.
 - **The entire auto-007 phase 3-6 stack landed on `main`** (#144→#145→#146→#147→#148): phase-3 spoke, phase-4 observability, phase-5 Keycloak, phase-6 workload1 — each conflict-resolved against current main (helm.tf / run.sh / platform-spoke.yaml unioned), CI-green. The stack needed **no chainsaw runs** (none touch `crossplane/**` or `tests/chainsaw/**`; `chainsaw-verify` is non-required — #144 merged with it red).
 - **Phase-4 Alloy (Option A: `hub-addons` AppProject) + phase-5 DB (general `XDatabase` XRD, RDS-backed) decisions recorded** on main (#154; `decisions/2026-06-06-phase4-alloy-phase5-db.md`).
-- **Live rebuild:** phase-0 base **GREEN** (run 27054644974 — confirms the fresh GH-Actions secrets work). Phase-1 management **FAILED** on a crossplane provider-bootstrap deadlock → diagnosed (`OI-2026-06-06-2`), adversarially reviewed (3 real subagents), fixed (**#156**). **Live-validation 1 (run 27055996205) CONFIRMED the root cause** — the crossplane Lock condition `cannot build DAG: node xpkg.upbound.io/upbound/provider-family-aws already exists` proves two Provider objects own the same package (vindicating the rename; reviewer #1's "is it really the duplicate?" → yes). It failed only because the *wedged* cluster's orphaned old `provider-family-aws` lingered (`kubectl apply` no prune). Fix **refined with an idempotent orphan-cleanup** (`e45bba9` — deletes the stray old Provider first; self-heals on fresh AND wedged clusters, **no `terraform destroy` needed**); **validation-2 dispatched** (result pending).
+- **Live rebuild:** phase-0 base **GREEN** (run 27054644974 — confirms the fresh GH-Actions secrets work). Phase-1 management **FAILED** on a crossplane provider-bootstrap deadlock → diagnosed (`OI-2026-06-06-2`), adversarially reviewed (3 real subagents), fixed (**#156**). **Live-validation 1 (run 27055996205) CONFIRMED the root cause** — the crossplane Lock condition `cannot build DAG: node xpkg.upbound.io/upbound/provider-family-aws already exists` proves two Provider objects own the same package (vindicating the rename; reviewer #1's "is it really the duplicate?" → yes). It failed only because the *wedged* cluster's orphaned old `provider-family-aws` lingered (`kubectl apply` no prune). Fix **refined with an idempotent orphan-cleanup** (deletes the stray old Provider first; self-heals on fresh AND wedged clusters, no `terraform destroy` needed). **Validation-2 (run 27056287208) PASSED — phase-1 management is reproducibly GREEN**: EKS ACTIVE, 3 nodes Ready, all crossplane providers Healthy, the pinned `serviceaccount/upbound-provider-family-aws` present, the one-Provider assertion passes, **ArgoCD UI HTTP 200**. **#156 merged to main (`11b91bb`)** — the recurring provider-bootstrap deadlock that blocked auto-005/auto-007 is resolved (`OI-2026-06-06-2` closed).
 
 ## 2. Suggested merge order
 
@@ -34,7 +34,7 @@ Stack #144-148, #153, #154 **already merged**. Remaining open PRs:
 | #146 | phase-6 workload1 cluster | ✅ merged |
 | #147 | phase-4 observability | ✅ merged |
 | #148 | phase-5 Keycloak | ✅ merged |
-| #156 | provider-SA bootstrap fix (DO NOT MERGE until live-green) | open |
+| #156 | provider-SA bootstrap fix | ✅ merged (live-green, run 27056287208) |
 | (this) | auto-009 run summary | open |
 
 ## 4. Decision briefs / reviews
@@ -47,12 +47,12 @@ Stack #144-148, #153, #154 **already merged**. Remaining open PRs:
 ## 5. Chain status
 
 - **Stack landing: COMPLETE** — phases 3-6 scaffolding on main.
-- **Live rebuild: phase-0 done; phase-1 blocked → fix in live-validation; phases 2/3 not reached.**
-- **Phases 4/5/6 LIVE implementation (hub-addons AppProject, XDatabase XRD+RDS, maxPods): NOT STARTED** — gated on the management cluster coming up (on #156's fix working).
+- **Live rebuild: phase-0 ✅ + phase-1 ✅ GREEN** (management cluster `k8-platform-mgmt` LIVE on account 211125540973, ArgoCD UI HTTP 200). Phase-2 chainsaw / phase-3 platform-cluster sync **not reached this run** (budget; the provider-SA diagnose→review→fix→validate loop consumed the live-track time).
+- **Phases 4/5/6 LIVE implementation (hub-addons AppProject, XDatabase XRD+RDS, maxPods): NOT STARTED.** Next-session work. NOTE per AGENTS §8.4 the account rotates between sessions, so the live management cluster will be gone — next session rebuilds 0→1→2→3 (now reproducibly green with #156's fix on main) then implements 4/5/6.
 
 ## 6. Morning-review items (need your call)
 
-1. **Provider-SA fix (#156) — validation in flight; the "authorize a destroy" ask is WITHDRAWN.** Root cause is now CONFIRMED (live-validation 1: the crossplane Lock can't build the dependency DAG because two Provider objects own `provider-family-aws` → no provider runtimes → SA missing). The rename collapses to one Provider; validation 1 failed only because the old object lingered on the wedged cluster, so the fix was **refined to delete the stray old-named Provider before applying** (`e45bba9`, idempotent — works on fresh AND wedged clusters, **no destroy required**). **Validation-2 is running on `fix/auto-009-mgmt-provider-sa`.** If green → #156 is mergeable and phase-1 is unblocked (proceed to phase-2 chainsaw / phase-3). If it still fails, the enhanced diagnostics will show why — re-check the run. No user decision needed unless validation-2 reveals something new.
+1. **Provider-SA fix — ✅ RESOLVED this run, no action needed.** Validation-2 (run 27056287208) passed green; **#156 merged to main (`11b91bb`)**. Phase-1 management is reproducibly green; `OI-2026-06-06-2` closed. The recurring deadlock that blocked auto-005/auto-007 is fixed on main. (Kept here only as the headline outcome — nothing for you to decide.)
 2. **Phases 4/5/6 live** were not built — they depend on the platform cluster, which depends on a healthy management cluster (#156). Once #156 is validated + merged, the next session implements: the `hub-addons` AppProject (convert the parked `argocd/apps/spoke/observability-alloy-mgmt.yaml.todo`), the `XDatabase` XRD + RDS Composition for Keycloak's `keycloak-db`, and the **maxPods/prefix-delegation** finish (still half-done — nodes cap ~17 pods; needed before the 4/5/6 pod load).
 
 ## 7. What I deliberately did NOT do
