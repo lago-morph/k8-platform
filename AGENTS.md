@@ -900,6 +900,104 @@ real limit was verification access (no sandbox cluster creds), not
 provisioning. See
 `retrospective/2026-06-05-140/AGENTS-MD-429a56a4b8-distinguish-provisioning-from-verification.md`.*
 
+### 6.23 Use the capability you have before asking, in a build session
+
+**In a delegated/long build session, exhaust available tools and make a
+defensible call before asking the user.** "When the user has delegated
+execution (build everything tested, use the skill, go), do not stop on an
+`AskUserQuestion` for something a tool or a defensible default can resolve —
+check the capability first (dispatch the probe, try the install, read the
+output) per §6.12/§8.5. Reserve user questions for genuine forks with
+cost/irreversibility and no defensible default. Asking when the path was
+available reads as not-listening and wastes a round-trip."
+
+*Grounded in: 2026-06-05 auto-005 — the agent asked about creds/mechanism the
+user expected it to resolve itself ("check yourself", "use it"). See
+`retrospective/2026-06-05-142/AGENTS-MD-38ee9c5ae4-use-capability-before-asking-in-build-mode.md`.*
+
+### 6.24 Never remove or weaken error checking to work around an undiagnosed error
+
+**Disabling a failing check to make red go green is the worst possible
+"fix" — always.** When a guardrail fails — an admission webhook, a
+validation hook, a test, a verification step, a lint, a type check, an
+assertion, a readiness gate — and you **cannot diagnose the root cause**,
+you do NOT delete, disable, bypass, or weaken the check to get past it. The
+check is load-bearing; a failing check is *information*, not an obstacle.
+Removing it hides the exact problem the check exists to surface and ships
+the failure downstream.
+
+When a check fails and the cause is unclear, the ONLY acceptable moves are:
+
+1. **Fix the actual cause.** Get the visibility you're missing (read the
+   log, add diagnostics through a path that does not remove the check) and
+   address the underlying problem.
+2. **Use a mechanism that works WITH the check, not around it.** E.g. if an
+   in-place Helm upgrade deadlocks on a pre-upgrade hook, force a clean
+   delete+create (which runs the install hook cleanly) rather than disabling
+   the hook; if a test is environment-flaky, fix the environment, not the
+   assertion.
+3. **Stop, escalate, and document.** If you genuinely cannot fix it now,
+   leave the check in place, log it to `docs/open-issues.md`, and surface the
+   blocker. A documented red is honest; a green achieved by deleting the
+   check is a lie.
+
+Disabling the check is never one of the options. "Turn off the webhook",
+"skip the test", "add `|| true`", "lower the assertion", "comment out the
+validation", "`--insecure`/`-k` to dodge a cert error" — these are all the
+same anti-pattern: trading a *visible* failure for an *invisible* one. If
+you catch yourself proposing to remove a check because you can't make it
+pass, stop: that is the signal you have not yet found the real fix.
+
+*Grounded in: 2026-06-06 auto-007 — facing an ingress-nginx admission-webhook
+pre-upgrade hook timeout the agent could not diagnose (no cluster visibility),
+it proposed and implemented disabling the admission webhook. The user: "Option
+a is terrible … You are hiding the error not fixing it. The webhook is there
+for a reason." The correct fix kept the webhook and forced a clean recreate by
+tainting the resource in Terraform state.*
+
+### 6.25 Prove a fix with consistent end-to-end tests, not a single signal
+
+**Prove a fix with consistent end-to-end tests, not a single signal.** "Do not
+call something fixed or working from one positive observation. Require the real
+end-to-end operation to succeed repeatedly with the actual tool — a lone 200 or
+one green check is not proof. State explicitly what was tested vs assumed; if the
+next call contradicts the first, the state is not-confirmed, not fixed."
+
+*Grounded in: 2026-06-06 auto-007 — the agent declared ArgoCD "reachable / fixed"
+off one healthz 200; the very next `argocd login` failed on DNS. The user: "How
+do you know it is fixed without testing it? You are presenting guesses as fact."*
+
+### 6.26 Diagnose the cluster through the cloud API when the kube-API is unreachable
+
+**Diagnose the cluster through the cloud API when the kube-API is unreachable.**
+"When kubectl is blocked, do not declare the problem un-diagnosable — reach the
+same facts through the cloud provider API: pod density via ENI/IP counts
+(`aws ec2 describe-network-interfaces`), load via CloudWatch, capacity via
+`describe-instance-types`, cluster/nodegroup health via the EKS API. Label
+cloud-API-derived facts as such, and route facts only the kube-API has (pod
+events, exact per-node pod counts) through CI."
+
+*Grounded in: 2026-06-06 auto-007 — pod-IP exhaustion (3/3 ENIs, 18/18 IPs on
+t3.medium = the ~17 max-pods ceiling) was diagnosed entirely via the AWS CLI
+because the EKS kube-API was gateway-blocked; the first instinct had been to call
+it un-diagnosable and disable the failing webhook.*
+
+### 6.27 Sandbox egress is a strict-verifying MITM gateway
+
+**Sandbox egress is a strict-verifying MITM gateway.** "Treat sandbox outbound
+HTTPS as passing through a gateway that terminates TLS (it presents a leaf signed
+by an `Anthropic … Egress Gateway` CA) and strictly verifies the UPSTREAM cert. A
+service you exposed is reachable from the sandbox only if it presents a
+publicly-trusted cert whose SAN matches the host; private-CA endpoints (the EKS
+kube-API) and SAN-mismatched certs return 503 and must be reached via CI.
+Diagnose with `openssl s_client` and read the 503 body — `verify SAN list` is a
+fixable SAN gap; `unable to get local issuer certificate` is a private CA."
+
+*Grounded in: 2026-06-06 auto-007 — ArgoCD 503'd on a base-wildcard SAN gap (fixed
+with a covering `*.management` cert) and kubectl 503'd on the EKS private CA
+(unfixable, CI-only), both at the egress gateway; the prior handoff's "directly
+reachable" claim was false for exactly this reason.*
+
 ---
 
 ## 7. Testing loops — companion skills

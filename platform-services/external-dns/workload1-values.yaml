@@ -1,0 +1,45 @@
+# ExternalDNS Helm values for the workload1 (spoke) cluster.
+#
+# Phase 6 (REQ-WL-03). A SEPARATE values file from the platform spoke's
+# values.yaml because the txtOwnerId / domainFilters / txtPrefix MUST be disjoint
+# from BOTH the hub AND the platform spoke — all three external-dns instances
+# share the one account Route53 zone, so any overlap corrupts the TXT-ownership
+# registry (auto-008 §6 / S3). The three instances are kept strictly disjoint:
+#
+#   | instance  | domainFilters         | txtOwnerId             | txtPrefix          |
+#   |-----------|-----------------------|------------------------|--------------------|
+#   | hub       | management.<domain>   | k8-platform-mgmt       | (none)             |
+#   | platform  | platform.<domain>     | k8-platform-platform   | _edns-platform-.   |
+#   | workload1 | workload1.<domain>    | k8-platform-workload1  | _edns-workload1-.  |
+#
+# tests/unit/test_workload1_apps.sh asserts this file's filter/owner/prefix are
+# disjoint from both the hub (terraform/management/helm.tf) and the platform
+# spoke (platform-services/external-dns/values.yaml).
+#
+# DYNAMIC values (AGENTS §8.1, NOT committed): the `<domain>` root and the IRSA
+# role ARN (eks.amazonaws.com/role-arn) are account-ephemeral. They are overlaid
+# by the ArgoCD Application (argocd/apps/spoke/workload1-external-dns.yaml) via
+# valuesObject — domainFilters[0] := workload1.${domain} and the SA role-arn from
+# the workload1 external-dns IAM role (created by the XSpokeAccess Composition).
+# The placeholders below are overridden at sync time.
+provider:
+  name: aws
+policy: upsert-only
+# Spoke-only subdomain. domainFilters[0] is overlaid with workload1.<domain> at
+# sync time; this literal is a render placeholder, never a real domain in git.
+domainFilters:
+  - "workload1.PLACEHOLDER_DOMAIN"
+# Distinct owner id + prefix so the workload1 TXT registry never collides with
+# the hub (k8-platform-mgmt) or the platform spoke (k8-platform-platform).
+# Non-negotiable (auto-008 S3).
+txtOwnerId: "k8-platform-workload1"
+txtPrefix: "_edns-workload1-."
+sources:
+  - ingress
+serviceAccount:
+  annotations:
+    # Overlaid by the Application's valuesObject (workload1 external-dns IRSA role):
+    eks.amazonaws.com/role-arn: "PLACEHOLDER_OVERRIDDEN_BY_APPLICATION"
+env:
+  - name: AWS_REGION
+    value: "PLACEHOLDER_REGION"
