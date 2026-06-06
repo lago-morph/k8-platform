@@ -65,6 +65,48 @@ else
   crossplane version --client || true
 fi
 
+# --- AWS CLI v2 — required for every live op + scripts/whereami.sh -------
+# Not pinned (runtime tool; the v2 installer always fetches current). Skip
+# if already present.
+if command -v aws >/dev/null 2>&1; then
+  echo "  aws: $(aws --version 2>&1) already present"
+else
+  echo "  aws: installing AWS CLI v2"
+  tmp="$(mktemp -d)"
+  curl -fsSL "https://awscliv2.zip" -o "${tmp}/awscliv2.zip" 2>/dev/null \
+    || curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "${tmp}/awscliv2.zip"
+  ( cd "$tmp" && unzip -q awscliv2.zip )
+  $SUDO "${tmp}/aws/install" --update >/dev/null 2>&1 \
+    || $SUDO "${tmp}/aws/install" >/dev/null 2>&1
+  rm -rf "$tmp"
+  aws --version 2>&1 || true
+fi
+
+# --- Helm — pinned to CI (azure/setup-helm version in versions.env) ------
+if command -v helm >/dev/null 2>&1 && helm version --short 2>/dev/null | grep -q "${HELM_VERSION}"; then
+  echo "  helm: ${HELM_VERSION} already present"
+else
+  echo "  helm: installing ${HELM_VERSION}"
+  tmp="$(mktemp -d)"
+  curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" -o "${tmp}/helm.tgz"
+  tar -xzf "${tmp}/helm.tgz" -C "$tmp"
+  $SUDO install -m 0755 "${tmp}/linux-amd64/helm" "${BIN}/helm"
+  rm -rf "$tmp"
+  helm version --short 2>&1 || true
+fi
+
+# --- ArgoCD CLI — pinned to the deployed server version -----------------
+if command -v argocd >/dev/null 2>&1 && argocd version --client --short 2>/dev/null | grep -q "${ARGOCD_VERSION}"; then
+  echo "  argocd: ${ARGOCD_VERSION} already present"
+else
+  echo "  argocd: installing ${ARGOCD_VERSION}"
+  $SUDO curl -fsSL \
+    "https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_VERSION}/argocd-linux-amd64" \
+    -o "${BIN}/argocd"
+  $SUDO chmod +x "${BIN}/argocd"
+  argocd version --client --short 2>&1 || true
+fi
+
 echo "== sandbox-setup: done =="
 echo "Note: scripts/composition-render.sh also needs a running Docker daemon"
 echo "      (functions render in Docker). Start it with: sudo dockerd &"
