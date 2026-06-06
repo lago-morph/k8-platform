@@ -32,6 +32,14 @@ txtOwnerId: "k8-platform-platform"
 txtPrefix: "_edns-platform-."
 sources:
   - ingress
+# The domainFilter (platform.<domain>) is a SUBDOMAIN of the account's only
+# hosted zone (the base <domain> zone — there is no delegated platform.<domain>
+# zone), so external-dns must be told to manage subdomain records inside the
+# PARENT zone. Without this it matches zero zones and publishes nothing — same
+# root cause as the hub instance (run 27071670054). Filters stay disjoint from
+# the hub, so test_external_dns_disjoint_filters.sh is unaffected.
+extraArgs:
+  - "--aws-zone-match-parent"
 serviceAccount:
   annotations:
     # Overlaid by the Application's valuesObject (spoke external-dns IRSA role):

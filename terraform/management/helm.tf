@@ -105,6 +105,18 @@ resource "helm_release" "external_dns" {
     value = "service"
   }
   set {
+    # The domainFilter above (management.<domain>) is a SUBDOMAIN of the only
+    # hosted zone in the account (the base <domain> zone — there is no delegated
+    # management.<domain> zone). Without this flag external-dns refuses to use a
+    # PARENT zone to manage a subdomain filter, so it matches zero zones and
+    # creates nothing ("Applying provider record filter for domains: []",
+    # run 27071670054 — argocd.management.<domain> never published). This flag
+    # lets it manage management.<domain> records inside the parent zone.
+    # (Latent since the auto-008 narrowing from var.domain → management.<domain>.)
+    name  = "extraArgs[0]"
+    value = "--aws-zone-match-parent"
+  }
+  set {
     name  = "env[0].name"
     value = "AWS_REGION"
   }
@@ -493,6 +505,16 @@ resource "terraform_data" "crossplane_provider_aws_rds" {
       spec:
         package: "xpkg.upbound.io/upbound/provider-aws-rds:${var.crossplane_provider_aws_rds_version}"
       MANIFEST
+      # Wait for the provider to install its CRDs before anything references the
+      # rds.aws.m.upbound.io/Instance kind. policies/audit/12 is a Kyverno
+      # ClusterPolicy that matches that CRD; Kyverno's validate-policy webhook
+      # rejects a policy whose matched kind has no resolvable GVR, so the kyverno
+      # policy apply (terraform_data.kyverno_audit_policies, which depends_on
+      # this resource) MUST run after the Instance CRD is Established.
+      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl wait --for=condition=Healthy --timeout=300s \
+        provider.pkg.crossplane.io/provider-aws-rds
+      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl wait --for=condition=established --timeout=180s \
+        crd/instances.rds.aws.m.upbound.io
     EOT
   }
 
@@ -544,7 +566,10 @@ resource "terraform_data" "kyverno_audit_policies" {
     EOT
   }
 
-  depends_on = [helm_release.kyverno]
+  # policies/audit/12 matches rds.aws.m.upbound.io/Instance; that CRD is
+  # installed by provider-aws-rds. Depend on it (which waits for the CRD to be
+  # Established) so Kyverno can resolve the GVR when the policy bundle applies.
+  depends_on = [helm_release.kyverno, terraform_data.crossplane_provider_aws_rds]
 }
 
 # ---- ArgoCD ----

@@ -61,5 +61,21 @@ else
   echo "ok: spoke txtPrefix set ($spoke_prefix)"
 fi
 
+# Both filters are SUBDOMAINS of the account's single (base-domain) hosted zone,
+# so both ExternalDNS instances need --aws-zone-match-parent or they match zero
+# zones and publish nothing (run 27071670054: argocd.management.<domain> never
+# created). Regression guard — without this flag the disjoint filters are moot
+# because neither instance writes anything.
+if grep -q 'aws-zone-match-parent' "$HELM_TF"; then
+  echo "ok: hub ExternalDNS sets --aws-zone-match-parent (subdomain filter on parent zone)"
+else
+  echo "FAIL: hub ExternalDNS must set --aws-zone-match-parent — management.<domain> is a subdomain of the base zone, so without it external-dns matches no zone"; FAIL=1
+fi
+if grep -q 'aws-zone-match-parent' "$SPOKE_VALUES"; then
+  echo "ok: spoke ExternalDNS sets --aws-zone-match-parent (subdomain filter on parent zone)"
+else
+  echo "FAIL: spoke ExternalDNS must set --aws-zone-match-parent — platform.<domain> is a subdomain of the base zone"; FAIL=1
+fi
+
 [ "$FAIL" -eq 0 ] && echo "PASS: hub/spoke ExternalDNS filters disjoint" || echo "FAILED"
 exit "$FAIL"
