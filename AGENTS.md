@@ -900,6 +900,46 @@ real limit was verification access (no sandbox cluster creds), not
 provisioning. See
 `retrospective/2026-06-05-140/AGENTS-MD-429a56a4b8-distinguish-provisioning-from-verification.md`.*
 
+### 6.23 Never remove or weaken error checking to work around an undiagnosed error
+
+**Disabling a failing check to make red go green is the worst possible
+"fix" — always.** When a guardrail fails — an admission webhook, a
+validation hook, a test, a verification step, a lint, a type check, an
+assertion, a readiness gate — and you **cannot diagnose the root cause**,
+you do NOT delete, disable, bypass, or weaken the check to get past it. The
+check is load-bearing; a failing check is *information*, not an obstacle.
+Removing it hides the exact problem the check exists to surface and ships
+the failure downstream.
+
+When a check fails and the cause is unclear, the ONLY acceptable moves are:
+
+1. **Fix the actual cause.** Get the visibility you're missing (read the
+   log, add diagnostics through a path that does not remove the check) and
+   address the underlying problem.
+2. **Use a mechanism that works WITH the check, not around it.** E.g. if an
+   in-place Helm upgrade deadlocks on a pre-upgrade hook, force a clean
+   delete+create (which runs the install hook cleanly) rather than disabling
+   the hook; if a test is environment-flaky, fix the environment, not the
+   assertion.
+3. **Stop, escalate, and document.** If you genuinely cannot fix it now,
+   leave the check in place, log it to `docs/open-issues.md`, and surface the
+   blocker. A documented red is honest; a green achieved by deleting the
+   check is a lie.
+
+Disabling the check is never one of the options. "Turn off the webhook",
+"skip the test", "add `|| true`", "lower the assertion", "comment out the
+validation", "`--insecure`/`-k` to dodge a cert error" — these are all the
+same anti-pattern: trading a *visible* failure for an *invisible* one. If
+you catch yourself proposing to remove a check because you can't make it
+pass, stop: that is the signal you have not yet found the real fix.
+
+*Grounded in: 2026-06-06 auto-007 — facing an ingress-nginx admission-webhook
+pre-upgrade hook timeout the agent could not diagnose (no cluster visibility),
+it proposed and implemented disabling the admission webhook. The user: "Option
+a is terrible … You are hiding the error not fixing it. The webhook is there
+for a reason." The correct fix kept the webhook and forced a clean recreate by
+tainting the resource in Terraform state.*
+
 ---
 
 ## 7. Testing loops — companion skills
