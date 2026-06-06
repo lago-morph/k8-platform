@@ -38,6 +38,12 @@ spec:
     - "https://github.com/lago-morph/k8-platform.git"
     - "https://kubernetes.github.io/ingress-nginx"
     - "https://kubernetes-sigs.github.io/external-dns/"
+    # phase-4 observability (auto-008 §1 downstream): the central
+    # kube-prometheus-stack + Loki charts (deployed to the spoke) and Grafana
+    # Alloy (the hub agent — see argocd/apps/spoke/observability-alloy-mgmt.yaml
+    # open question). Pinned exact URLs, no wildcards (S1; CI-gated).
+    - "https://prometheus-community.github.io/helm-charts"
+    - "https://grafana.github.io/helm-charts"
   # Destinations: spoke clusters only. Explicitly NOT
   # https://kubernetes.default.svc (the hub in-cluster destination) — that is
   # `k8-platform`'s exclusive territory. Spokes are addressed by NAME (the
