@@ -1,0 +1,59 @@
+# XPlatformCluster — provisions the first WORKLOAD (tenant) EKS cluster.
+#
+# Phase 6 / Iteration 6 (REQ-WL-01..05). REUSES the XPlatformCluster XRD
+# (crossplane/xrds/platform-cluster.yaml) parameterized by subdomain — auto-007
+# envelope decision #3: reuse the cluster abstraction, do NOT mint a new XRD. A
+# workload cluster is just another XPlatformCluster with a different name +
+# subdomain. Mirrors clusters/platform/platform-cluster-claim.yaml EXACTLY (v2
+# namespaced XR, sync-wave 10), differing only in name/namespace/subdomain.
+#
+# Provisioning this XR creates, as one unit:
+#   - EKS cluster + managed node group + IAM roles, in the shared private
+#     subnets from the base module
+#   - a DNS-validated wildcard ACM certificate `*.workload1.<domain>`
+#     (REQ-WL-02 — ACM via Crossplane, no cert-manager/ACME; docs/decisions/0003)
+# The issued cert ARN is published on status.certificateArn and consumed by the
+# workload1 cluster's ingress-nginx NLB.
+#
+# Account-ephemeral inputs (private subnet IDs, Route53 zone id, root domain) are
+# NOT in this file (AGENTS §8.1). They are injected from the base Terraform
+# output via the `cluster-network` EnvironmentConfig that terraform/management
+# materializes (ADR-e557a40123 / docs/decisions/0003), so this manifest carries
+# no placeholders and needs no per-account edits.
+#
+# EC2 9-INSTANCE QUOTA: management cluster uses 2 + platform cluster uses 2 +
+# this workload1 cluster uses 2 = 6 instances, within the 9-instance EC2 quota in
+# this account (3 headroom). Bump the node group only after the quota is raised.
+#
+# WARNING: when this XR is synced by ArgoCD, Crossplane provisions REAL AWS
+# resources. The corresponding ArgoCD Application
+# (argocd/apps/workload1-cluster.yaml) is configured WITHOUT automated sync —
+# sync is a deliberate operator action.
+apiVersion: platform.k8-platform.io/v1alpha1
+kind: XPlatformCluster
+metadata:
+  name: workload1
+  namespace: workload1
+  annotations:
+    # Wave 10 — apply after the namespace (wave -1 inside this synced
+    # directory) and well after the parent app's sync wave (`-2` for
+    # crossplane-resources XRDs/Compositions). The XRD must be Established
+    # before this XR can render.
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  name: k8-platform-workload1
+  region: us-east-1
+  version: "1.32"
+  dns:
+    # Workload1 services are published at <service>.workload1.<domain>; the
+    # wildcard ACM cert covers *.workload1.<domain>. ExternalDNS on the cluster
+    # is scoped to this subdomain (disjoint from hub `management.` and platform
+    # `platform.`).
+    subdomain: workload1
+  nodeGroup:
+    # t3.medium x 2 — within the 9-instance EC2 quota (mgmt 2 + platform 2 +
+    # workload1 2 = 6, 3 headroom). Bump after the quota is raised.
+    instanceTypes: ["t3.medium"]
+    desiredSize: 2
+    minSize: 1
+    maxSize: 3

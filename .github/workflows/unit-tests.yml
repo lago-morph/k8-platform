@@ -51,8 +51,14 @@ jobs:
       - name: Install yq
         run: |
           set -euo pipefail
+          # Pin sourced from tests/chainsaw/versions.env (YQ_VERSION) — the
+          # single source of truth shared with scripts/sandbox-setup.sh, so the
+          # sandbox and CI cannot drift to a yq that mis-parses the mikefarah
+          # `yq ea` syntax in composition-render.sh (OI-2026-06-06-1).
+          # shellcheck disable=SC1091
+          . tests/chainsaw/versions.env
           sudo curl -fsSL \
-            "https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64" \
+            "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" \
             -o /usr/local/bin/yq
           sudo chmod +x /usr/local/bin/yq
           yq --version
@@ -96,17 +102,22 @@ jobs:
         continue-on-error: true
         run: |
           set -uo pipefail
-          # Download to a temp dir so the binary never shadows the repo's
-          # crossplane/ directory. The install.sh script drops `crossplane`
-          # (a binary) in $PWD; if $PWD contains a crossplane/ directory the
-          # shell mv would move the directory, not a binary, to /usr/local/bin.
+          # Pin the CLI to the SAME Crossplane version the management cluster
+          # runs (CROSSPLANE_CHART_VERSION) so `crossplane render` in
+          # test_composition_render_fixtures.sh matches what composition-render.sh
+          # verified locally. install.sh-from-main installed a CLI that defaulted
+          # the render orchestrator image to the floating :stable tag (v1.20.9 →
+          # `unexpected argument internal`); pinning removes that drift.
+          # OI-2026-06-06-1. Best-effort: a failure here only downgrades the
+          # render tests to skip mode.
+          # shellcheck disable=SC1091
+          . tests/chainsaw/versions.env
+          ver="v${CROSSPLANE_CHART_VERSION}"
           tmp=$(mktemp -d)
-          pushd "$tmp" > /dev/null
-          curl -fsSL "https://raw.githubusercontent.com/crossplane/crossplane/main/install.sh" | sh || true
-          popd > /dev/null
-          if [ -f "$tmp/crossplane" ] && [ -x "$tmp/crossplane" ]; then
+          if curl -fsSL "https://releases.crossplane.io/stable/${ver}/bin/linux_amd64/crank" -o "$tmp/crossplane"; then
             sudo mv "$tmp/crossplane" /usr/local/bin/crossplane
-            /usr/local/bin/crossplane --version || true
+            sudo chmod +x /usr/local/bin/crossplane
+            /usr/local/bin/crossplane version --client || true
           else
             echo "(crossplane CLI install failed — render tests will skip)"
           fi
@@ -259,6 +270,6 @@ jobs:
       # tests above (~30s of overlap on a clean checkout) in exchange
       # for never silently dropping a test from CI. Per AGENTS.md §6.13
       # the per-step list above remains useful for Actions-UI clarity on
-      # the tests that are wired individually.
+      # the tests that have been wired individually.
       - name: run.sh catch-all (gates every test in tests/unit/run.sh)
         run: bash tests/unit/run.sh

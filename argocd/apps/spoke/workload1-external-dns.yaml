@@ -1,0 +1,58 @@
+# ArgoCD Application — ExternalDNS on the workload1 (spoke) cluster.
+#
+# Phase 6 (REQ-WL-03). Mirrors argocd/apps/spoke/external-dns.yaml, repointed to
+# the workload1 spoke. Scoped to workload1.<domain> with a txt-owner-id / prefix
+# DISJOINT from BOTH the hub (management.<domain> / k8-platform-mgmt) AND the
+# platform spoke (platform.<domain> / k8-platform-platform): all three
+# external-dns instances share the single account Route53 zone, so any overlap
+# corrupts the TXT-ownership registry (auto-008 §6 / S3).
+#
+# This Application's value file is the workload1-specific
+# platform-services/external-dns/workload1-values.yaml (NOT the platform spoke's
+# values.yaml) — a separate committed file because the disjoint scoping
+# (domainFilters=workload1.<...>, txtOwnerId=k8-platform-workload1,
+# txtPrefix=_edns-workload1-.) is the stable per-cluster identity. The remaining
+# per-cluster differences — the live root <domain> and the IRSA role-arn — stay
+# ephemeral and are overlaid into helm.valuesObject at registration, never
+# committed (AGENTS §8.1).
+#
+# OVERLAID-AT-REGISTRATION (ephemeral, AGENTS §8.1): domainFilters[0] :=
+# workload1.${domain}, env AWS_REGION, and serviceAccount role-arn := the
+# workload1 spoke external-dns IRSA role created by the XSpokeAccess Composition.
+# Patched into helm.valuesObject at registration; absent in git. INERT until the
+# workload1 spoke is registered.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: workload1-external-dns
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+spec:
+  project: platform-spoke
+  sources:
+    - repoURL: https://kubernetes-sigs.github.io/external-dns/
+      chart: external-dns
+      targetRevision: 1.15.0
+      helm:
+        valueFiles:
+          - $values/platform-services/external-dns/workload1-values.yaml
+    - repoURL: https://github.com/lago-morph/k8-platform.git
+      targetRevision: main
+      ref: values
+  destination:
+    name: workload1-spoke
+    namespace: external-dns
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m

@@ -38,6 +38,12 @@ spec:
     - "https://github.com/lago-morph/k8-platform.git"
     - "https://kubernetes.github.io/ingress-nginx"
     - "https://kubernetes-sigs.github.io/external-dns/"
+    # phase-4 observability (auto-008 §1 downstream): the central
+    # kube-prometheus-stack + Loki charts (deployed to the spoke) and Grafana
+    # Alloy (the hub agent — see argocd/apps/spoke/observability-alloy-mgmt.yaml
+    # open question). Pinned exact URLs, no wildcards (S1; CI-gated).
+    - "https://prometheus-community.github.io/helm-charts"
+    - "https://grafana.github.io/helm-charts"
     # phase-5 auth (REQ-AUTH-01): Keycloak via the Bitnami chart. Pinned EXACT
     # (no wildcard — CI-gated by test_platform_spoke_appproject.sh). The chart
     # VERSION is pinned in argocd/apps/spoke/keycloak.yaml (Bitnami keycloak

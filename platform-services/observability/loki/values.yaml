@@ -1,0 +1,76 @@
+# Loki Helm values for the platform (spoke) cluster — the central LOG store
+# (REQ-OBS-01). The hub (management) Alloy agent pushes management-cluster pod
+# logs here (REQ-OBS-02); Grafana (kube-prometheus-stack, same cluster) queries
+# it as a datasource.
+#
+# Deployed by the hub ArgoCD as a plain spoke Application
+# (argocd/apps/spoke/observability-loki.yaml), multi-source: this static values
+# file + the upstream chart. Sync-wave 40, same as kube-prometheus-stack.
+#
+# Single-binary deployment mode — the smallest footprint Loki (all components in
+# one process, filesystem storage). Right-sized for a demo spoke on t3.medium
+# nodes; NOT the SimpleScalable/Distributed topology (auto-008 sizing). No
+# account-ephemeral values here (no S3 bucket / domain) — filesystem-backed.
+
+# Single-binary topology: run exactly one Loki replica, no read/write/backend
+# split, no caches, no gateway-fronted microservices.
+deploymentMode: SingleBinary
+
+loki:
+  # Loki 3.x requires a schema config; tsdb + filesystem is the small footprint.
+  auth_enabled: false
+  commonConfig:
+    replication_factor: 1
+  storage:
+    type: filesystem
+  schemaConfig:
+    configs:
+      - from: "2024-04-01"
+        store: tsdb
+        object_store: filesystem
+        schema: v13
+        index:
+          prefix: loki_index_
+          period: 24h
+  # Keep query/ingest limits modest for the demo.
+  limits_config:
+    retention_period: 168h  # 7d
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+singleBinary:
+  replicas: 1
+  persistence:
+    enabled: true
+    size: 10Gi
+
+# Disable everything that belongs to the scalable/distributed topologies so the
+# single-binary footprint stays minimal.
+read:
+  replicas: 0
+write:
+  replicas: 0
+backend:
+  replicas: 0
+chunksCache:
+  enabled: false
+resultsCache:
+  enabled: false
+gateway:
+  enabled: false
+
+# This Loki stores logs only; the chart's optional self-monitoring / canary /
+# test pods add pods we do not need on a small spoke.
+monitoring:
+  selfMonitoring:
+    enabled: false
+    grafanaAgent:
+      installOperator: false
+  lokiCanary:
+    enabled: false
+test:
+  enabled: false

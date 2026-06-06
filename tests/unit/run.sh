@@ -71,6 +71,12 @@ run_suite tests/unit/test_external_dns_disjoint_filters.sh
 run_suite tests/unit/test_spoke_values_no_ephemeral.sh
 run_suite tests/unit/test_hello_chart_render.sh
 run_suite tests/unit/test_spoke_apps.sh
+# phase-4 observability (REQ-OBS-01..05)
+run_suite tests/unit/test_observability_apps.sh
+# phase-6 first workload cluster (REQ-WL-01..05)
+run_suite tests/unit/test_workload1_apps.sh
+# management ingress cert coverage (origin/main)
+run_suite tests/unit/test_management_ingress_cert_coverage.sh
 # phase-5 auth (Keycloak)
 run_suite tests/unit/test_keycloak_apps.sh
 

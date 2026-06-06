@@ -1,0 +1,106 @@
+# kube-prometheus-stack Helm values for the platform (spoke) cluster — the
+# CENTRAL observability stack (REQ-OBS-01/03/04). Prometheus + Grafana +
+# Alertmanager. The hub (management) cluster runs only an Alloy agent that
+# remote-writes metrics + pushes logs here (see observability-alloy-mgmt.yaml).
+#
+# Deployed by the hub ArgoCD as a plain spoke Application
+# (argocd/apps/spoke/observability-kube-prometheus-stack.yaml), multi-source:
+# this static values file + the upstream chart. Sync-wave 40 (after ingress-nginx
+# + ExternalDNS at wave 20, so the Grafana Ingress resolves immediately).
+#
+# DYNAMIC value (AGENTS §8.1, NOT committed): the `<domain>` root in the Grafana
+# Ingress host is account-ephemeral. It is overlaid by the Application's
+# helm.valuesObject at sync time (grafana.ingress.hosts[0] :=
+# grafana.platform.${domain}). The PLACEHOLDER_DOMAIN below is a render
+# placeholder, never a real domain in git (CI-gated by
+# tests/unit/test_spoke_values_no_ephemeral.sh).
+#
+# Resources kept small — the spoke runs on t3.medium nodes (auto-008 sizing).
+
+# ── Prometheus ─────────────────────────────────────────────────────────────
+prometheus:
+  prometheusSpec:
+    # Accept remote_write from the hub Alloy agent (REQ-OBS-02). The agent ships
+    # management-cluster metrics here over the in-cluster service exposed via the
+    # spoke ingress; the receiver endpoint is /api/v1/write on this Prometheus.
+    enableRemoteWriteReceiver: true
+    # Annotation-driven scraping safety: keep ALL discovered ServiceMonitors /
+    # PodMonitors / scrape configs, not only those with the chart's release
+    # label, so annotation-based (prometheus.io/scrape) additional scrape jobs
+    # and cross-namespace monitors are honored (REQ-OBS-04).
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    scrapeConfigSelectorNilUsesHelmValues: false
+    # 7d local retention is plenty for the demo; keeps the PV small.
+    retention: 7d
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        memory: 1Gi
+    # Modest persistent volume — single replica, no HA on a demo spoke.
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 10Gi
+
+# ── Grafana ────────────────────────────────────────────────────────────────
+grafana:
+  # admin password is NOT committed — left to the chart default at install and
+  # rotated out-of-band / via ESO later. No secret material in git (AGENTS §8.1).
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    # hosts[0] is overlaid with grafana.platform.<domain> by the Application's
+    # valuesObject at sync time; this literal is a render placeholder.
+    hosts:
+      - grafana.platform.PLACEHOLDER_DOMAIN
+    # NO tls: block — TLS terminates at the ingress-nginx NLB via the cluster's
+    # wildcard ACM cert (*.platform.<domain>), mirroring ingress/values.yaml +
+    # hello. No cert-manager (docs/0003).
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+
+# ── Alertmanager ───────────────────────────────────────────────────────────
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
+    storage:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 2Gi
+
+# ── Node-level collectors (keep small on a 2-node demo spoke) ───────────────
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      memory: 64Mi
+
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      memory: 128Mi

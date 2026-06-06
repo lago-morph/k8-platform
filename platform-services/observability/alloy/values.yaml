@@ -1,0 +1,115 @@
+# Grafana Alloy Helm values — the AGENT on the MANAGEMENT (hub) cluster
+# (REQ-OBS-02). Alloy scrapes hub metrics + tails hub pod logs and ships them to
+# the CENTRAL stack on the platform (spoke) cluster: metrics via Prometheus
+# remote_write, logs via the Loki push API.
+#
+# IMPORTANT — destination cluster: this agent runs on the HUB, but its OUTPUT
+# targets the SPOKE. The spoke Prometheus/Loki are reached over the spoke
+# ingress (grafana/prometheus/loki hostnames under platform.<domain>) — an
+# in-cluster-svc-via-spoke endpoint. Both endpoints are account-ephemeral
+# (depend on <domain>) and are therefore PLACEHOLDERs here, overlaid at
+# registration by the Application's valuesObject (AGENTS §8.1; CI-gated by
+# tests/unit/test_spoke_values_no_ephemeral.sh).
+#
+# Deployed by the hub ArgoCD as argocd/apps/spoke/observability-alloy-mgmt.yaml.
+# See that Application's header for the OPEN QUESTION about which AppProject a
+# hub-targeted third-party chart belongs to (the k8-platform project forbids
+# third-party charts; the platform-spoke project forbids the hub destination).
+
+# Run Alloy as a DaemonSet so it can tail every node's pod logs (the logs
+# pipeline reads /var/log on each node) and scrape node-local targets.
+controller:
+  type: daemonset
+
+alloy:
+  # Annotation-driven scraping (REQ-OBS-04): the river config below uses
+  # discovery.kubernetes + discovery.relabel to honor the standard
+  # prometheus.io/scrape, prometheus.io/port, prometheus.io/path annotations,
+  # then remote_writes to the spoke Prometheus. It also tails pod logs and
+  # pushes them to the spoke Loki.
+  #
+  # PLACEHOLDER_SPOKE_PROMETHEUS_REMOTE_WRITE_URL and
+  # PLACEHOLDER_SPOKE_LOKI_PUSH_URL are overlaid at registration with the real
+  # spoke endpoints (e.g. https://prometheus.platform.<domain>/api/v1/write and
+  # https://loki.platform.<domain>/loki/api/v1/push). Never real in git.
+  configMap:
+    content: |-
+      // ── metrics: annotation-driven scrape of hub pods ──────────────────
+      discovery.kubernetes "pods" {
+        role = "pod"
+      }
+
+      discovery.relabel "annotated_pods" {
+        targets = discovery.kubernetes.pods.targets
+
+        // keep only pods opted-in via prometheus.io/scrape: "true"
+        rule {
+          source_labels = ["__meta_kubernetes_pod_annotation_prometheus_io_scrape"]
+          regex         = "true"
+          action        = "keep"
+        }
+        // honor prometheus.io/path
+        rule {
+          source_labels = ["__meta_kubernetes_pod_annotation_prometheus_io_path"]
+          regex         = "(.+)"
+          target_label  = "__metrics_path__"
+          action        = "replace"
+        }
+        // honor prometheus.io/port (host:port)
+        rule {
+          source_labels = ["__address__", "__meta_kubernetes_pod_annotation_prometheus_io_port"]
+          regex         = "([^:]+)(?::\\d+)?;(\\d+)"
+          replacement   = "$1:$2"
+          target_label  = "__address__"
+          action        = "replace"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label  = "namespace"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label  = "pod"
+        }
+      }
+
+      prometheus.scrape "annotated" {
+        targets    = discovery.relabel.annotated_pods.output
+        forward_to = [prometheus.remote_write.spoke.receiver]
+      }
+
+      // remote_write management-cluster metrics to the SPOKE Prometheus.
+      prometheus.remote_write "spoke" {
+        endpoint {
+          url = "PLACEHOLDER_SPOKE_PROMETHEUS_REMOTE_WRITE_URL"
+        }
+        external_labels = {
+          cluster = "management",
+        }
+      }
+
+      // ── logs: tail hub pod logs, push to the SPOKE Loki ────────────────
+      discovery.kubernetes "log_pods" {
+        role = "pod"
+      }
+
+      loki.source.kubernetes "pods" {
+        targets    = discovery.kubernetes.log_pods.targets
+        forward_to = [loki.write.spoke.receiver]
+      }
+
+      loki.write "spoke" {
+        endpoint {
+          url = "PLACEHOLDER_SPOKE_LOKI_PUSH_URL"
+        }
+        external_labels = {
+          cluster = "management",
+        }
+      }
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 256Mi

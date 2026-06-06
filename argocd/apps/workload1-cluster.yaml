@@ -1,0 +1,55 @@
+# ArgoCD Application — syncs clusters/workload1/workload-cluster.yaml.
+#
+# Phase 6 entry point. Mirrors argocd/apps/platform-cluster-claim.yaml: this
+# Application is intentionally configured WITHOUT automated sync — manual sync
+# only:
+#
+#   - syncPolicy is empty (no `automated:` block).
+#   - selfHeal is off.
+#   - prune is off.
+#
+# Why: an XPlatformCluster XR provisions a real EKS cluster + node group, which
+# takes ~15 minutes and costs real money. Auto-sync would mean any git push to
+# the XR file (e.g. a typo fix) starts a new cluster provision. Sync is an
+# operator-confirmed action via the ArgoCD UI or
+# `argocd app sync workload1-cluster`.
+#
+# The Application is created by the app-of-apps bootstrap; once created, no
+# further automation touches the XR until an operator clicks Sync. The workload1
+# spoke add-on apps (argocd/apps/spoke/workload1-*.yaml) ARE free to use
+# automated sync — only the cluster-creation XR is manual.
+#
+# tests/unit/test_argocd_app_revision_pinned.sh keys on the literal
+# "manual sync only" / "without automated sync" in this header to accept the
+# absent syncPolicy.automated block.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: workload1-cluster
+  namespace: argocd
+  annotations:
+    # Wave 10 — well after wave 0 (crossplane XRDs/Compositions). The XRD must
+    # be Established before this Application's resources can render.
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  project: k8-platform
+  source:
+    repoURL: https://github.com/lago-morph/k8-platform.git
+    targetRevision: main
+    path: clusters/workload1
+    directory:
+      # clusters/workload1/ ships TWO manifests: 00-namespace.yaml (the
+      # `workload1` namespace this Application's destination references) and
+      # workload-cluster.yaml (the v2 namespaced XPlatformCluster XR).
+      include: '{00-namespace.yaml,workload-cluster.yaml}'
+  destination:
+    server: https://kubernetes.default.svc
+    # XPlatformCluster is a namespaced XR (v2 scope: Namespaced) and lives in the
+    # `workload1` namespace; this Application's destination namespace must match
+    # the XR's metadata.namespace. The Namespace object itself is also synced by
+    # this Application (00-namespace.yaml above).
+    namespace: workload1
+  # No syncPolicy.automated — manual sync only. See header.
+  syncPolicy:
+    syncOptions:
+      - ServerSideApply=true

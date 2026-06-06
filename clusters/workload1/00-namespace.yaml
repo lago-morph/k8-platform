@@ -1,0 +1,20 @@
+# Namespace `workload1` — home of the v2 XPlatformCluster XR that provisions
+# the first workload (tenant) EKS cluster.
+#
+# Phase 6 / Iteration 6 (REQ-WL-01). Mirrors clusters/platform/00-namespace.yaml:
+# with Crossplane v2, XPlatformCluster is a namespaced XR
+# (apiextensions.crossplane.io/v2 + scope: Namespaced). Both the XR itself and
+# its connection-secret land in this namespace.
+#
+# Sync ordering: this Namespace file is sync-wave -1 so it lands slightly before
+# the XPlatformCluster (wave 10) — guarantees the namespace exists when ArgoCD
+# creates the XR. The parent ArgoCD Application
+# (argocd/apps/workload1-cluster.yaml) is wave 10 at the Application level, but
+# per-resource waves inside the synced directory order the Namespace before the
+# XR.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: workload1
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
