@@ -9,24 +9,54 @@ last, the current state, and the next concrete steps. Keep it factual
 ## NEW SESSION QUICKSTART (read this first)
 
 > **[auto-010 — 2026-06-06 — SUPERSEDES the auto-009 block below.]** Full detail:
-> `run-summary-auto-010.md`. Run on a FRESH account (`596430611165`); all work on
-> branch `claude/k8-pods-phase-validation-7oqVK` (PR #159), NOT yet merged.
-> - **maxPods → 110 DONE + proven**: AL2023 + nodeadm node group up in 1m47s live
->   (eks.tf). Nodes now allow ~110 pods, not ~17.
-> - **Phase 0 VERIFIED** (run 27070773919). **Phase 1 VERIFIED — fully green**
->   (run 27072048311): EKS ACTIVE, 3 nodes, full stack running, ArgoCD UI HTTP
->   200, provider-aws-rds installed, all policies applied. All 5 fixes live-proven.
-> - **4 real bugs fixed w/ regression tests** (run-summary §2): helm static-token
->   expiry → **exec auth**; Kyverno bare-CRD-kind → **group-qualified**;
->   external-dns **--aws-zone-match-parent** (subdomain filter on the parent zone
->   → 0 records); mikefarah-yq glob `==`.
+> `run-summary-auto-010.md` + `retrospective/2026-06-06-159/`.
+>
+> **⚠️ ACCOUNT IS INHERITED, NOT ROTATED.** Unlike the usual §8.4 assumption, the
+> next session inherits the SAME LIVE account `596430611165` (us-east-1). **Phases
+> 0 and 1 are already APPLIED and VERIFIED live — do NOT rebuild them.** Run
+> `scripts/whereami.sh` first to confirm the account/cluster are still up, then
+> proceed straight to phase 3. Work continues on branch
+> `claude/k8-pods-phase-validation-7oqVK` (PR #159, open, NOT yet merged).
+>
+> Live state on the inherited account (run 27072048311):
+> - **EKS `k8-platform-mgmt` ACTIVE, 3 nodes Ready**, full mgmt stack running
+>   (ArgoCD, Crossplane + all providers **incl. provider-aws-rds**, ESO, Kyverno,
+>   ingress-nginx, external-dns), all `policies/audit` applied.
+> - **ArgoCD UI is REACHABLE**: `https://argocd.management.596430611165.realhandsonlabs.net`
+>   (HTTP 200; admin password = `terraform/management` output `argocd_admin_password`,
+>   read from S3 state `s3://k8-platform-tfstate-596430611165/k8-platform/management/terraform.tfstate`).
+> - **maxPods → 110 DONE + proven** (AL2023 nodeadm node group up in 1m47s; eks.tf).
 > - **Phase 4 COMPLETE**: hub Alloy via new `hub-addons` AppProject (Option A).
 > - **Phase 5 COMPLETE (authored+tested)**: `XDatabase` XRD + RDS Composition +
->   `keycloak-db` wiring + provider-aws-rds tf; live RDS NOT yet provisioned.
-> - **NEXT** (run-summary §6): confirm `f0279b4` green → dispatch phase-2 chainsaw
->   → phase-3 live (auto-009 runbook) → phase-5 live RDS. Merge #159 when green.
-> - `aws` / `kubectl` / `helm` / `kubeconform` / mikefarah-`yq` installed in the
->   sandbox; kube-API still private-CA-blocked (use ArgoCD/CI/AWS-CLI).
+>   `keycloak-db` wiring; provider-aws-rds INSTALLED on the cluster. Live RDS not
+>   yet provisioned.
+> - **6 real bugs fixed w/ regression tests** (run-summary §2): helm static-token
+>   expiry → exec auth; Kyverno bare-CRD-kind → group-qualified; external-dns
+>   `--aws-zone-match-parent`; mikefarah-yq glob `==` → `test()`; async-CRD
+>   ordering (policy12↔RDS CRD); chainsaw real-AWS scenarios gated out of the
+>   per-PR kind run.
+>
+> **IMMEDIATE NEXT STEPS (in order):**
+> 1. `scripts/whereami.sh` — confirm account `596430611165` + cluster ACTIVE.
+> 2. **Confirm phase-2 chainsaw green** on commit `fab6026` (run dispatched; real-AWS
+>    scenarios excluded). If only `claim-creates-secret` flaked (OI-2026-05-28-1),
+>    re-kick once. Then re-run the `chainsaw-verify` PR check so #159 goes green.
+> 3. **Phase 3 LIVE** — ArgoCD is reachable, so follow
+>    `decisions/auto-009-phase3-live-completion-runbook.md` end-to-end: argocd login →
+>    sync `platform-cluster-claim` (platform EKS + ACM cert, ~20 min) → build the
+>    XSpokeAccess composition (OIDC/IRSA/AccessEntry) → register the spoke → overlay
+>    ephemeral values → verify `https://hello.platform.<domain>`.
+> 4. **Phase 5 LIVE** — on the spoke, sync the `keycloak-db` XDatabase XR
+>    (`platform-services/keycloak/database/keycloak-db.yaml`); verify the RDS
+>    Instance + connection Secret; Keycloak consumes it. Or run a nightly real-AWS
+>    chainsaw with `CHAINSAW_INCLUDE_REALAWS=1` to validate the RDS flow.
+> 5. **Merge PR #159** once chainsaw-verify is green.
+> - Sandbox tools: `aws`/`kubectl`/`helm`/`kubeconform`/mikefarah-`yq` installed;
+>   kube-API is private-CA-blocked from the sandbox (use ArgoCD CLI / CI / AWS CLI).
+> - Open issues: `OI-2026-06-06-3` (xdatabase `-master` secret orphan),
+>   `OI-2026-06-06-4` (real-AWS chainsaw gating), `OI-2026-05-28-1` (claim-creates-secret flake).
+
+> **[auto-009 — 2026-06-06 — SUPERSEDES the auto-007 block below.]** Full
 
 > **[auto-009 — 2026-06-06 — SUPERSEDES the auto-007 block below.]** Full
 > detail: `run-summary-auto-009.md` + `retrospective/2026-06-06-157.md`.
