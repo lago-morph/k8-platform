@@ -371,4 +371,131 @@ breaks `normalize_stream`'s mikefarah syntax and produces spurious golden
 mismatches locally — install mikefarah/yq v4.44.3 before running the render test
 in the sandbox (CI already does).
 
+## OI-2026-06-06-2 — mgmt provider bootstrap: every AWS provider revision stuck `HEALTHY=False` with no runtime Deployment; two `provider-family-aws` Provider objects from one package
+
+**Status:** **open — diagnosed (structural, labelled below); fix proposed, not yet applied.**
+**Surfaced:** 2026-06-06, `terraform-test.yml phase=management action=apply-and-verify`
+run `27054926075`, main SHA `c3a6cb3`, account `211125540973`. FAILED at
+`terraform_data.crossplane_aws_provider` (helm.tf:241).
+
+### Verbatim symptom
+The Healthy-wait timed out, then the diagnostics dump and the hard SA gate fired:
+```
+2026-06-06T06:43:38Z  error: timed out waiting for the condition on providers/provider-family-aws
+2026-06-06T06:47:07Z  ERROR: expected SA upbound-provider-family-aws, got: MISSING
+2026-06-06T06:47:07Z  DRC serviceAccountTemplate.metadata.name override appears ineffective.
+2026-06-06T06:47:07Z  Error: local-exec provisioner error ... on helm.tf line 241
+```
+
+### Evidence (Observation — quoted from the run log)
+1. **No provider revision EVER reached Healthy.** The diagnostics `kubectl get
+   providers,providerrevisions` (captured at +5m, just before the gate) shows
+   all six AWS providers `INSTALLED=True  HEALTHY=False` and all six revisions
+   `HEALTHY=False  RUNTIME=False  STATE=Active`:
+   ```
+   provider.../provider-aws-acm/eks/iam/route53        True   False  ...:v2.5.0  5m3s
+   provider.../provider-family-aws                      True   False  ...:v2.5.0  5m3s
+   provider.../upbound-provider-family-aws              True   False  ...:v2.5.0  4m57s
+   providerrevision.../provider-family-aws-604659292671          False False ...v2.5.0 Active 5m1s
+   providerrevision.../upbound-provider-family-aws-604659292671  False False ...v2.5.0 Active 4m55s
+   ```
+2. **No provider runtime Deployment or ServiceAccount was ever created.** The
+   `kubectl -n crossplane-system get deploy,sa --show-labels` dump lists ONLY
+   the Crossplane core runtime — there is no `provider-*` Deployment and no
+   `upbound-provider-family-aws` SA at all:
+   ```
+   deployment.apps/crossplane                        1/1 ... 5m26s
+   deployment.apps/crossplane-rbac-manager           1/1 ... 5m26s
+   deployment.apps/function-environment-configs-...  1/1 ... 4m51s
+   serviceaccount/crossplane / default / rbac-manager / function-environment-configs-...
+   ```
+   The pinned `upbound-provider-family-aws` SA is therefore `MISSING` not
+   because the DRC override was *ignored* (the comment in helm.tf hypothesises
+   that), but because **no provider runtime was ever stood up to own a SA.**
+3. **TWO Provider objects reference the same package**, `xpkg.upbound.io/upbound/
+   provider-family-aws:v2.5.0`: `provider-family-aws` (declared in helm.tf, age
+   5m3s) and `upbound-provider-family-aws` (age 4m57s — created ~6s later, as a
+   **dependency** auto-resolved by the four child providers in
+   `crossplane-phase3.tf`; Crossplane derives the dependency Provider's name
+   from the package's own `metadata.name`, `upbound-provider-family-aws`).
+4. **Timeline.** Family Provider applied at +0s (06:38:33); child providers
+   applied in the SAME parallel terraform batch (06:38:38) — there is no
+   `depends_on` ordering between the phase3 child providers and the family
+   Provider. Healthy-wait ran the full `--timeout=300s` (06:38:33→06:43:38) and
+   never met the condition. Providers had **~8m30s** of cluster time before the
+   gate fired (06:38:38 create → 06:47:07 gate); none became Healthy in that
+   window.
+5. **The OI-2026-06-05-3 / -4 / #142-class fix IS already on main** (commits
+   `e635a1e` "wait for provider package install before SA check" + `2fe3f14`
+   "drop by-label provider delete/rollout"). helm.tf:255-257 already does the
+   Healthy-wait, helm.tf:280-285 the label-agnostic SA poll. That fix addressed
+   a *package-manager-lag* race; it does not address this failure, where the
+   provider runtime never comes up at all.
+
+### Labelled root-cause (§6.17)
+- **Exclusion — NOT a pure timeout.** With ~8.5 min of cluster time, zero of six
+  revisions advanced past `RUNTIME=False` and zero provider Deployments were
+  created. A longer wait or larger `--timeout` would have changed nothing — the
+  package manager was not making progress, it was stuck. Bumping the timeout is
+  excluded as the fix.
+- **Exclusion — NOT the DRC SA-name override being ignored.** The helm.tf
+  in-line comment and the error string both blame a silently-ignored
+  `serviceAccountTemplate.metadata.name`. That is excluded: the SA is absent
+  because *no provider Deployment exists to own any SA*, default-named or
+  pinned. The override's effectiveness cannot be the cause when the runtime
+  layer never materialised.
+- **Conclusion (structural):** the bootstrap declares the family provider
+  **twice under two different Provider object names from one package** —
+  `provider-family-aws` (explicit, helm.tf:206-215) and
+  `upbound-provider-family-aws` (implicit dependency created by the
+  `provider-aws-{eks,iam,acm,route53}` child Providers in crossplane-phase3.tf).
+  Two `Provider` objects owning **revisions of the same package** is a
+  package-manager conflict: each revision wants to install the same package's
+  CRDs/runtime, activation does not converge, and the revisions sit
+  `Active / HEALTHY=False / RUNTIME=False` with no Deployment. The wait in
+  helm.tf is keyed on the explicit `provider-family-aws` object, which is one of
+  the two contending parties, so it can never go Healthy.
+  - **Hypothesis (mechanism, not yet positively tested):** the precise failure
+    mode is duplicate-package revision contention / CRD ownership conflict
+    between the two Provider objects. *Consistent with* all six AWS providers
+    (which all transitively depend on the family package) being stuck, while the
+    Crossplane core + function runtimes (independent of the family package) came
+    up fine. Confirming requires the provider/revision `status.conditions`
+    + crossplane-system controller logs, which this run did not capture.
+
+### Proposed fix (specific)
+**Collapse the family provider to a single Provider object so one package is
+owned by one Provider.** The minimal, lowest-risk form: in helm.tf:208 **rename**
+the explicit Provider's `metadata.name` from `provider-family-aws` →
+`upbound-provider-family-aws` (the name the child providers' dependency
+resolver already uses, derived from the package's own `metadata.name`). Then the
+child providers de-dupe onto the existing object instead of spawning a second
+one, and the explicit object keeps the `runtimeConfigRef: aws-provider-config`
+that carries the pinned SA + IRSA annotation. Required companion edit:
+- helm.tf:256 — change the Healthy-wait target from
+  `provider.pkg.crossplane.io/provider-family-aws` →
+  `.../upbound-provider-family-aws` so the wait watches the surviving object.
+- helm.tf:281 / :299 already poll/assert the SA name `upbound-provider-family-aws`
+  — unchanged.
+- irsa.tf:140 (`crossplane-system:upbound-provider-family-aws`) already matches —
+  unchanged.
+
+See `decisions/auto-009-mgmt-provider-sa-fix.md` for the ≥2 alternatives +
+adversarial-review framing — this is a load-bearing bootstrap change.
+
+### Next concrete diagnostic step (before applying)
+Capture the missing positive evidence to confirm the duplicate-package mechanism
+vs. a generic provider-runtime stall: on the next failed (or a probe) run, dump
+`kubectl describe providerrevision provider-family-aws-604659292671
+upbound-provider-family-aws-604659292671` and
+`kubectl -n crossplane-system logs deploy/crossplane` around revision activation.
+If both revisions report a CRD-ownership / "already managed by" conflict, the
+structural conclusion is positively confirmed and the rename is the fix. If
+instead the revisions report image-pull / RBAC errors, the duplicate-Provider
+point is contributing-but-not-sole and the fix must also address a runtime stall.
+
+**Owner / next action:** decision brief written
+(`decisions/auto-009-mgmt-provider-sa-fix.md`); hold for adversarial review +
+user confirmation before editing any terraform (this was a diagnose-only run).
+
 <!-- New entries go above this line, newest first. -->
