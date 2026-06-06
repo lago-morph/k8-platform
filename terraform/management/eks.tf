@@ -55,17 +55,39 @@ module "eks" {
       max_size     = var.node_max_size
       desired_size = var.node_desired_size
 
-      # NOTE: raising kubelet max-pods to 110 (to realize prefix delegation's
-      # higher pod density) is DEFERRED. The obvious approach
-      # (enable_bootstrap_user_data + cloudinit_pre_nodeadm maxPods) made the
-      # module emit AL2 `/etc/eks/bootstrap.sh` user-data, which does NOT exist
-      # on this node group's AL2023 AMI and omitted maxPods entirely — applying
-      # it would have failed node bootstrap and taken the cluster down (caught by
-      # plan + user-data decode, run 27047740806). Doing it safely needs the
-      # node group's ami_type pinned to AL2023 so the module emits nodeadm-format
-      # user-data, verified by decoding the plan's user-data, then a controlled
-      # recycle on a healthy cluster. Tracked as a follow-up; the vpc-cni addon
-      # above already enables prefix delegation at the CNI layer.
+      # Pin the AMI family to AL2023 so the module renders **nodeadm**-format
+      # user-data (a MIME multipart NodeConfig), NOT the legacy AL2
+      # `/etc/eks/bootstrap.sh` script. This pin is load-bearing: a prior
+      # attempt that left ami_type implicit made the module emit AL2
+      # bootstrap.sh with no maxPods, which would have failed node bootstrap
+      # (run 27047740806, caught by user-data decode). With AL2023 pinned, the
+      # cloudinit_pre_nodeadm NodeConfig below is merged by nodeadm at boot.
+      ami_type = "AL2023_x86_64_STANDARD"
+
+      # Realize prefix delegation's higher pod density at the kubelet layer.
+      # The vpc-cni addon above raises the IP ceiling (/28 prefixes); this
+      # raises the kubelet's advertised pod capacity from t3.medium's default
+      # ~17 to 110 (the EKS soft cap for small instances). BOTH are required:
+      # without this, kubelet still advertises ~17 even though IPs are
+      # available. nodeadm merges this NodeConfig with the EKS-injected one;
+      # later docs override, so maxPods here is authoritative.
+      # SAFETY GATE: before any apply, decode the launch-template user_data in
+      # the `management plan` output and confirm it is nodeadm MIME format
+      # carrying `maxPods: 110` — NOT an AL2 `bootstrap.sh` line (AGENTS §6).
+      cloudinit_pre_nodeadm = [
+        {
+          content_type = "application/node.eks.aws"
+          content      = <<-EOT
+            ---
+            apiVersion: node.eks.aws/v1alpha1
+            kind: NodeConfig
+            spec:
+              kubelet:
+                config:
+                  maxPods: 110
+          EOT
+        }
+      ]
 
       # IMDSv2 required — prevents SSRF attacks against the instance metadata service.
       metadata_options = {
