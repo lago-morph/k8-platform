@@ -29,6 +29,17 @@ spec:
       kind: "ClusterPolicy"
     - group: ""
       kind: "Namespace"
+    # crossplane/rbac/01-crossplane-externalsecrets.yaml grants the Crossplane
+    # composite reconciler RBAC for the ExternalSecret kind (ESO is not a
+    # Crossplane provider, so there is no auto-RBAC). Those are cluster-scoped
+    # ClusterRole + ClusterRoleBinding — without whitelisting them the whole
+    # crossplane-resources app fails to sync ("resource ... is not permitted in
+    # project k8-platform"), blocking the XRDs + Compositions. Scoped to exactly
+    # these two kinds, not the whole rbac group, per the broaden-deliberately rule.
+    - group: "rbac.authorization.k8s.io"
+      kind: "ClusterRole"
+    - group: "rbac.authorization.k8s.io"
+      kind: "ClusterRoleBinding"
   namespaceResourceWhitelist:
     - group: "external-secrets.io"
       kind: "*"
