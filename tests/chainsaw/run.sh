@@ -403,6 +403,27 @@ ALL_SCENARIO_DIRS=$(
 META_DIRS=$(echo "$ALL_SCENARIO_DIRS" | awk -F/ '{ for(i=1;i<=NF;i++) if ($i ~ /^meta-/) { print; next } }')
 NORMAL_DIRS=$(echo "$ALL_SCENARIO_DIRS" | awk -F/ '{ for(i=1;i<=NF;i++) if ($i ~ /^meta-/) next; print }')
 
+# REAL-AWS / NIGHTLY scenarios opt OUT of the per-PR kind-only run: they
+# provision live cloud resources (e.g. an RDS instance, ~5-10 min) and require
+# providers/IRSA the kind harness does not install, so they fail fast here. A
+# scenario marks itself by carrying the literal "REAL-AWS / NIGHTLY" in its
+# chainsaw-test.yaml header. They run only when CHAINSAW_INCLUDE_REALAWS=1 (the
+# nightly real-AWS workflow). Without this they'd red every push (the kind
+# cluster has no provider-aws-rds — run 27072199866). They are NOT skipped
+# coverage: their author-time contract is gated by render-fixtures + the
+# xdatabase unit tests, and the live flow by the phase-5-live runbook.
+if [ "${CHAINSAW_INCLUDE_REALAWS:-0}" != "1" ]; then
+  REALAWS_DIRS=$(echo "$NORMAL_DIRS" | while IFS= read -r d; do
+    [ -z "$d" ] && continue
+    if grep -q 'REAL-AWS / NIGHTLY' "$d/chainsaw-test.yaml" 2>/dev/null; then echo "$d"; fi
+  done)
+  if [ -n "$REALAWS_DIRS" ]; then
+    echo "── excluding REAL-AWS/NIGHTLY scenarios (set CHAINSAW_INCLUDE_REALAWS=1 to run): ──"
+    echo "$REALAWS_DIRS" | sed 's/^/    /'
+    NORMAL_DIRS=$(comm -23 <(echo "$NORMAL_DIRS" | sort -u) <(echo "$REALAWS_DIRS" | sort -u))
+  fi
+fi
+
 echo ""
 echo "── running chainsaw (normal scenarios) ────────────────────────"
 

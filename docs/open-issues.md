@@ -583,3 +583,21 @@ SA present, then merge. Decision brief + Round-1 adversarial review in
 `decisions/auto-009-mgmt-provider-sa-fix.md`.
 
 <!-- New entries go above this line, newest first. -->
+
+<!-- appended auto-010 -->
+### OI-2026-06-06-4 — phase-5 xdatabase real-AWS chainsaw scenarios are nightly-gated (RESOLVED-config)
+**Status:** resolved (config). The `xdatabase/01-claim-creates-rds` and
+`02-deletion-cleanup` chainsaw scenarios provision a live RDS instance and need
+provider-aws-rds + IRSA the per-PR kind harness does not install. They now carry
+a `REAL-AWS / NIGHTLY` header and `tests/chainsaw/run.sh` excludes them unless
+`CHAINSAW_INCLUDE_REALAWS=1` (run 27072199866 had run them in the kind matrix →
+fast FAIL). Author-time coverage: render-fixtures + `test_xdatabase_rds_composition.sh`.
+Live coverage: the phase-5-live step (sync the `keycloak-db` XR on the spoke and
+verify the RDS Instance), or a nightly real-AWS chainsaw with
+`CHAINSAW_INCLUDE_REALAWS=1`. Guard: `test_chainsaw_realaws_gated.sh`.
+
+### OI-2026-05-28-1 recurrence note (auto-010)
+`claim-creates-secret` timed out at 246s again on chainsaw run 27072199866
+(ASM `CannotCreateExternalResource` / "asm-secret not yet ready" — the known
+flake). Established remedy: re-kick. Durable fix still pending per the existing
+OI-2026-05-28-1 entry (external-name change).

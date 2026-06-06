@@ -45,6 +45,7 @@ run_suite tests/unit/test_chainsaw_golden_catches_bug4.sh
 run_suite tests/unit/test_chainsaw_tag_chars.sh
 run_suite tests/unit/test_chainsaw_xr_conditions_complete.sh
 run_suite tests/unit/test_chainsaw_script_shell_portable.sh
+run_suite tests/unit/test_chainsaw_realaws_gated.sh
 run_suite tests/unit/test_chainsaw_asm_cleanup.sh
 run_suite tests/unit/test_platform_secret_xrd.sh
 run_suite tests/unit/test_platform_secret_composition.sh
