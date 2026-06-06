@@ -8,6 +8,57 @@ last, the current state, and the next concrete steps. Keep it factual
 
 ## NEW SESSION QUICKSTART (read this first)
 
+> **[auto-011 — 2026-06-06/07 — SUPERSEDES auto-010 below.]** Full detail:
+> `run-summary-auto-011.md` + `decisions/auto-011-*` + `retrospective/2026-06-…`.
+>
+> **⚠️ SAME INHERITED LIVE ACCOUNT `596430611165` (us-east-1). Phases 0/1 up.**
+> Tools are NOT preinstalled in a fresh sandbox — install `aws` v2 + `argocd` (and
+> `kubectl` is useless: kube-API is private-CA blocked; use the **`kube-diagnose`
+> workflow** (`workflow_dispatch`, read-only script input) + the **ArgoCD REST API**
+> (`/api/v1/applications/{app}/resource…` with the login token) for live kube reads).
+>
+> **What auto-011 did (all on branch `claude/k8-pods-phase-validation-7oqVK-k5sS4`):**
+> - **#160 MERGED** — AppProject `k8-platform` now permits ClusterRole/Binding
+>   (the ESO-RBAC manifest was blocking the whole `crossplane-resources` app).
+> - **#161 MERGED** — added the shared **`ClusterProviderConfig/default` (IRSA)**
+>   via GitOps (`crossplane/providerconfig/`); it was a manual bootstrap step
+>   (SEG-1 §0c) never automated, absent on the rebuilt cluster, blocking ALL AWS MRs.
+> - **#162 OPEN** — XSpokeAccess XRD+Composition+spoke-access wiring (phase-3 spoke
+>   AWS trust plane) + EnvironmentConfig `accountId`/`argocdRoleArn` extension +
+>   provider-kubernetes install. Validated (render/kubeconform/61-assert unit test);
+>   live MR field names verified against the running CRDs. **NOT merged** (review +
+>   needs the management apply to take effect). PR also carries the kube-diagnose
+>   workflow + this handoff/summary/decision-note/retro.
+>
+> **THE ONE REMAINING PHASE-3 BLOCKER → `decisions/auto-011-child-provider-irsa.md`:**
+> the `platform-cluster-claim` XR is fully composed (11 MRs) but every MR fails
+> `token file name cannot be empty` — the **child AWS providers
+> (eks/iam/acm/route53/secretsmanager/rds) run pods whose SAs lack the IRSA
+> role-arn annotation** (only `upbound-provider-family-aws` has it; the crossplane
+> role trust is `StringEquals` on that one subject). Fix = give the child providers
+> `runtimeConfigRef: aws-provider-config` (Option A, minimal) OR a per-child
+> annotated SA + wildcard trust (Option B); then a `management apply-and-verify`.
+> The decision note has both options + validation steps. This is load-bearing
+> (security of the crossplane role) so it was left as a decision, not shipped blind.
+>
+> **IMMEDIATE NEXT STEPS:**
+> 1. Apply the child-provider IRSA fix (decision note Option A first) — terraform +
+>    `management apply-and-verify`. Verify via kube-diagnose that an eks provider
+>    pod has `AWS_WEB_IDENTITY_TOKEN_FILE`.
+> 2. The 11 already-composed MRs then reconcile → platform EKS + `*.platform.<domain>`
+>    ACM cert provision (~20 min). NO re-sync of platform-cluster-claim needed.
+> 3. Merge #162 (so XSpokeAccess + the EnvironmentConfig extension are on main);
+>    the same management apply installs provider-kubernetes + extends the envconfig.
+> 4. Resume `decisions/auto-009-phase3-live-completion-runbook.md`: overlay
+>    `XPlatformCluster.status.oidcIssuer` onto the XSpokeAccess XR → `argocd app
+>    sync spoke-access` → register `platform-spoke` cluster Secret → converge spoke
+>    apps → verify `https://hello.platform.596430611165.realhandsonlabs.net` (200, ACM chain).
+> 5. Phase 5: sync `keycloak-db` XDatabase XR on the spoke; verify RDS + secret +
+>    Keycloak. (xdatabase XRD now syncs too — the include-glob was widened to `xrds/*`.)
+>
+> Open issues: `OI-2026-06-06-5` (child-provider IRSA, this note),
+> `OI-2026-06-06-3` (xdatabase `-master` secret orphan), `OI-2026-05-28-1` (claim-creates-secret flake).
+
 > **[auto-010 — 2026-06-06 — SUPERSEDES the auto-009 block below.]** Full detail:
 > `run-summary-auto-010.md` + `retrospective/2026-06-06-159/`.
 >
