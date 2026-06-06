@@ -41,16 +41,25 @@ provider "aws" {
   }
 }
 
-# Kubernetes and Helm providers are configured after EKS is up.
-# They read auth from the EKS cluster data source to avoid a chicken-and-egg.
+# Helm provider is configured after EKS is up.
+#
+# Auth uses the `aws eks get-token` EXEC plugin, NOT a static
+# data.aws_eks_cluster_auth token. Rationale (run 27070902703): a static token
+# is fetched once during apply-graph evaluation and EKS tokens expire after 15
+# minutes. When the EKS control plane is slow to create (that run took 18m53s),
+# the helm_release resources run AFTER the token has expired, failing with
+# "the server has asked for the client to provide credentials". The exec plugin
+# mints a fresh token at the moment each helm operation runs, so a slow
+# control-plane create can never expire it mid-apply. The runner's AWS creds are
+# inherited from the environment. (test_eks_module_defaults.sh tripwires this.)
 provider "helm" {
   kubernetes {
     host                   = module.eks.cluster_endpoint
     cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
-    token                  = data.aws_eks_cluster_auth.management.token
+    exec {
+      api_version = "client.authentication.k8s.io/v1beta1"
+      command     = "aws"
+      args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--region", var.aws_region]
+    }
   }
-}
-
-data "aws_eks_cluster_auth" "management" {
-  name = module.eks.cluster_name
 }

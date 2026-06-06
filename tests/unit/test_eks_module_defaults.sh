@@ -69,4 +69,27 @@ else
        "maxPods: 110 without prefix delegation exhausts the single-IP-per-pod ceiling at ~17."
 fi
 
+# --- helm provider must use exec-auth, not a static token -------------------
+# A static data.aws_eks_cluster_auth token is fetched once and expires after 15
+# min; a slow EKS control-plane create (run 27070902703 took 18m53s) makes the
+# helm_release step fail with "the server has asked for the client to provide
+# credentials". The aws-eks-get-token exec plugin refreshes per operation.
+VERSIONS_TF="$HERE/../../terraform/management/versions.tf"
+if [ -f "$VERSIONS_TF" ]; then
+  if grep -qE 'token[[:space:]]*=[[:space:]]*data\.aws_eks_cluster_auth' "$VERSIONS_TF"; then
+    fail "versions.tf helm provider uses a static aws_eks_cluster_auth token" \
+         "expires after 15 min; a slow cluster create fails the helm step. Use the aws eks get-token exec plugin."
+  else
+    pass "versions.tf helm provider does not use a static eks-cluster-auth token"
+  fi
+  if grep -qE '"eks",[[:space:]]*"get-token"' "$VERSIONS_TF"; then
+    pass "versions.tf helm provider uses the aws eks get-token exec plugin"
+  else
+    fail "versions.tf helm provider must use the aws eks get-token exec plugin" \
+         "exec-auth refreshes the token per operation so a slow control-plane create can't expire it mid-apply."
+  fi
+else
+  fail "missing $VERSIONS_TF" "expected the management provider config"
+fi
+
 summary
