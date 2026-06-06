@@ -44,9 +44,9 @@ variable "node_instance_type" {
 }
 
 variable "node_desired_size" {
-  description = "Desired node count. Keep at 2 for management cluster HA; reduce to 1 to stay within the 9-instance EC2 quota."
+  description = "Desired node count. 3 nodes for the management stack (Crossplane + 6 providers + functions + ESO + Kyverno + ArgoCD + ingress-nginx + external-dns). Stay within the 9-instance EC2 quota."
   type        = number
-  default     = 2
+  default     = 3
 }
 
 variable "node_min_size" {
