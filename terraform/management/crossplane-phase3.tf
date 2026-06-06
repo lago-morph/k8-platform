@@ -25,6 +25,12 @@ resource "terraform_data" "crossplane_provider_aws_cluster_services" {
     var.crossplane_provider_aws_iam_version,
     var.crossplane_provider_aws_acm_version,
     var.crossplane_provider_aws_route53_version,
+    # Bump when the embedded manifest body changes (the version vars above
+    # don't cover a manifest-shape edit, so a body-only change would no-op
+    # the apply — same trap as helm.tf:crossplane_aws_provider). 2026-06-06:
+    # added runtimeConfigRef=aws-provider-config to each child provider for
+    # IRSA (auto-011 blocker #3, Option A).
+    "runtimeconfigref-irsa-2026-06-06",
   ]
 
   provisioner "local-exec" {
@@ -40,6 +46,17 @@ resource "terraform_data" "crossplane_provider_aws_cluster_services" {
         name: provider-aws-eks
       spec:
         package: "xpkg.upbound.io/upbound/provider-aws-eks:${var.crossplane_provider_aws_eks_version}"
+        # IRSA: run this child provider's pod under the family SA
+        # (upbound-provider-family-aws) which carries the
+        # eks.amazonaws.com/role-arn annotation and is the ONLY subject the
+        # crossplane IRSA role trusts (StringEquals, irsa.tf). Without this
+        # the child pod gets a default un-annotated SA → no web-identity token
+        # → every MR fails "token file name cannot be empty"
+        # (auto-011 blocker #3; decisions/auto-011-child-provider-irsa.md, Option A).
+        runtimeConfigRef:
+          apiVersion: pkg.crossplane.io/v1beta1
+          kind: DeploymentRuntimeConfig
+          name: aws-provider-config
       ---
       apiVersion: pkg.crossplane.io/v1
       kind: Provider
@@ -47,6 +64,10 @@ resource "terraform_data" "crossplane_provider_aws_cluster_services" {
         name: provider-aws-iam
       spec:
         package: "xpkg.upbound.io/upbound/provider-aws-iam:${var.crossplane_provider_aws_iam_version}"
+        runtimeConfigRef:
+          apiVersion: pkg.crossplane.io/v1beta1
+          kind: DeploymentRuntimeConfig
+          name: aws-provider-config
       ---
       apiVersion: pkg.crossplane.io/v1
       kind: Provider
@@ -54,6 +75,10 @@ resource "terraform_data" "crossplane_provider_aws_cluster_services" {
         name: provider-aws-acm
       spec:
         package: "xpkg.upbound.io/upbound/provider-aws-acm:${var.crossplane_provider_aws_acm_version}"
+        runtimeConfigRef:
+          apiVersion: pkg.crossplane.io/v1beta1
+          kind: DeploymentRuntimeConfig
+          name: aws-provider-config
       ---
       apiVersion: pkg.crossplane.io/v1
       kind: Provider
@@ -61,6 +86,10 @@ resource "terraform_data" "crossplane_provider_aws_cluster_services" {
         name: provider-aws-route53
       spec:
         package: "xpkg.upbound.io/upbound/provider-aws-route53:${var.crossplane_provider_aws_route53_version}"
+        runtimeConfigRef:
+          apiVersion: pkg.crossplane.io/v1beta1
+          kind: DeploymentRuntimeConfig
+          name: aws-provider-config
       MANIFEST
     EOT
   }

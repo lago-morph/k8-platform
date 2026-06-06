@@ -1,9 +1,20 @@
 # auto-011 — Child AWS providers have no IRSA identity (phase-3 blocker #3)
 
-**Status:** OPEN — diagnosed live, fix NOT yet applied (needs a terraform change +
-`management apply-and-verify`, which did not fit the auto-011 budget). This is the
+**Status:** Option A CHOSEN by the user and IMPLEMENTED in terraform (auto-011);
+**pending `management apply-and-verify` to take effect + validate.** This is the
 **only** remaining blocker for the platform-cluster provision; the XR is composed
 and ready, every other input is correct.
+
+**Implemented (Option A):** `runtimeConfigRef: {kind: DeploymentRuntimeConfig,
+name: aws-provider-config}` added to all six child providers — eks/iam/acm/route53
+in `terraform/management/crossplane-phase3.tf`, secretsmanager/rds in
+`terraform/management/helm.tf` — with manifest-sentinel bumps on each
+`triggers_replace` so the apply actually re-runs. They now run under the
+IRSA-annotated family SA `upbound-provider-family-aws` (the only subject the
+crossplane role trusts), no trust-policy change. Next: `management apply-and-verify`,
+then confirm via kube-diagnose that a child provider pod has
+`AWS_WEB_IDENTITY_TOKEN_FILE` and the 11 platform-cluster MRs flip Synced=True.
+If Crossplane churns on the shared pinned SA, fall back to Option B.
 
 ## Symptom
 
