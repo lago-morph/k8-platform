@@ -256,7 +256,7 @@ resource "terraform_data" "crossplane_aws_provider" {
     # family-provider Deployment isn't labelled
     # pkg.crossplane.io/provider=provider-family-aws — OI-2026-06-05-4),
     # replaced with a Healthy-wait + SA-readiness wait + diagnostics dump.
-    "provisioner-command-2026-06-06-single-family-provider",
+    "provisioner-command-2026-06-06-orphan-cleanup",
   ]
 
   provisioner "local-exec" {
@@ -265,6 +265,31 @@ resource "terraform_data" "crossplane_aws_provider" {
         --name ${module.eks.cluster_name} \
         --region ${var.aws_region} \
         --kubeconfig /tmp/k8-platform-kubeconfig
+
+      # Self-heal a WEDGED (non-fresh) cluster BEFORE applying the renamed
+      # Provider. On a cluster where an earlier failed run already created the
+      # OLD-named Provider object (provider-family-aws), a plain kubectl apply of
+      # the renamed Provider (upbound-provider-family-aws) does NOT prune the
+      # stray old one — so BOTH objects co-own
+      # xpkg.upbound.io/upbound/provider-family-aws and the package manager Lock
+      # reports reason=DependencyResolutionFailed, message="cannot build DAG:
+      # node xpkg.upbound.io/upbound/provider-family-aws already exists". That
+      # unbuildable DAG means no provider runtimes, no Deployment, no SA — the
+      # exact deadlock CONFIRMED live in run 27055996205. The rename alone fixes
+      # a FRESH cluster but cannot take effect in-place while the orphan lingers,
+      # so delete it (and let its ProviderRevision tear down) first. Idempotent:
+      # --ignore-not-found makes this a no-op on a fresh cluster. POSIX /bin/sh.
+      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl delete \
+        provider.pkg.crossplane.io provider-family-aws --ignore-not-found --wait=false
+      # Wait until the stray Provider is actually gone (its ProviderRevision is
+      # garbage-collected with it) so the Lock can rebuild the dependency DAG
+      # cleanly before the renamed Provider is applied below.
+      for i in $(seq 1 30); do
+        KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl get \
+          provider.pkg.crossplane.io provider-family-aws >/dev/null 2>&1 || break
+        sleep 2
+      done
+
       KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl apply -f - <<'MANIFEST'
 ${local.crossplane_aws_provider_manifest}
 MANIFEST

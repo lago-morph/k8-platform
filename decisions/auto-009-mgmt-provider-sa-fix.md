@@ -247,3 +247,68 @@ deadlock mechanism is still a hypothesis until the revision describe + controlle
 logs confirm CRD-ownership contention) is now answered automatically: if the
 rename does NOT fix it, the broadened failure dump captures exactly that evidence
 on the validating run.
+
+---
+
+## Live validation 1 (run 27055996205)
+
+The `management apply-and-verify` validation run on this branch **FAILED**, but
+the broadened failure diagnostics added in the round-1 fix captured the decisive
+evidence and **CONFIRMED the root cause** — it is no longer a hypothesis. The
+package-manager `Lock` condition dumped by the SA-gate failure path read:
+
+```
+reason: DependencyResolutionFailed
+message: 'cannot build DAG: node xpkg.upbound.io/upbound/provider-family-aws already exists'
+```
+
+and the diagnostics showed BOTH
+`provider.pkg.crossplane.io/provider-family-aws` AND
+`provider.pkg.crossplane.io/upbound-provider-family-aws` present
+(`INSTALLED=True`, `HEALTHY=False`, same package, ~48m old).
+
+This **positively confirms** the mechanism that round-1 review left labelled as a
+hypothesis (item 2 of the adversarial checklist; Reviewer 2's point): the two
+Provider objects both own `xpkg.upbound.io/upbound/provider-family-aws`, which
+makes the package-manager Lock's dependency DAG **unbuildable**
+(`already exists`) → no provider runtimes are ever stood up → no Deployment → no
+ServiceAccount → the SA gate reports `MISSING`. The structural Conclusion (§6.17)
+and Option A's premise (the rename to a single object is the right fix) are both
+vindicated.
+
+**Why the rename could not take effect in-place.** The validating run was on a
+NON-fresh (wedged) cluster: the OLD-named `provider-family-aws` object created by
+the *first* failed run (27054926075) **lingered**. A plain
+`kubectl apply` of the renamed `upbound-provider-family-aws` Provider does NOT
+prune the stray old object — so both co-owned the package and the DAG stayed
+unbuildable. The rename is correct for a FRESH cluster but is
+necessary-but-insufficient on a wedged one. This is exactly the orphan-revision
+concern raised in adversarial-review checklist item 3.
+
+### Refinement added (orphan cleanup — self-healing in place)
+
+`terraform/management/helm.tf`, in the `terraform_data.crossplane_aws_provider`
+provisioner, now runs an **idempotent pre-apply cleanup** of the stray OLD-named
+Provider BEFORE applying the renamed one, so the fix self-heals a wedged cluster
+without a `terraform destroy`:
+
+```sh
+kubectl delete provider.pkg.crossplane.io provider-family-aws --ignore-not-found --wait=false
+# then wait until it (and its ProviderRevision) is actually gone so the Lock can rebuild the DAG:
+for i in $(seq 1 30); do kubectl get provider.pkg.crossplane.io provider-family-aws >/dev/null 2>&1 || break; sleep 2; done
+```
+
+- `--ignore-not-found` makes it a **no-op on a fresh cluster** (no regression to
+  the clean-install path); it only acts when the orphan is present.
+- It runs on **every** provisioner invocation (the provisioner re-runs via
+  `triggers_replace`; the sentinel was bumped to
+  `provisioner-command-2026-06-06-orphan-cleanup` to force the re-run).
+- POSIX `/bin/sh` (no bashisms; gated by the pre-chainsaw audit).
+- All round-1 changes are retained: the rename, `runtimeConfigRef` preserved,
+  retargeted Healthy-wait, child-provider `depends_on`, broadened failure
+  diagnostics, and the one-Provider-owner assertion.
+
+**Status:** re-validating with the orphan-cleanup refinement. The deletion lets
+the Lock rebuild the DAG cleanly, after which the single renamed Provider should
+go `Healthy=True` and stand up the runtime Deployment + pinned
+`upbound-provider-family-aws` SA.

@@ -373,12 +373,17 @@ in the sandbox (CI already does).
 
 ## OI-2026-06-06-2 — mgmt provider bootstrap: every AWS provider revision stuck `HEALTHY=False` with no runtime Deployment; two `provider-family-aws` Provider objects from one package
 
-**Status:** **fix authored, live-validating** — Option A (rename + ordering +
-diagnostics) implemented on branch `fix/auto-009-mgmt-provider-sa`; passed
-Round-1 adversarial review (all accept-with-amendment, see
-`decisions/auto-009-mgmt-provider-sa-fix.md`). DO NOT MERGE until a live
-`management apply-and-verify` run is green on the branch (confirms the
-single-Provider de-dupe assumption).
+**Status:** **fix refined (orphan cleanup), re-validating** — Option A (rename +
+ordering + diagnostics) on branch `fix/auto-009-mgmt-provider-sa` passed Round-1
+adversarial review (all accept-with-amendment). Live validation 1 (run
+`27055996205`) **CONFIRMED the root cause** (see "Confirmed root cause" below)
+but FAILED in-place because the OLD-named Provider from the first failed run
+lingered on the wedged cluster and `kubectl apply` of the renamed Provider does
+not prune it — both objects co-owned the package and the Lock DAG stayed
+unbuildable. The fix is now refined with an idempotent **pre-apply orphan
+cleanup** of the stray `provider-family-aws` Provider, so it self-heals a wedged
+cluster without a `terraform destroy`. DO NOT MERGE until the re-validation
+`management apply-and-verify` run is green on the branch.
 **Surfaced:** 2026-06-06, `terraform-test.yml phase=management action=apply-and-verify`
 run `27054926075`, main SHA `c3a6cb3`, account `211125540973`. FAILED at
 `terraform_data.crossplane_aws_provider` (helm.tf:241).
@@ -467,6 +472,29 @@ The Healthy-wait timed out, then the diagnostics dump and the hard SA gate fired
     Crossplane core + function runtimes (independent of the family package) came
     up fine. Confirming requires the provider/revision `status.conditions`
     + crossplane-system controller logs, which this run did not capture.
+
+### Confirmed root cause (live validation 1, run 27055996205)
+The hypothesis above is **now CONFIRMED** — it is no longer a hypothesis. The
+`management apply-and-verify` run `27055996205` on `fix/auto-009-mgmt-provider-sa`
+FAILED, but its broadened diagnostics captured the decisive evidence: the
+crossplane package-manager `Lock` condition read
+```
+reason: DependencyResolutionFailed
+message: 'cannot build DAG: node xpkg.upbound.io/upbound/provider-family-aws already exists'
+```
+with BOTH `provider.pkg.crossplane.io/provider-family-aws` AND
+`provider.pkg.crossplane.io/upbound-provider-family-aws` present
+(`INSTALLED=True`, `HEALTHY=False`, same package, ~48m old). The two Provider
+objects co-owning `xpkg.upbound.io/upbound/provider-family-aws` make the Lock's
+dependency DAG **unbuildable** (`already exists`) → no provider runtimes → no
+Deployment → no SA. The rename to a single object is therefore the correct fix.
+It could not take effect in-place because this was a NON-fresh (wedged) cluster:
+the OLD `provider-family-aws` object from the first failed run lingered, and
+`kubectl apply` of the renamed Provider does not prune it. **Refinement added:**
+an idempotent pre-apply `kubectl delete provider.pkg.crossplane.io
+provider-family-aws --ignore-not-found` (+ wait-until-gone loop) in the
+`terraform_data.crossplane_aws_provider` provisioner, so the Lock can rebuild the
+DAG and the fix self-heals in place.
 
 ### Proposed fix (specific)
 **Collapse the family provider to a single Provider object so one package is
