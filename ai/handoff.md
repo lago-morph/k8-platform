@@ -8,6 +8,32 @@ last, the current state, and the next concrete steps. Keep it factual
 
 ## NEW SESSION QUICKSTART (read this first)
 
+> **[auto-009 — 2026-06-06 — SUPERSEDES the auto-007 block below.]** Full
+> detail: `run-summary-auto-009.md` + `retrospective/2026-06-06-157.md`.
+> Durable state now on `main`:
+> - **Phase 3-6 GitOps stack landed** (#144-148): phase-3 spoke, phase-4
+>   observability, phase-5 Keycloak, phase-6 workload1 (all scaffolding).
+> - **The recurring crossplane provider-bootstrap deadlock is FIXED** (#156,
+>   `OI-2026-06-06-2`): the explicit family Provider is now named
+>   `upbound-provider-family-aws` (the child-dependency name) + `depends_on`
+>   ordering + an idempotent orphan-cleanup + a one-Provider assertion.
+>   Supersedes the partial OI-2026-06-05-3/4 fixes. Phases 0+1 are now
+>   **reproducibly green** (confirmed live, run 27056287208).
+> - **Decisions recorded** (`decisions/2026-06-06-phase4-alloy-phase5-db.md`):
+>   phase-4 Alloy = Option A (`hub-addons` AppProject); phase-5 Keycloak DB =
+>   general `XDatabase` XRD, RDS-backed.
+> - **CI-red fixed** (#153, crossplane render `:stable` pin) + a working
+>   `.github/workflows/*` write path via the jentic PAT / `ext-github`
+>   Contents-PUT endpoint (the git/MCP path lacks `workflow` scope).
+>
+> **Next session** (account rotates per §8.4 — live mgmt cluster is gone):
+> rebuild 0→1→2→3 on the fresh account (now reproducibly green), then build
+> phases 4/5/6 LIVE — the `hub-addons` AppProject (convert
+> `argocd/apps/spoke/observability-alloy-mgmt.yaml.todo`), the `XDatabase`
+> XRD + RDS Composition for Keycloak's `keycloak-db`, and finish
+> **maxPods/prefix-delegation** (nodes still cap ~17 pods) before the 4/5/6
+> pod load. Open PRs to merge: #155 (envelope), #157 (this summary).
+
 **Resume context: 2026-06-06 (`auto-007` — phase-3 provisioning push) on a LIVE
 account (phases 0-1 already applied, management cluster up). Cleared FOUR phase-3
 blockers; the `XPlatformCluster` XR reached `Ready=False/Creating` with 11 managed
