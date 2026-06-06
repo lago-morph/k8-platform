@@ -47,16 +47,18 @@ else
 fi
 # 4. Must NOT address by name (that's the spoke pattern) and ns must be the
 #    scoped monitoring-agent, never a wildcard.
+#    NOTE: mikefarah yq's `==` does GLOB matching when the RHS contains `*`
+#    (`.namespace == "*"` is true for ANY value), so wildcard detection MUST use
+#    the `test()` regex idiom (as test_platform_spoke_appproject.sh does), not
+#    `== "*"`. A count of matches == 0 means no wildcard.
 if yq -e '.spec.destinations[] | select(.name != null)' "$PROJ" >/dev/null 2>&1; then
   echo "FAIL: hub-addons must not use destination.name (hub is by server)"; FAIL=1
 else
   echo "ok: no destination.name (hub is addressed by server)"
 fi
-if yq -e '.spec.destinations[] | select(.namespace == "*")' "$PROJ" >/dev/null 2>&1; then
-  echo "FAIL: hub-addons destination namespace must not be wildcard"; FAIL=1
-else
-  echo "ok: destination namespace is not wildcard"
-fi
+ns_wild="$(yq '[.spec.destinations[] | select(.namespace | test("\\*"))] | length' "$PROJ")"
+[ "$ns_wild" = "0" ] && echo "ok: destination namespace is not wildcard" \
+  || { echo "FAIL: hub-addons destination namespace must not be wildcard ($ns_wild found)"; FAIL=1; }
 [ "$(yq -r '.spec.destinations[0].namespace' "$PROJ")" = "monitoring-agent" ] \
   && echo "ok: destination namespace = monitoring-agent" \
   || { echo "FAIL: hub-addons destination namespace must be monitoring-agent"; FAIL=1; }
@@ -66,11 +68,10 @@ fi
 #    namespaceResourceWhitelist, so a copy-paste from it would silently grant
 #    hub-wide kind access).
 for wl in clusterResourceWhitelist namespaceResourceWhitelist; do
-  if yq -e ".spec.${wl}[] | select(.kind == \"*\" or .group == \"*\")" "$PROJ" >/dev/null 2>&1; then
-    echo "FAIL: hub-addons $wl contains a wildcard kind/group"; FAIL=1
-  else
-    echo "ok: $wl has no wildcard kind/group"
-  fi
+  # test() regex, not `== "*"` (see the yq glob-match note above).
+  wild="$(yq "[.spec.${wl}[] | select((.kind | test(\"\\\\*\")) or (.group | test(\"\\\\*\")))] | length" "$PROJ")"
+  [ "$wild" = "0" ] && echo "ok: $wl has no wildcard kind/group" \
+    || { echo "FAIL: hub-addons $wl contains a wildcard kind/group ($wild found)"; FAIL=1; }
 done
 
 # 6. clusterResourceWhitelist is EXACTLY {Namespace, ClusterRole,
