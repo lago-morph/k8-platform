@@ -1,0 +1,53 @@
+# XSpokeAccess — grants the hub ArgoCD + spoke add-ons their AWS access
+# to the platform-services (spoke) cluster (auto-008 Round 2 §3).
+#
+# Provisioning this XR creates, on the HUB Crossplane, REAL AWS resources
+# (see crossplane/compositions/xspokeaccess.yaml):
+#   - an OpenIDConnectProvider for the spoke's OIDC issuer (the IRSA anchor)
+#   - the external-dns IRSA Role + inline Route53 RolePolicy
+#   - an EKS AccessEntry + AccessPolicyAssociation mapping the
+#     k8-platform-services-argocd role to AmazonEKSClusterAdminPolicy on
+#     the spoke, so the ArgoCD application-controller can sync to it
+#
+# GATING (auto-008 C2): this XR consumes the cluster's *published* status
+# and is meaningless until the cluster is Ready. It is sync-wave 20 (after
+# the cluster claim at wave 10) and its ArgoCD Application
+# (argocd/apps/spoke-access.yaml) is MANUAL-SYNC ONLY — sync is a
+# deliberate operator action AFTER `XPlatformCluster platform` reaches
+# Ready.
+#
+# EPHEMERAL — spec.oidcIssuer (AGENTS §8.1): the OIDC issuer URL is
+# account-ephemeral and only known once the cluster is live. It is NOT
+# committable as a literal. The operator OVERLAYS it at sync time from the
+# cluster XR's published status, e.g.:
+#
+#   ISS=$(kubectl -n platform get xplatformcluster platform \
+#           -o jsonpath='{.status.oidcIssuer}')
+#   kubectl -n platform patch xspokeaccess platform --type merge \
+#           -p "{\"spec\":{\"oidcIssuer\":\"${ISS}\"}}"
+#
+# (or set it via an ArgoCD parameter/overlay before syncing). The value
+# below is a clearly-marked NON-FUNCTIONAL placeholder; syncing it as-is
+# will not produce a working OIDC provider. The account id, the
+# k8-platform-services-argocd role ARN, the Route53 zone id and the domain
+# come from the `cluster-network` EnvironmentConfig (NOT this file).
+#
+# WARNING: this Application is configured WITHOUT automated sync. See
+# argocd/apps/spoke-access.yaml.
+apiVersion: platform.k8-platform.io/v1alpha1
+kind: XSpokeAccess
+metadata:
+  name: platform
+  namespace: platform
+  annotations:
+    # Wave 20 — after the XPlatformCluster XR (wave 10). The cluster must
+    # be Ready (its status.oidcIssuer populated) before this XR is synced;
+    # the wave + manual-sync Application together enforce the gate.
+    argocd.argoproj.io/sync-wave: "20"
+spec:
+  clusterName: k8-platform-services
+  subdomain: platform
+  region: us-east-1
+  # PLACEHOLDER — overlaid at sync time from XPlatformCluster.status.oidcIssuer
+  # (account-ephemeral, AGENTS §8.1). Do NOT commit a real issuer URL here.
+  oidcIssuer: https://PLACEHOLDER-overlaid-from-cluster-status.oidcIssuer.invalid

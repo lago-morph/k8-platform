@@ -1,0 +1,23 @@
+# Probe XSpokeAccess used by `crossplane render` for the SPEC-S9 dry-run
+# (auto-008 C6).
+#
+# The account-ephemeral inputs (accountId, the ${clusterName}-argocd role
+# ARN, the Route53 zone id, the domain) are supplied by the
+# cluster-network EnvironmentConfig in required-resources.yaml (NOT on the
+# XR). spec.oidcIssuer here is a deterministic PROBE issuer — in
+# production it is overlaid at sync time from
+# XPlatformCluster.status.oidcIssuer (account-ephemeral, AGENTS §8.1).
+#
+# metadata.uid is pinned for deterministic render output (SPEC-S9 §5).
+# The render is fully offline; no real AWS resources are queried.
+apiVersion: platform.k8-platform.io/v1alpha1
+kind: XSpokeAccess
+metadata:
+  name: render-probe-spoke
+  namespace: default
+  uid: "00000000-0000-0000-0000-000000000003"
+spec:
+  clusterName: render-probe
+  subdomain: platform
+  region: us-east-1
+  oidcIssuer: https://oidc.eks.us-east-1.amazonaws.com/id/RENDERPROBE00000000000000000000

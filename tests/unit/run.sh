@@ -87,6 +87,8 @@ run_suite tests/unit/test_xdatabase_xrd.sh
 run_suite tests/unit/test_xdatabase_rds_composition.sh
 run_suite tests/unit/test_keycloak_db_secret_contract.sh
 run_suite tests/unit/test_keycloak_db_xr.sh
+# auto-008 phase-3 spoke GitOps access (XSpokeAccess XRD + Composition + XR)
+run_suite tests/unit/test_xspokeaccess.sh
 
 echo ""
 if [ "$OVERALL" -eq 0 ]; then

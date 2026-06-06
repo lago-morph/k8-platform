@@ -1,0 +1,21 @@
+# EnvironmentConfig consumed by the xspokeaccess Composition's
+# function-environment-configs step, supplied to `crossplane render` via
+# --required-resources (SPEC-S9 / auto-008 C6). In production this object
+# is the SAME `cluster-network` EnvironmentConfig the cluster Composition
+# reads, extended by terraform/management (crossplane-phase3.tf) to also
+# carry accountId + argocdRoleArn (auto-008 C3). Here it carries
+# deterministic probe values (stub account 000000000000, stub zone id) so
+# the render golden is stable and fully offline — these are NOT real
+# account-ephemeral values (AGENTS §8.1).
+apiVersion: apiextensions.crossplane.io/v1beta1
+kind: EnvironmentConfig
+metadata:
+  name: cluster-network
+data:
+  privateSubnetIds:
+    - subnet-00000000000000001
+    - subnet-00000000000000002
+  route53ZoneId: Z00000000000000000000Q
+  domain: render-probe.example.test
+  accountId: "000000000000"
+  argocdRoleArn: arn:aws:iam::000000000000:role/k8-platform-services-argocd

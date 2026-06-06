@@ -1,0 +1,48 @@
+# ArgoCD Application — syncs clusters/platform/spoke-access/ (the
+# XSpokeAccess XR that grants the hub + spoke add-ons AWS access to the
+# platform-services spoke cluster; auto-008 Round 2 §3).
+#
+# This Application is intentionally configured WITHOUT automated sync —
+# no syncPolicy.automated block, manual sync only:
+#
+#   - Syncing the XSpokeAccess XR makes Crossplane create REAL AWS
+#     resources (an OIDC provider, an IAM role/policy, EKS access
+#     entries).
+#   - The XR is GATED on the platform cluster being Ready (auto-008 C2):
+#     spec.oidcIssuer must first be overlaid from
+#     XPlatformCluster.status.oidcIssuer (see the XR file header). Auto-
+#     sync would race the cluster provision and patch an empty issuer.
+#
+# So sync is a deliberate operator action via the ArgoCD UI or
+# `argocd app sync spoke-access`, AFTER `XPlatformCluster platform`
+# reaches Ready and the issuer overlay is applied. Mirrors the manual-sync
+# posture of platform-cluster-claim.yaml.
+#
+# A separate Application (not folded into platform-cluster-claim, whose
+# directory.include is a fixed allowlist) keeps the spoke-access gate
+# independent of the cluster claim's sync.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: spoke-access
+  namespace: argocd
+  annotations:
+    # Wave 20 — after platform-cluster-claim (wave 10). The cluster must
+    # be Ready before this Application's XSpokeAccess XR is synced.
+    argocd.argoproj.io/sync-wave: "20"
+spec:
+  project: k8-platform
+  source:
+    repoURL: https://github.com/lago-morph/k8-platform.git
+    targetRevision: main
+    path: clusters/platform/spoke-access
+  destination:
+    server: https://kubernetes.default.svc
+    # XSpokeAccess is a namespaced v2 XR living in the `platform`
+    # namespace (created by clusters/platform/00-namespace.yaml, synced by
+    # the platform-cluster-claim Application).
+    namespace: platform
+  # No syncPolicy.automated — manual sync only. See header.
+  syncPolicy:
+    syncOptions:
+      - ServerSideApply=true

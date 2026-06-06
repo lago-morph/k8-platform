@@ -144,6 +144,16 @@ CRD_URLS=(
   "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/eks.aws.m.upbound.io_nodegroups.yaml"
   "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/iam.aws.m.upbound.io_roles.yaml"
   "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/iam.aws.m.upbound.io_rolepolicyattachments.yaml"
+  # auto-008 (XSpokeAccess) — the spoke hub-access Composition renders an
+  # OpenIDConnectProvider (the spoke IRSA anchor), an INLINE RolePolicy for
+  # external-dns (the crossplane IRSA has iam:PutRolePolicy not
+  # iam:CreatePolicy, C4), and an EKS AccessEntry +
+  # AccessPolicyAssociation mapping the argocd role to the spoke (C3).
+  # Pinned to the same provider-upjet-aws v2.5.0 as the other AWS CRDs.
+  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/iam.aws.m.upbound.io_openidconnectproviders.yaml"
+  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/iam.aws.m.upbound.io_rolepolicies.yaml"
+  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/eks.aws.m.upbound.io_accessentries.yaml"
+  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/eks.aws.m.upbound.io_accesspolicyassociations.yaml"
   # Phase 3 — per-cluster ACM certificate provisioned inside the cluster
   # Composition (acm Certificate + route53 validation Record + acm
   # CertificateValidation). Pinned to the same provider-upjet-aws v2.5.0

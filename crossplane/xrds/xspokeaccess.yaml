@@ -1,0 +1,133 @@
+# XSpokeAccess — the spoke cluster's hub→spoke GitOps access anchor
+# (auto-008 Round 2 §3 + 2nd-wave C1–C6).
+#
+# A separate XR + Composition from XPlatformCluster ON PURPOSE (auto-008
+# C2): patch-and-transform has no conditional gating, so cramming the
+# spoke-access MRs into the cluster Composition would patch
+# `url: ""` from an empty status.oidcIssuer and hard-fail before the
+# cluster is Ready. Instead this XR consumes the cluster's *published*
+# status (spec.oidcIssuer is filled at sync time from
+# XPlatformCluster.status.oidcIssuer) and is gated on the cluster being
+# Ready via ArgoCD sync-wave (the XR's Application is wave 20, after the
+# cluster claim at wave 10, and is manual-sync — see
+# clusters/platform/spoke-access.yaml + argocd/apps/spoke-access.yaml).
+#
+# A claim against this XRD renders, on the HUB Crossplane:
+#   1. OpenIDConnectProvider for the spoke's OIDC issuer (the IRSA anchor
+#      the cluster Composition deliberately omits — platform-cluster XRD
+#      header). thumbprintList is the well-known Amazon root constant
+#      (auto-008 C1 — a published constant, NOT account-ephemeral).
+#   2. external-dns IAM Role (IRSA trust to the spoke OIDC +
+#      external-dns:external-dns SA) + an INLINE RolePolicy (auto-008 C4 —
+#      the crossplane IRSA has iam:PutRolePolicy, not iam:CreatePolicy)
+#      scoped to the cluster's Route53 zone.
+#   3. EKS AccessEntry + AccessPolicyAssociation mapping the management
+#      cluster's ${clusterName}-argocd IAM role to
+#      AmazonEKSClusterAdminPolicy on the SPOKE cluster, so the ArgoCD
+#      application-controller can sync to it (auto-008 §3 / reviewer F5).
+#
+# Account-ephemeral inputs (account id, the ${clusterName}-argocd role
+# ARN, the Route53 zone id, the root domain) are NOT carried on this XR
+# (AGENTS §8.1). They are injected from the `cluster-network`
+# EnvironmentConfig that terraform/management materializes (extended in
+# terraform/management/crossplane-phase3.tf — auto-008 C3/C5). The XR
+# carries only stable per-spoke values; spec.oidcIssuer is the one value
+# overlaid at sync time (the issuer URL is only known once the cluster is
+# live — AGENTS §8.1) and is therefore a placeholder in git.
+#
+# WARNING: when this XR is synced, Crossplane creates REAL AWS resources
+# (an OIDC provider, an IAM role/policy, and EKS access entries). The
+# corresponding ArgoCD Application is manual-sync only.
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: xspokeaccesses.platform.k8-platform.io
+  annotations:
+    # XRDs land before Compositions (wave -1) so the Composition's
+    # compositeTypeRef binds against an already-Established XRD. Mirrors
+    # the platform-cluster / xdatabase XRD wave.
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  group: platform.k8-platform.io
+  # v2 namespaced XR — applied directly into the `platform` namespace
+  # alongside the XPlatformCluster XR. No separate claim type; mirrors
+  # XPlatformCluster / XDatabase / XPlatformSecret.
+  scope: Namespaced
+  names:
+    kind: XSpokeAccess
+    plural: xspokeaccesses
+    listKind: XSpokeAccessList
+    singular: xspokeaccess
+  defaultCompositionRef:
+    name: xspokeaccess-aws
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                clusterName:
+                  type: string
+                  description: >-
+                    The SPOKE EKS cluster name (e.g. k8-platform-services).
+                    Targets the AccessEntry/AccessPolicyAssociation at the
+                    spoke cluster. Matches XPlatformCluster.spec.name.
+                  pattern: "^[a-z][a-z0-9-]{1,38}[a-z0-9]$"
+                subdomain:
+                  type: string
+                  description: >-
+                    DNS label for this spoke under the root domain (e.g.
+                    "platform" → platform.<domain>). external-dns on the
+                    spoke is scoped to this subdomain; the inline Route53
+                    policy is zone-scoped (the whole hosted zone, shared by
+                    hub + spokes — record-level scoping is via external-dns
+                    --domain-filter, auto-008 §6).
+                  pattern: "^[a-z][a-z0-9-]{0,30}[a-z0-9]$"
+                oidcIssuer:
+                  type: string
+                  description: >-
+                    The spoke cluster's OIDC issuer URL
+                    (XPlatformCluster.status.oidcIssuer). Account-ephemeral
+                    (AGENTS §8.1) — only known once the cluster is live, so
+                    it is overlaid at sync time by the operator from the
+                    cluster XR's published status, NOT committed as a
+                    literal. The OpenIDConnectProvider's url and the
+                    external-dns trust policy's sub/aud conditions are built
+                    from it.
+                  pattern: "^https://.+"
+                region:
+                  type: string
+                  description: >-
+                    AWS region for the EKS AccessEntry/AccessPolicyAssociation
+                    MRs. Defaults to us-east-1 — match the spoke cluster's
+                    region.
+                  pattern: "^[a-z]{2}-[a-z]+-[0-9]$"
+                  default: "us-east-1"
+              required:
+                - clusterName
+                - subdomain
+                - oidcIssuer
+            status:
+              type: object
+              properties:
+                oidcProviderArn:
+                  type: string
+                  description: >-
+                    ARN of the created OpenIDConnectProvider, echoed for
+                    observability.
+                externalDnsRoleArn:
+                  type: string
+                  description: >-
+                    ARN of the external-dns IRSA Role, echoed for
+                    observability (referenced by the spoke external-dns
+                    ServiceAccount annotation at registration time).
+                accessEntryArn:
+                  type: string
+                  description: >-
+                    ARN of the EKS AccessEntry mapping the argocd role to
+                    the spoke, echoed for observability.
