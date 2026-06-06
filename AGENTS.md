@@ -900,7 +900,22 @@ real limit was verification access (no sandbox cluster creds), not
 provisioning. See
 `retrospective/2026-06-05-140/AGENTS-MD-429a56a4b8-distinguish-provisioning-from-verification.md`.*
 
-### 6.23 Never remove or weaken error checking to work around an undiagnosed error
+### 6.23 Use the capability you have before asking, in a build session
+
+**In a delegated/long build session, exhaust available tools and make a
+defensible call before asking the user.** "When the user has delegated
+execution (build everything tested, use the skill, go), do not stop on an
+`AskUserQuestion` for something a tool or a defensible default can resolve —
+check the capability first (dispatch the probe, try the install, read the
+output) per §6.12/§8.5. Reserve user questions for genuine forks with
+cost/irreversibility and no defensible default. Asking when the path was
+available reads as not-listening and wastes a round-trip."
+
+*Grounded in: 2026-06-05 auto-005 — the agent asked about creds/mechanism the
+user expected it to resolve itself ("check yourself", "use it"). See
+`retrospective/2026-06-05-142/AGENTS-MD-38ee9c5ae4-use-capability-before-asking-in-build-mode.md`.*
+
+### 6.24 Never remove or weaken error checking to work around an undiagnosed error
 
 **Disabling a failing check to make red go green is the worst possible
 "fix" — always.** When a guardrail fails — an admission webhook, a
