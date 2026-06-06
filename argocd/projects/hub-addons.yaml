@@ -1,0 +1,73 @@
+# ArgoCD AppProject for third-party add-ons that must run on the HUB
+# (management) cluster — currently just the Grafana Alloy agent (phase 4,
+# REQ-OBS-02).
+#
+# Why a dedicated project (decisions/2026-06-06-phase4-alloy-phase5-db.md,
+# Option A): Alloy is a THIRD-PARTY chart whose destination is the hub
+# in-cluster server. Neither existing project can host it cleanly —
+#   - `k8-platform` owns the hub destination but is locked to THIS repo only
+#     ("no third-party charts on the hub", auto-008 S1). Widening its
+#     sourceRepos would silently re-open the hub to arbitrary upstream charts.
+#   - `platform-spoke` allows the Grafana chart repo but DELIBERATELY excludes
+#     https://kubernetes.default.svc (the hub); a platform-spoke Application
+#     pointed at the hub is rejected by ArgoCD at sync.
+#
+# This project opens exactly one small, auditable door: the hub destination +
+# this repo + the Grafana chart repo (pinned exact, no wildcards — same S1
+# control as platform-spoke), with a kind whitelist scoped to what the Alloy
+# agent installs (DaemonSet + its RBAC + ConfigMaps). It leaves the locked-down
+# `k8-platform` project's intent fully intact.
+#
+# CI-gated by tests/unit/test_hub_addons_appproject.sh (no-wildcard invariant +
+# hub-destination + the kind whitelist shape).
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: hub-addons
+  namespace: argocd
+  # Synced by the app-of-apps like every other file under argocd/. Negative
+  # wave so the project exists before the Application that references it
+  # (mirrors platform-spoke's -50).
+  annotations:
+    argocd.argoproj.io/sync-wave: "-50"
+spec:
+  description: >-
+    Third-party add-on charts that must run on the HUB (management) cluster.
+    Currently the Grafana Alloy telemetry agent (phase 4). Upstream charts are
+    allowed here for the hub destination ONLY — never widen k8-platform.
+  # Pinned EXACT repo URLs — no wildcards (auto-008 S1; CI-gated by
+  # tests/unit/test_hub_addons_appproject.sh). This repo carries the in-git
+  # values file (multi-source); the Grafana repo serves the Alloy chart.
+  sourceRepos:
+    - "https://github.com/lago-morph/k8-platform.git"
+    - "https://grafana.github.io/helm-charts"
+  # The HUB, in-cluster. This is exactly the destination platform-spoke forbids
+  # and k8-platform reserves for first-party manifests.
+  destinations:
+    - server: "https://kubernetes.default.svc"
+      namespace: "monitoring-agent"
+  # Cluster-scoped kinds the Alloy chart installs: its ClusterRole/Binding (to
+  # read pod/node metadata fleet-wide) and the namespace itself. Enumerated, not
+  # "*" — the blast-radius control for a hub-privileged project.
+  clusterResourceWhitelist:
+    - group: ""
+      kind: "Namespace"
+    - group: "rbac.authorization.k8s.io"
+      kind: "ClusterRole"
+    - group: "rbac.authorization.k8s.io"
+      kind: "ClusterRoleBinding"
+  # Namespaced kinds within monitoring-agent: the Alloy DaemonSet + its
+  # ServiceAccount/RBAC/ConfigMap/Service. Enumerated.
+  namespaceResourceWhitelist:
+    - group: ""
+      kind: "ServiceAccount"
+    - group: ""
+      kind: "ConfigMap"
+    - group: ""
+      kind: "Service"
+    - group: "apps"
+      kind: "DaemonSet"
+    - group: "rbac.authorization.k8s.io"
+      kind: "Role"
+    - group: "rbac.authorization.k8s.io"
+      kind: "RoleBinding"

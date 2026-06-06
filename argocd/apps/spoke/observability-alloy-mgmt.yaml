@@ -1,0 +1,63 @@
+# ArgoCD Application — Grafana Alloy telemetry agent on the HUB (management)
+# cluster (phase 4, REQ-OBS-02).
+#
+# Resolution of the former open question (decisions/2026-06-06-phase4-alloy-phase5-db.md,
+# Option A): Alloy is a third-party chart whose destination is the hub
+# in-cluster server. It runs under the dedicated `hub-addons` AppProject
+# (argocd/projects/hub-addons.yaml), NOT k8-platform (locked to first-party
+# manifests) and NOT platform-spoke (which forbids the hub destination). The
+# hub-addons project pins exactly this repo + the Grafana chart repo and a kind
+# whitelist scoped to Alloy's DaemonSet/RBAC/ConfigMap.
+#
+# Filename note: this lives under argocd/apps/spoke/ alongside the other obs
+# apps for locality, but it is a HUB app (destination.server, project
+# hub-addons) — tests/unit/test_observability_apps.sh special-cases it and
+# tests/unit/test_spoke_apps.sh excludes it (it is the one hub-destination app
+# in this dir).
+#
+# OVERLAID-AT-REGISTRATION (ephemeral, AGENTS §8.1): the live step patches
+# helm.valuesObject with the spoke Prometheus remote_write URL + Loki push URL
+# (account-ephemeral, depend on <domain>). Kept absent in git; the static base
+# config lives in platform-services/observability/alloy/values.yaml. INERT
+# until those endpoints exist.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hub-observability-alloy
+  namespace: argocd
+  annotations:
+    # Wave 40 (phase-4 observability band) — after the spoke central stack so
+    # the remote_write / Loki-push endpoints exist before the agent starts.
+    argocd.argoproj.io/sync-wave: "40"
+spec:
+  project: hub-addons
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: alloy
+      targetRevision: 0.12.6
+      helm:
+        valueFiles:
+          - $values/platform-services/observability/alloy/values.yaml
+        # OVERLAID-AT-REGISTRATION: valuesObject patches the spoke Prometheus
+        # remote_write URL + Loki push URL (account-ephemeral). Kept absent in git.
+    - repoURL: https://github.com/lago-morph/k8-platform.git
+      targetRevision: main
+      ref: values
+  destination:
+    # The HUB, in-cluster. This is why platform-spoke cannot host it and why the
+    # hub-addons project exists.
+    server: https://kubernetes.default.svc
+    namespace: monitoring-agent
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m

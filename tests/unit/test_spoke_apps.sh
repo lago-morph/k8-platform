@@ -15,6 +15,7 @@ require_tool yq
 SPOKE_DIR="$HERE/../../argocd/apps/spoke"
 FAIL=0
 found=0
+hub_count=0   # apps in this dir that legitimately target the HUB (hub-addons)
 
 for app in "$SPOKE_DIR"/*.yaml; do
   [ -e "$app" ] || continue
@@ -23,18 +24,34 @@ for app in "$SPOKE_DIR"/*.yaml; do
   kind="$(yq -r '.kind' "$app")"
   [ "$kind" = "Application" ] || { echo "FAIL[$base]: kind is $kind, want Application"; FAIL=1; continue; }
 
-  # project must be the dedicated spoke project (NOT k8-platform — that project
-  # forbids spoke destinations + third-party charts).
   proj="$(yq -r '.spec.project' "$app")"
-  [ "$proj" = "platform-spoke" ] && echo "ok[$base]: project=platform-spoke" \
-    || { echo "FAIL[$base]: project=$proj, want platform-spoke"; FAIL=1; }
-
-  # destination by NAME (spoke cluster secret), never the hub server.
   dname="$(yq -r '.spec.destination.name' "$app")"
   dserver="$(yq -r '.spec.destination.server' "$app")"
-  [ "$dname" != "null" ] && [ -n "$dname" ] && echo "ok[$base]: destination.name=$dname" \
-    || { echo "FAIL[$base]: destination.name must be set (spoke by name)"; FAIL=1; }
-  [ "$dserver" = "null" ] || { echo "FAIL[$base]: destination.server set ($dserver) — spokes are by name"; FAIL=1; }
+
+  # Branch on PROJECT rather than excluding a file by NAME: a real spoke app
+  # that accidentally sets destination.server must still FAIL, and a hub app
+  # that drifts into the spoke project must FAIL too.
+  #   - k8-platform : never allowed here (locked first-party hub project).
+  #   - hub-addons  : the one allowed hub-destination exception (Grafana Alloy
+  #                   agent, phase 4); correctly uses destination.server. Its
+  #                   full contract is gated by test_observability_apps.sh §3 +
+  #                   test_hub_addons_appproject.sh — here we only confirm shape.
+  #   - platform-spoke: the normal spoke-app contract (destination.name, no server).
+  if [ "$proj" = "k8-platform" ]; then
+    echo "FAIL[$base]: project=k8-platform not allowed under apps/spoke/"; FAIL=1; continue
+  elif [ "$proj" = "hub-addons" ]; then
+    hub_count=$((hub_count + 1))
+    { [ "$dserver" = "https://kubernetes.default.svc" ] && [ "$dname" = "null" ]; } \
+      && echo "ok[$base]: hub-addons app targets the hub by server" \
+      || { echo "FAIL[$base]: hub-addons app must use destination.server=kubernetes.default.svc and no .name"; FAIL=1; }
+  else
+    [ "$proj" = "platform-spoke" ] && echo "ok[$base]: project=platform-spoke" \
+      || { echo "FAIL[$base]: project=$proj, want platform-spoke (or hub-addons for the hub agent)"; FAIL=1; }
+    # destination by NAME (spoke cluster secret), never the hub server.
+    [ "$dname" != "null" ] && [ -n "$dname" ] && echo "ok[$base]: destination.name=$dname" \
+      || { echo "FAIL[$base]: destination.name must be set (spoke by name)"; FAIL=1; }
+    [ "$dserver" = "null" ] || { echo "FAIL[$base]: destination.server set ($dserver) — spokes are by name"; FAIL=1; }
+  fi
 
   # every source's targetRevision must be pinned (main / a version), not HEAD/empty.
   # Handles single-source and multi-source (sources[]) shapes.
@@ -63,5 +80,12 @@ for app in "$SPOKE_DIR"/*.yaml; do
 done
 
 [ "$found" -eq 1 ] || { echo "FAIL: no spoke apps found under $SPOKE_DIR"; FAIL=1; }
+
+# Exactly ONE app in this dir may target the hub (the Alloy agent). More than one
+# means a spoke app silently drifted to the hub destination; zero means the Alloy
+# conversion regressed back to a .todo.
+[ "$hub_count" -eq 1 ] && echo "ok: exactly one hub-addons app under apps/spoke/ (the Alloy agent)" \
+  || { echo "FAIL: expected exactly 1 hub-addons app under apps/spoke/, found $hub_count"; FAIL=1; }
+
 [ "$FAIL" -eq 0 ] && echo "PASS: spoke Applications contracts" || echo "FAILED"
 exit "$FAIL"
