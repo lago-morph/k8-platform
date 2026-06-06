@@ -81,6 +81,11 @@ run_suite tests/unit/test_workload1_apps.sh
 run_suite tests/unit/test_management_ingress_cert_coverage.sh
 # phase-5 auth (Keycloak)
 run_suite tests/unit/test_keycloak_apps.sh
+# phase-5 database (XDatabase XRD + RDS Composition, Keycloak DB)
+run_suite tests/unit/test_xdatabase_xrd.sh
+run_suite tests/unit/test_xdatabase_rds_composition.sh
+run_suite tests/unit/test_keycloak_db_secret_contract.sh
+run_suite tests/unit/test_keycloak_db_xr.sh
 
 echo ""
 if [ "$OVERALL" -eq 0 ]; then
