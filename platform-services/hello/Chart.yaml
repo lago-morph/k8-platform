@@ -1,0 +1,13 @@
+# Minimal in-repo Helm chart for the phase-3 "hello" demo app (REQ-PLAT-06).
+#
+# Why a chart and not plain manifests: the Ingress host is
+# `hello.<subdomain>.<domain>` and `<domain>` is account-ephemeral (AGENTS §8.1),
+# so it cannot be a committed literal. The ArgoCD Application overlays
+# `domain`/`subdomain` via valuesObject at sync time; this chart templates them
+# into the Ingress host. Kept tiny + readable for the blog (Iteration 3).
+apiVersion: v2
+name: hello
+description: Phase-3 demo app reachable at hello.<subdomain>.<domain> over TLS
+type: application
+version: 0.1.0
+appVersion: "1.0"

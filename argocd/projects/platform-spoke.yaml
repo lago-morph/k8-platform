@@ -1,0 +1,86 @@
+# ArgoCD AppProject for the platform (spoke) cluster's add-on stack.
+#
+# Separate from the `k8-platform` project by design (auto-008 decision):
+#   - `k8-platform` is locked to THIS repo only + the management destination +
+#     a narrow XRD/CSS/policy kind whitelist. It must stay that way.
+#   - The spoke needs UPSTREAM Helm charts (ingress-nginx, external-dns, and in
+#     later phases kube-prometheus-stack / loki / alloy / keycloak) deployed to a
+#     NON-management cluster, with workload kinds (Deployment/Service/Ingress/…).
+#     Widening `k8-platform` to allow those would silently authorize third-party
+#     charts + cluster-admin-grade RBAC onto the HUB too. A dedicated project
+#     contains the blast radius.
+#
+# Security (auto-008 S1/S2): the ArgoCD application-controller is mapped to
+# AmazonEKSClusterAdminPolicy on the spoke (it must apply arbitrary add-on RBAC),
+# so THIS project's `sourceRepos` (pinned exact URLs, no wildcards) + the kind
+# whitelist are the real blast-radius control. A Kyverno guard on the spoke
+# (policies/audit/10-spoke-no-cluster-admin-binding.yaml) backstops cluster-admin
+# ClusterRoleBindings. tests/unit/test_platform_spoke_appproject.sh gates the
+# no-wildcard invariant.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform-spoke
+  namespace: argocd
+  # Don't let `k8-platform` bootstrap prune this — it's synced by the app-of-apps
+  # like every other file under argocd/, but it governs a different destination.
+  annotations:
+    argocd.argoproj.io/sync-wave: "-50"
+spec:
+  description: >-
+    Add-on stack (ingress-nginx, ExternalDNS, observability, auth, workloads)
+    deployed by the hub ArgoCD to platform/workload SPOKE clusters. Upstream
+    charts allowed here ONLY (never in k8-platform).
+  # Pinned EXACT chart-repo URLs (auto-008 S1 — no wildcards; CI-gated by
+  # tests/unit/test_platform_spoke_appproject.sh). This repo carries the in-git
+  # values files (multi-source). Add a repo here when a phase introduces a chart.
+  sourceRepos:
+    - "https://github.com/lago-morph/k8-platform.git"
+    - "https://kubernetes.github.io/ingress-nginx"
+    - "https://kubernetes-sigs.github.io/external-dns/"
+  # Destinations: spoke clusters only. Explicitly NOT
+  # https://kubernetes.default.svc (the hub in-cluster destination) — that is
+  # `k8-platform`'s exclusive territory. Spokes are addressed by NAME (the
+  # ArgoCD cluster Secret name set at registration).
+  destinations:
+    - name: "platform-spoke"
+      namespace: "*"
+    # workload clusters (phase 6) register as `workload1-spoke`, etc.
+    - name: "*-spoke"
+      namespace: "*"
+  # Workload kinds the add-on charts install. Broader than `k8-platform` by
+  # necessity (charts ship CRDs + cluster RBAC), but enumerated — not "*".
+  clusterResourceWhitelist:
+    - group: ""
+      kind: "Namespace"
+    - group: "apiextensions.k8s.io"
+      kind: "CustomResourceDefinition"
+    - group: "rbac.authorization.k8s.io"
+      kind: "ClusterRole"
+    - group: "rbac.authorization.k8s.io"
+      kind: "ClusterRoleBinding"
+    - group: "admissionregistration.k8s.io"
+      kind: "ValidatingWebhookConfiguration"
+    - group: "admissionregistration.k8s.io"
+      kind: "MutatingWebhookConfiguration"
+    - group: "scheduling.k8s.io"
+      kind: "PriorityClass"
+  namespaceResourceWhitelist:
+    - group: ""
+      kind: "*"
+    - group: "apps"
+      kind: "*"
+    - group: "networking.k8s.io"
+      kind: "*"
+    - group: "rbac.authorization.k8s.io"
+      kind: "*"
+    - group: "policy"
+      kind: "*"
+    - group: "autoscaling"
+      kind: "*"
+    - group: "batch"
+      kind: "*"
+    - group: "external-secrets.io"
+      kind: "*"
+    - group: "monitoring.coreos.com"
+      kind: "*"

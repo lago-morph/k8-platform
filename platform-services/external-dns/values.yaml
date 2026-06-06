@@ -1,0 +1,41 @@
+# ExternalDNS Helm values for the platform (spoke) cluster.
+#
+# Scoped to the spoke's subdomain so it CANNOT touch the hub's records in the
+# shared account hosted zone (auto-008 §6 / S3 — dual-instance TXT-registry
+# safety). The two instances are kept strictly disjoint:
+#
+#   | instance | domainFilters         | txtOwnerId            | txtPrefix          |
+#   |----------|-----------------------|-----------------------|--------------------|
+#   | hub      | management.<domain>   | k8-platform-mgmt      | (none)             |
+#   | spoke    | platform.<domain>     | k8-platform-platform  | _edns-platform-.   |
+#
+# tests/unit/test_external_dns_disjoint_filters.sh asserts the filters are
+# disjoint and the txtOwnerIds differ — it GATES this file against the hub's
+# terraform/management/helm.tf config (auto-008 S3).
+#
+# DYNAMIC values (AGENTS §8.1, NOT committed): the `<domain>` root and the IRSA
+# role ARN (eks.amazonaws.com/role-arn) are account-ephemeral. They are overlaid
+# by the ArgoCD Application (argocd/apps/spoke/external-dns.yaml) via
+# valuesObject — domainFilters[0] := platform.${domain} and the SA role-arn from
+# the spoke external-dns IAM role (created by the XSpokeAccess Composition). The
+# placeholders below are overridden at sync time.
+provider:
+  name: aws
+policy: upsert-only
+# Spoke-only subdomain. domainFilters[0] is overlaid with platform.<domain> at
+# sync time; this literal is a render placeholder, never a real domain in git.
+domainFilters:
+  - "platform.PLACEHOLDER_DOMAIN"
+# Distinct owner id + prefix so the spoke's TXT registry never collides with the
+# hub's (k8-platform-mgmt). Non-negotiable (auto-008 S3).
+txtOwnerId: "k8-platform-platform"
+txtPrefix: "_edns-platform-."
+sources:
+  - ingress
+serviceAccount:
+  annotations:
+    # Overlaid by the Application's valuesObject (spoke external-dns IRSA role):
+    eks.amazonaws.com/role-arn: "PLACEHOLDER_OVERRIDDEN_BY_APPLICATION"
+env:
+  - name: AWS_REGION
+    value: "PLACEHOLDER_REGION"

@@ -71,9 +71,39 @@ Branches/PRs from this session (NOT merged):
   `test_composition_render_fixtures.sh` on every push — ENVIRONMENTAL (crossplane CLI
   version), unrelated to any change here; needs its own pin fix (log to open-issues).
 
-⚠️ Per AGENTS §8.4 the next session lands on a FRESH, EMPTY account (only the
-Route53 zone pre-exists). Every phase is `code-only` on the new account until
-re-applied. The CODE is durable in git; only the live AWS resources are gone.
+> Earlier-snapshot note (PR #145 / 2026-06-05 framing, retained): this branch is
+> the phase-3 spoke GitOps foundation. PR #142 was merged; the live build ran on a
+> rotated account. Verify the account is still live first (`scripts/whereami.sh` /
+> `aws sts get-caller-identity`) — it may rotate again.
+
+This session (auto-007) rebuilt the stack live and started phase 3:
+
+| Phase | Live result | Evidence |
+|---|---|---|
+| 0 base | apply-and-verify GREEN | run 27035432871 |
+| 1 management | apply-and-verify GREEN — EKS `k8-platform-mgmt` ACTIVE, ArgoCD + Crossplane + providers + ESO + Kyverno + IRSA | run 27035617598 |
+| 2 xrds | chainsaw dispatched (run on `534a0ce`) — check conclusion | chainsaw.yml |
+| 3 cluster | **NOT yet synced** — blocked on ArgoCD 503 (see below) | — |
+
+**Open in-flight (auto-007):** PRs #144 (trunk/envelope), #145 (phase-3 spoke
+GitOps foundation, CI-green locally), + phase 4/5/6 scaffolding branches
+(subagent-authored). Merge order in the run summary.
+
+**Immediate next step — finish phase 3 live:** follow
+`decisions/auto-009-phase3-live-completion-runbook.md` step-by-step (sync
+`platform-cluster-claim` via ArgoCD → platform EKS + ACM cert → XSpokeAccess MRs
+→ spoke registration → verify `https://hello.platform.<domain>`). The runbook has
+the exact MR manifests (from the auto-008 R1/R2 adversarial review).
+
+**ArgoCD 503 note (auto-007):** mgmt apply-and-verify passed WITH an ArgoCD
+HTTPS-200 check (~19:45Z), but ArgoCD went 503 minutes later (argocd-server
+settling after the app-of-apps sync). If still 503 on resume: re-poll
+`https://argocd.management.<domain>/healthz` until 200, or dispatch
+`phase=management action=verify` to force a CI-side re-check. Do NOT sandbox-kubectl
+the EKS API (private CA — blocked from the sandbox; use ArgoCD/CI).
+
+⚠️ Per AGENTS §8.4 a rotated account is FRESH+EMPTY. The CODE is durable in git;
+live AWS resources are not. Re-verify with the live API before assuming.
 
 ### What this session proved (durable evidence — the code WORKS on a fresh account)
 
@@ -156,7 +186,7 @@ To CHECK AWS creds, dispatch a workflow (AGENTS §8.5) — do not assume stale.
 
 | Field | Value |
 |---|---|
-| Active phase | **Account RESET 2026-06-06 (auto-007). Phase-3 XR provisioning was reached LIVE (11 MRs composing) then wiped. Nothing live now. Next: rebuild 0→1→2 (merge #142 + #149 + #150 + this PR), then phase-3 sync — the 4 blockers in QUICKSTART are all fixed.** |
+| Active phase | **Account RESET 2026-06-06 (auto-007). Phase-3 XR provisioning was reached LIVE (11 MRs composing) then wiped. Nothing live now. Next: rebuild 0→1→2 (merge #142 + #149 + #150 + this PR), then phase-3 sync — the 4 blockers in QUICKSTART are all fixed. Phases 0-1 had VERIFIED live earlier (runs 27035432871 / 27035617598); auto-009 runbook drives phase-3.** |
 | Last update | 2026-06-06 (auto-007 — phase-3 blockers cleared) |
 | AWS account | **ephemeral — derive from `aws sts get-caller-identity`** (AGENTS §8.1) |
 | Route53 zone | `<account-id>.realhandsonlabs.net.` |

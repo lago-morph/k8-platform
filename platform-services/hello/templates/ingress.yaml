@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hello
+  labels:
+    app.kubernetes.io/name: hello
+    app.kubernetes.io/part-of: platform-services
+  annotations:
+    # ExternalDNS on the spoke watches Ingress objects and creates the Route53
+    # record for this host under platform.<domain> (REQ-PLAT-04). No external-dns
+    # hostname annotation needed — the rule host below is the source.
+    kubernetes.io/ingress.class: nginx
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    # hello.<subdomain>.<domain> — domain overlaid by the Application at sync
+    # time (ephemeral, AGENTS §8.1). TLS terminates at the NLB via the cluster
+    # ACM cert (*.<subdomain>.<domain>); no Ingress tls: block (docs/0003).
+    - host: "hello.{{ .Values.subdomain }}.{{ .Values.domain }}"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hello
+                port:
+                  number: {{ .Values.service.port }}
