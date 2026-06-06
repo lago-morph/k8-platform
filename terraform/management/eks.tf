@@ -55,32 +55,17 @@ module "eks" {
       max_size     = var.node_max_size
       desired_size = var.node_desired_size
 
-      # Prefix delegation only helps if the kubelet pod cap is also raised — the
-      # CNI having spare /28 prefixes is moot while --max-pods stays at ~17.
-      # AL2023 (cluster_version >= 1.30) sets kubelet config via nodeadm, so
-      # inject maxPods=110 (the AWS max-pods-calculator value for t3.medium with
-      # prefix delegation) as a pre-nodeadm cloudinit part. Changing this rolls
-      # the node group so every node relaunches with the higher cap.
-      #
-      # enable_bootstrap_user_data: required for the module to MERGE
-      # cloudinit_pre_nodeadm into the launch-template user-data on an
-      # EKS-managed AL2023 node group. Without it the module leaves bootstrap to
-      # EKS and the cloudinit part produces no launch-template diff (no recycle).
-      enable_bootstrap_user_data = true
-      cloudinit_pre_nodeadm = [
-        {
-          content_type = "application/node.eks.aws"
-          content      = <<-EOT
-            ---
-            apiVersion: node.eks.aws/v1alpha1
-            kind: NodeConfig
-            spec:
-              kubelet:
-                config:
-                  maxPods: 110
-          EOT
-        }
-      ]
+      # NOTE: raising kubelet max-pods to 110 (to realize prefix delegation's
+      # higher pod density) is DEFERRED. The obvious approach
+      # (enable_bootstrap_user_data + cloudinit_pre_nodeadm maxPods) made the
+      # module emit AL2 `/etc/eks/bootstrap.sh` user-data, which does NOT exist
+      # on this node group's AL2023 AMI and omitted maxPods entirely — applying
+      # it would have failed node bootstrap and taken the cluster down (caught by
+      # plan + user-data decode, run 27047740806). Doing it safely needs the
+      # node group's ami_type pinned to AL2023 so the module emits nodeadm-format
+      # user-data, verified by decoding the plan's user-data, then a controlled
+      # recycle on a healthy cluster. Tracked as a follow-up; the vpc-cni addon
+      # above already enables prefix delegation at the CNI layer.
 
       # IMDSv2 required — prevents SSRF attacks against the instance metadata service.
       metadata_options = {
