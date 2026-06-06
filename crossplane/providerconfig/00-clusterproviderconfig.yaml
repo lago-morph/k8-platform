@@ -1,0 +1,41 @@
+# The single shared AWS ClusterProviderConfig for the whole platform.
+#
+# Every managed resource this platform renders — the PlatformSecret ASM Secret,
+# the XPlatformCluster EKS/IAM/ACM/Route53 resources, the XDatabase RDS instance,
+# and the XSpokeAccess OIDC/IRSA/AccessEntry resources — sets
+# `providerConfigRef: {kind: ClusterProviderConfig, name: default}` (the
+# cluster-scoped variant; one shared IRSA identity). Without this object every MR
+# fails to reconcile with:
+#
+#   cannot get terraform setup: cannot get referenced ProviderConfig:
+#   ClusterProviderConfig.aws.m.upbound.io "default" not found
+#   (Warning CannotConnectToProvider)
+#
+# and no AWS resource is ever created (observed live 2026-06-06 on the
+# XPlatformCluster sync: all 11 composed MRs stalled Synced=False with this
+# message, zero CreateRole/RequestCertificate/CreateCluster calls in CloudTrail).
+#
+# This was previously a MANUAL bootstrap step (ai/crossplane-v1-v2-un-fuckify/
+# 20-plan-SEG-1-production-manifests.md §0c — "Verify or create
+# ClusterProviderConfig default") that was never automated, so it was absent on
+# every freshly-rebuilt management cluster. Delivering it via GitOps
+# (crossplane-resources app) makes provider credentials reproducible.
+#
+# source: IRSA — the provider-family-aws ServiceAccount
+# (crossplane-system/upbound-provider-family-aws) is annotated with
+# eks.amazonaws.com/role-arn = <cluster>-crossplane (DeploymentRuntimeConfig in
+# terraform/management/helm.tf), so the provider assumes that role via the
+# projected SA token. No static credentials. "IRSA" is a valid value of the
+# provider's credentials.source enum
+# [None, Secret, IRSA, WebIdentity, PodIdentity, Upbound].
+apiVersion: aws.m.upbound.io/v1beta1
+kind: ClusterProviderConfig
+metadata:
+  name: default
+  annotations:
+    # Apply before the XRDs/Compositions (wave -1/0) so the credential anchor
+    # exists the moment any composed MR is reconciled.
+    argocd.argoproj.io/sync-wave: "-5"
+spec:
+  credentials:
+    source: IRSA
