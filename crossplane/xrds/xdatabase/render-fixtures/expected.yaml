@@ -1,0 +1,70 @@
+apiVersion: rds.aws.m.upbound.io/v1beta1
+kind: Instance
+metadata:
+  annotations:
+    crossplane.io/external-name: render-probe-db
+  generateName: render-probe-db-
+  labels:
+    crossplane.io/composite: render-probe-db
+    platform.k8-platform.io/role: rds-instance
+  name: render-probe-db-d34e0f25f0cc
+  namespace: default
+spec:
+  forProvider:
+    allocatedStorage: 20
+    applyImmediately: true
+    autoGeneratePassword: true
+    dbName: keycloak
+    engine: postgres
+    engineVersion: "15"
+    instanceClass: db.t4g.micro
+    passwordSecretRef:
+      key: password
+      name: render-probe-db-master
+    publiclyAccessible: false
+    region: us-east-1
+    skipFinalSnapshot: true
+    tags:
+      ManagedBy: crossplane
+      PlatformAbstraction: XDatabase
+    username: keycloak
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
+  writeConnectionSecretToRef:
+    name: render-probe-db
+---
+apiVersion: platform.k8-platform.io/v1alpha1
+kind: XDatabase
+metadata:
+  name: render-probe-db
+  namespace: default
+spec:
+  crossplane:
+    resourceRefs:
+      - apiVersion: rds.aws.m.upbound.io/v1beta1
+        kind: Instance
+        name: render-probe-db-d34e0f25f0cc
+  databaseName: keycloak
+  engine: postgres
+  region: us-east-1
+  size: small
+  storageGB: 20
+  version: "15"
+status:
+  conditions:
+    - reason: WatchCircuitClosed
+      status: "True"
+      type: Responsive
+    - reason: ReconcileSuccess
+      status: "True"
+      type: Synced
+    - message: 'Unready resources: rds-instance'
+      reason: Creating
+      status: "False"
+      type: Ready

@@ -1,0 +1,96 @@
+{
+  "type": "object",
+  "properties": {
+    "spec": {
+      "type": "object",
+      "properties": {
+        "engine": {
+          "type": "string",
+          "description": "Database engine. Only `postgres` is supported today (Keycloak needs Postgres). Kept as an enum so a future backend can add engines without widening the type.",
+          "enum": [
+            "postgres"
+          ],
+          "default": "postgres"
+        },
+        "version": {
+          "type": "string",
+          "description": "Engine major version (e.g. \"15\"). Backend-agnostic string; the RDS Composition maps it to engineVersion. Optional \u2014 omit to take the backend default.",
+          "pattern": "^[0-9]+(\\.[0-9]+)?$"
+        },
+        "size": {
+          "type": "string",
+          "description": "Abstract t-shirt size. The backend Composition maps it to concrete units. RDS mapping (ai/testing-guidelines \u00a71 \u2014 small instance classes only, single-AZ, minimal storage): small \u2192 db.t4g.micro, medium \u2192 db.t4g.small.",
+          "enum": [
+            "small",
+            "medium"
+          ],
+          "default": "small"
+        },
+        "storageGB": {
+          "type": "integer",
+          "description": "Allocated storage in GB. Defaults to 20 (the account's minimal-storage constraint, ai/testing-guidelines \u00a71).",
+          "minimum": 20,
+          "maximum": 100,
+          "default": 20
+        },
+        "databaseName": {
+          "type": "string",
+          "description": "Name of the initial database created inside the instance (Keycloak uses `keycloak`). Lower-case alphanumeric; becomes RDS dbName.",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$"
+        },
+        "region": {
+          "type": "string",
+          "description": "AWS region for the RDS backend. Defaults to us-east-1; account-region comes from a binding/EnvironmentConfig at provisioning time, never hardcoded downstream (AGENTS \u00a78.1).",
+          "pattern": "^[a-z]{2}-[a-z]+-[0-9]$",
+          "default": "us-east-1"
+        }
+      },
+      "required": [
+        "databaseName"
+      ],
+      "additionalProperties": false
+    },
+    "status": {
+      "type": "object",
+      "properties": {
+        "endpoint": {
+          "type": "string",
+          "description": "Database connection host (RDS instance address) once available. Feeds the consuming chart's externalDatabase.host."
+        },
+        "port": {
+          "type": "integer",
+          "description": "Database connection port (5432 for postgres). Feeds the consuming chart's externalDatabase.port."
+        },
+        "secretRef": {
+          "type": "object",
+          "description": "Reference to the Kubernetes connection Secret the platform materializes in the XR's namespace. The consuming chart points externalDatabase.existingSecret at this name. Keys: username, password (plus endpoint / port / attribute.* the provider writes).",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "namespace": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "ready": {
+          "type": "boolean",
+          "description": "True once the backing database instance is available and the connection Secret has been written. Mirrors the XR Ready condition for quick boolean consumption."
+        }
+      },
+      "additionalProperties": false
+    },
+    "apiVersion": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "metadata": {
+      "type": "object"
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false
+}

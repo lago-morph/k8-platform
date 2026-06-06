@@ -1,0 +1,30 @@
+# Probe XDatabase used by `crossplane render` for the SPEC-S9 dry-run.
+#
+# v2 namespaced XR (apiextensions.crossplane.io/v2 + scope: Namespaced):
+# the Composition reads metadata.{name,namespace} directly on the XR, and
+# metadata.namespace is load-bearing for render output (it controls where
+# the generated-password Secret and the connection Secret would land, and
+# is echoed onto status.secretRef.namespace).
+#
+# metadata.uid is pinned to a deterministic fake UUID per SPEC-S9 §5
+# "Diff strategy" so the render is reproducible across runs. (The
+# xdatabase-rds Composition does not derive any value from uid today, but
+# the pin is kept for parity with the other fixtures and to stay stable if
+# a future patch starts using it.)
+#
+# Values mirror the real Keycloak consumer: engine postgres, size small
+# (→ db.t4g.micro), 20GB, databaseName keycloak — exercising the AWS
+# account-constraint mapping (ai/testing-guidelines §1).
+apiVersion: platform.k8-platform.io/v1alpha1
+kind: XDatabase
+metadata:
+  name: render-probe-db
+  namespace: default
+  uid: "00000000-0000-0000-0000-000000000003"
+spec:
+  engine: postgres
+  version: "15"
+  size: small
+  storageGB: 20
+  databaseName: keycloak
+  region: us-east-1
