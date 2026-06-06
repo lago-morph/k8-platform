@@ -1,7 +1,7 @@
 # ADR: Issue a dedicated per-subdomain ACM certificate for management-cluster services
 
 - **ID**: ADR-c05151e6d6
-- **Status**: Draft (not yet adopted to docs/adr/)
+- **Status**: Adopted — `docs/decisions/0004-dedicated-management-subdomain-acm-certificate.md` (2026-06-06)
 - **Date**: 2026-06-06
 - **Source retrospective**: ../2026-06-06-151.md
 - **PRs covered**: #149

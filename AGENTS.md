@@ -955,6 +955,49 @@ a is terrible … You are hiding the error not fixing it. The webhook is there
 for a reason." The correct fix kept the webhook and forced a clean recreate by
 tainting the resource in Terraform state.*
 
+### 6.25 Prove a fix with consistent end-to-end tests, not a single signal
+
+**Prove a fix with consistent end-to-end tests, not a single signal.** "Do not
+call something fixed or working from one positive observation. Require the real
+end-to-end operation to succeed repeatedly with the actual tool — a lone 200 or
+one green check is not proof. State explicitly what was tested vs assumed; if the
+next call contradicts the first, the state is not-confirmed, not fixed."
+
+*Grounded in: 2026-06-06 auto-007 — the agent declared ArgoCD "reachable / fixed"
+off one healthz 200; the very next `argocd login` failed on DNS. The user: "How
+do you know it is fixed without testing it? You are presenting guesses as fact."*
+
+### 6.26 Diagnose the cluster through the cloud API when the kube-API is unreachable
+
+**Diagnose the cluster through the cloud API when the kube-API is unreachable.**
+"When kubectl is blocked, do not declare the problem un-diagnosable — reach the
+same facts through the cloud provider API: pod density via ENI/IP counts
+(`aws ec2 describe-network-interfaces`), load via CloudWatch, capacity via
+`describe-instance-types`, cluster/nodegroup health via the EKS API. Label
+cloud-API-derived facts as such, and route facts only the kube-API has (pod
+events, exact per-node pod counts) through CI."
+
+*Grounded in: 2026-06-06 auto-007 — pod-IP exhaustion (3/3 ENIs, 18/18 IPs on
+t3.medium = the ~17 max-pods ceiling) was diagnosed entirely via the AWS CLI
+because the EKS kube-API was gateway-blocked; the first instinct had been to call
+it un-diagnosable and disable the failing webhook.*
+
+### 6.27 Sandbox egress is a strict-verifying MITM gateway
+
+**Sandbox egress is a strict-verifying MITM gateway.** "Treat sandbox outbound
+HTTPS as passing through a gateway that terminates TLS (it presents a leaf signed
+by an `Anthropic … Egress Gateway` CA) and strictly verifies the UPSTREAM cert. A
+service you exposed is reachable from the sandbox only if it presents a
+publicly-trusted cert whose SAN matches the host; private-CA endpoints (the EKS
+kube-API) and SAN-mismatched certs return 503 and must be reached via CI.
+Diagnose with `openssl s_client` and read the 503 body — `verify SAN list` is a
+fixable SAN gap; `unable to get local issuer certificate` is a private CA."
+
+*Grounded in: 2026-06-06 auto-007 — ArgoCD 503'd on a base-wildcard SAN gap (fixed
+with a covering `*.management` cert) and kubectl 503'd on the EKS private CA
+(unfixable, CI-only), both at the egress gateway; the prior handoff's "directly
+reachable" claim was false for exactly this reason.*
+
 ---
 
 ## 7. Testing loops — companion skills
