@@ -1,0 +1,42 @@
+# Generic read-only kube diagnostic for the management cluster.
+#
+# The sandbox cannot reach the EKS kube-API (private-CA blocked by the egress
+# gateway), so live kube state must be read from CI. This workflow runs an
+# arbitrary read-only `kubectl`/`aws` script supplied via workflow_dispatch and
+# prints the output. It performs NO mutations of product resources (the operator
+# is responsible for keeping the script read-only).
+#
+# Usage: dispatch with `script` set to the diagnostic commands to run.
+name: kube-diagnose (read-only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      script:
+        description: "Read-only kubectl/aws script to run on the mgmt cluster"
+        required: true
+        default: "kubectl get xplatformcluster -A"
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    name: diagnose
+    runs-on: ubuntu-24.04
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+    steps:
+      - name: Configure kubectl
+        run: |
+          aws sts get-caller-identity
+          aws eks update-kubeconfig --name k8-platform-mgmt --region "${AWS_REGION}"
+      - name: Run diagnostic script
+        env:
+          DIAG_SCRIPT: ${{ github.event.inputs.script }}
+        run: |
+          set +e
+          bash -c "$DIAG_SCRIPT"
