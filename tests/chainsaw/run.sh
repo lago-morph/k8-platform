@@ -158,7 +158,11 @@ kubectl apply -f - <<MANIFEST
 apiVersion: pkg.crossplane.io/v1
 kind: Provider
 metadata:
-  name: provider-family-aws
+  # Named upbound-provider-family-aws to stay aligned with terraform/management
+  # (helm.tf), which renamed this Provider onto the child providers' derived
+  # dependency name to collapse the duplicate-owner package-manager deadlock
+  # (OI-2026-06-06-2). Harness and terraform must use the same object name.
+  name: upbound-provider-family-aws
 spec:
   package: "xpkg.upbound.io/upbound/provider-family-aws:${PROVIDER_FAMILY_AWS_VERSION}"
 MANIFEST
@@ -167,7 +171,7 @@ MANIFEST
 # ProviderRevision Healthy. Without this, scenarios race the CRD install
 # and fail with "no matches for kind". Single-line so the unit test's
 # grep can verify the gate exists.
-kubectl wait --for=condition=Healthy provider.pkg.crossplane.io/provider-family-aws --timeout=300s
+kubectl wait --for=condition=Healthy provider.pkg.crossplane.io/upbound-provider-family-aws --timeout=300s
 
 # ---------- install provider-aws-secretsmanager ---------------------------
 # Upbound's family-aws is a meta-package; child providers (one per AWS
