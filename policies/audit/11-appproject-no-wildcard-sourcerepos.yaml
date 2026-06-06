@@ -1,0 +1,48 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: appproject-no-wildcard-sourcerepos
+  annotations:
+    policies.kyverno.io/title: Audit AppProjects for wildcard sourceRepos
+    policies.kyverno.io/category: GitOps
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Runtime backstop for the no-wildcard sourceRepos invariant that the static
+      unit tests (test_platform_spoke_appproject.sh, test_hub_addons_appproject.sh)
+      enforce at author time. The hub-addons and platform-spoke AppProjects map
+      ArgoCD to privileged destinations (the hub in-cluster server and
+      cluster-admin on spokes respectively), so their pinned, exact sourceRepos
+      are the real blast-radius control: a wildcard entry would let ArgoCD pull an
+      arbitrary chart repo onto a privileged destination. The static test only
+      guards the in-git manifests; this policy flags a wildcard introduced by a
+      hand-edit directly on a live cluster (auto-008 S1, phase-4 Option A).
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: no-wildcard-in-sourcerepos
+      match:
+        any:
+          - resources:
+              # Group-qualified (Group/Version/Kind), NOT a bare "AppProject":
+              # Kyverno's validate-policy webhook must convert the matched kind
+              # to a GVR, and a bare CRD kind yields "*/*/AppProject/" → "failed
+              # to find resource" at policy admission (run 27071480486). The
+              # argoproj.io AppProject CRD is installed (ArgoCD helm) before this
+              # policy applies, so the qualified form resolves cleanly.
+              kinds:
+                - argoproj.io/v1alpha1/AppProject
+      validate:
+        message: >-
+          AppProject sourceRepos contains a wildcard entry. Privileged projects
+          (hub-addons, platform-spoke) must pin exact repo URLs — a wildcard
+          re-opens a cluster-admin / hub destination to arbitrary upstream charts
+          (auto-008 S1).
+        foreach:
+          - list: "request.object.spec.sourceRepos"
+            deny:
+              conditions:
+                any:
+                  - key: "{{ contains(element, '*') }}"
+                    operator: Equals
+                    value: true

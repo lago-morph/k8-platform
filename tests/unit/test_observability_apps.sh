@@ -6,8 +6,10 @@
 # pinned targetRevision, automated prune+selfHeal, sync-wave), the static values
 # files carry the required REQ-OBS knobs (remote-write receiver, Grafana ingress
 # nginx + no tls, annotation-driven scrape in the Alloy agent), and the hub Alloy
-# agent is parked as a documented `.yaml.todo` (the AppProject open question —
-# see argocd/apps/spoke/observability-alloy-mgmt.yaml.todo). Includes a
+# agent is a live Application under the dedicated `hub-addons` AppProject targeting
+# the HUB in-cluster destination (phase-4 Option A,
+# decisions/2026-06-06-phase4-alloy-phase5-db.md). §3 gates that resolved state
+# and forbids regression back to the old `.yaml.todo` park. Includes a
 # helm-template smoke for kube-prometheus-stack that degrades to a yq structural
 # check when chart-repo egress is unavailable offline.
 set -uo pipefail
@@ -20,12 +22,15 @@ SPOKE_DIR="$ROOT/argocd/apps/spoke"
 OBS_VALUES="$ROOT/platform-services/observability"
 FAIL=0
 
-# The two observability Applications that target the SPOKE (the hub Alloy app is
-# a .yaml.todo and intentionally NOT in this list — see below).
+# The two observability Applications that target the SPOKE (the hub Alloy app
+# targets the HUB and is gated separately in §3 — it is intentionally NOT here).
 OBS_APPS=(
   "$SPOKE_DIR/observability-kube-prometheus-stack.yaml"
   "$SPOKE_DIR/observability-loki.yaml"
 )
+# Guard against the spoke-app coverage silently shrinking (a future edit emptying
+# the array would make §1 vacuously pass).
+[ "${#OBS_APPS[@]}" -eq 2 ] || { echo "FAIL: OBS_APPS must list exactly the 2 spoke obs apps"; FAIL=1; }
 
 # ── 1. spoke-app contract (mirrors test_spoke_apps.sh) ──────────────────────
 for app in "${OBS_APPS[@]}"; do
@@ -133,26 +138,119 @@ if [ -f "$ALLOY" ]; then
   else
     echo "FAIL[alloy]: Alloy must remote_write metrics + push logs to the spoke (REQ-OBS-02)"; FAIL=1
   fi
+  # AGENTS §8.1: the spoke endpoints are account-ephemeral and overlaid at
+  # registration — every `url =` in the Alloy river config MUST be a PLACEHOLDER_
+  # token, never a real http(s) literal committed to git. test_spoke_values_no_ephemeral
+  # only bans ARNs/domains/account-ids, so this is the gate that catches a real
+  # remote_write/loki URL being baked in.
+  bad_urls="$(grep -nE 'url[[:space:]]*=[[:space:]]*"https?://' "$ALLOY" || true)"
+  if [ -n "$bad_urls" ]; then
+    echo "FAIL[alloy]: river config has a literal http(s) url (must be PLACEHOLDER_, overlaid at registration):"; echo "$bad_urls"; FAIL=1
+  else
+    echo "ok[alloy]: all river-config urls are PLACEHOLDER_ tokens (no baked endpoint)"
+  fi
+  if grep -qE 'url[[:space:]]*=[[:space:]]*"PLACEHOLDER_SPOKE_PROMETHEUS_REMOTE_WRITE_URL"' "$ALLOY" \
+     && grep -qE 'url[[:space:]]*=[[:space:]]*"PLACEHOLDER_SPOKE_LOKI_PUSH_URL"' "$ALLOY"; then
+    echo "ok[alloy]: both spoke endpoint placeholders present"
+  else
+    echo "FAIL[alloy]: expected PLACEHOLDER_SPOKE_PROMETHEUS_REMOTE_WRITE_URL + PLACEHOLDER_SPOKE_LOKI_PUSH_URL"; FAIL=1
+  fi
 else
   echo "FAIL: $ALLOY missing"; FAIL=1
 fi
 
-# ── 3. hub Alloy app is parked as a documented TODO (the open question) ─────
+# ── 3. hub Alloy app — RESOLVED live state (phase-4 Option A) ───────────────
+# The former "parked as .yaml.todo / open question" guard is replaced by the
+# resolved contract: a live Application under the hub-addons project targeting
+# the HUB in-cluster destination. These assertions are the regression guard the
+# old §3 provided (the app must NOT silently regress into platform-spoke /
+# k8-platform, and the .yaml.todo park must NOT reappear).
+ALLOY_APP="$SPOKE_DIR/observability-alloy-mgmt.yaml"
 ALLOY_TODO="$SPOKE_DIR/observability-alloy-mgmt.yaml.todo"
-if [ -f "$ALLOY_TODO" ]; then
-  echo "ok: hub Alloy parked as .yaml.todo (not synced; AppProject open question)"
-  # Must NOT exist as a live .yaml (would break the spoke contract / be rejected).
-  if [ -f "$SPOKE_DIR/observability-alloy-mgmt.yaml" ]; then
-    echo "FAIL: hub Alloy is a live .yaml — its hub destination breaks the spoke project (open question unresolved)"; FAIL=1
-  fi
-  # Header must document the open question for the next session.
-  if grep -qi 'OPEN QUESTION' "$ALLOY_TODO"; then
-    echo "ok: hub Alloy TODO documents the open question"
+HUB_PROJ="$ROOT/argocd/projects/hub-addons.yaml"
+
+# 3a. No resurrection of the parked .yaml.todo (single source of truth).
+[ -e "$ALLOY_TODO" ] && { echo "FAIL: the old observability-alloy-mgmt.yaml.todo reappeared (park state is gone)"; FAIL=1; } \
+  || echo "ok: no stale .yaml.todo park file"
+
+if [ -f "$ALLOY_APP" ]; then
+  base="$(basename "$ALLOY_APP")"
+  [ "$(yq -r '.kind' "$ALLOY_APP")" = "Application" ] && echo "ok[$base]: kind Application" \
+    || { echo "FAIL[$base]: kind must be Application"; FAIL=1; }
+
+  # 3b. project is hub-addons EXACTLY — explicitly not the spoke / locked projects.
+  aproj="$(yq -r '.spec.project' "$ALLOY_APP")"
+  case "$aproj" in
+    hub-addons) echo "ok[$base]: project=hub-addons" ;;
+    platform-spoke|k8-platform) echo "FAIL[$base]: project=$aproj — the hub agent must use hub-addons, not $aproj"; FAIL=1 ;;
+    *) echo "FAIL[$base]: project=$aproj, want hub-addons"; FAIL=1 ;;
+  esac
+
+  # 3c. HUB destination by SERVER, never by name (inverse of the spoke contract).
+  [ "$(yq -r '.spec.destination.server' "$ALLOY_APP")" = "https://kubernetes.default.svc" ] \
+    && echo "ok[$base]: destination.server is the hub in-cluster" \
+    || { echo "FAIL[$base]: destination.server must be https://kubernetes.default.svc"; FAIL=1; }
+  [ "$(yq -r '.spec.destination.name' "$ALLOY_APP")" = "null" ] \
+    && echo "ok[$base]: no destination.name (hub is by server)" \
+    || { echo "FAIL[$base]: hub app must not set destination.name"; FAIL=1; }
+  ans="$(yq -r '.spec.destination.namespace' "$ALLOY_APP")"
+  [ "$ans" = "monitoring-agent" ] && echo "ok[$base]: namespace monitoring-agent" \
+    || { echo "FAIL[$base]: destination.namespace must be monitoring-agent, got $ans"; FAIL=1; }
+  # cross-file: the app's namespace must be allowed by the hub-addons project.
+  if [ -f "$HUB_PROJ" ] && yq -e ".spec.destinations[] | select(.namespace == \"$ans\")" "$HUB_PROJ" >/dev/null 2>&1; then
+    echo "ok[$base]: app namespace is within the hub-addons project destinations"
   else
-    echo "FAIL: hub Alloy TODO must document the AppProject open question"; FAIL=1
+    echo "FAIL[$base]: app namespace $ans not permitted by hub-addons project (ArgoCD would reject the sync)"; FAIL=1
+  fi
+
+  # 3d. multi-source: pinned alloy chart 0.12.6 + a $values ref to this repo, and
+  #     both source repos must be members of the hub-addons project sourceRepos.
+  nsrc="$(yq -r '.spec.sources | length' "$ALLOY_APP")"
+  [ "$nsrc" = "2" ] && echo "ok[$base]: multi-source (chart + \$values)" \
+    || { echo "FAIL[$base]: expected 2 sources, got $nsrc"; FAIL=1; }
+  chart_rev="$(yq -r '.spec.sources[] | select(.chart=="alloy") | .targetRevision' "$ALLOY_APP")"
+  [ "$chart_rev" = "0.12.6" ] && echo "ok[$base]: alloy chart pinned 0.12.6" \
+    || { echo "FAIL[$base]: alloy chart targetRevision must be 0.12.6, got $chart_rev"; FAIL=1; }
+  if yq -e '.spec.sources[] | select(.ref == "values")' "$ALLOY_APP" >/dev/null 2>&1; then
+    echo "ok[$base]: has a \$values ref source"
+  else
+    echo "FAIL[$base]: missing the ref: values source"; FAIL=1
+  fi
+  # valueFiles must point at the committed alloy values (a typo renders empty config).
+  if yq -e '.spec.sources[] | select(.helm.valueFiles[]? == "$values/platform-services/observability/alloy/values.yaml")' "$ALLOY_APP" >/dev/null 2>&1; then
+    echo "ok[$base]: references the committed alloy values file"
+  else
+    echo "FAIL[$base]: must reference \$values/platform-services/observability/alloy/values.yaml"; FAIL=1
+  fi
+  if [ -f "$HUB_PROJ" ]; then
+    while IFS= read -r srepo; do
+      [ -z "$srepo" ] && continue
+      if yq -e ".spec.sourceRepos[] | select(. == \"$srepo\")" "$HUB_PROJ" >/dev/null 2>&1; then
+        echo "ok[$base]: source repo allowed by hub-addons project: $srepo"
+      else
+        echo "FAIL[$base]: source repo $srepo not in hub-addons sourceRepos (sync rejected)"; FAIL=1
+      fi
+    done <<< "$(yq -r '.spec.sources[].repoURL' "$ALLOY_APP")"
+  fi
+
+  # 3e. automated prune+selfHeal + sync-wave 40, and project reconciles first.
+  { [ "$(yq -r '.spec.syncPolicy.automated.prune' "$ALLOY_APP")" = "true" ] \
+    && [ "$(yq -r '.spec.syncPolicy.automated.selfHeal' "$ALLOY_APP")" = "true" ]; } \
+    && echo "ok[$base]: automated prune+selfHeal" \
+    || { echo "FAIL[$base]: hub agent needs automated prune+selfHeal"; FAIL=1; }
+  awave="$(yq -r '.metadata.annotations."argocd.argoproj.io/sync-wave"' "$ALLOY_APP")"
+  [ "$awave" = "40" ] && echo "ok[$base]: sync-wave=40 (obs band)" \
+    || { echo "FAIL[$base]: sync-wave=$awave, want 40"; FAIL=1; }
+  if [ -f "$HUB_PROJ" ]; then
+    pwave="$(yq -r '.metadata.annotations."argocd.argoproj.io/sync-wave"' "$HUB_PROJ")"
+    if [ "$pwave" != "null" ] && [ "$pwave" -le "$awave" ] 2>/dev/null; then
+      echo "ok: hub-addons project wave ($pwave) <= alloy app wave ($awave)"
+    else
+      echo "FAIL: hub-addons project wave ($pwave) must be <= alloy app wave ($awave) so the project exists first"; FAIL=1
+    fi
   fi
 else
-  echo "FAIL: $ALLOY_TODO missing (hub Alloy must be parked as a documented TODO)"; FAIL=1
+  echo "FAIL: $ALLOY_APP missing (the hub Alloy agent must be a live Application — Option A)"; FAIL=1
 fi
 
 # ── 4. helm-template smoke for kube-prometheus-stack ────────────────────────

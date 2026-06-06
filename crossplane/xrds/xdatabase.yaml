@@ -1,0 +1,142 @@
+# XDatabase — the platform's database abstraction (phase 5, REQ-AUTH DB).
+#
+# A claim against this XRD provisions a managed relational database and
+# surfaces a single connection Secret that a workload (Keycloak first)
+# consumes via its chart's `externalDatabase.existingSecret`. The claim
+# author never names RDS — they say "I need a postgres database" and the
+# platform picks the backend. This is the abstraction line recorded in
+# decisions/2026-06-06-phase4-alloy-phase5-db.md:
+#
+#   "a general XDatabase-style XRD that abstracts the database backend;
+#    RDS (via Crossplane) as the only implementation for now."
+#
+# Backend-agnostic by construction: the spec carries NO RDS-specific
+# fields (no instanceClass, no allocatedStorage-in-AWS-units, no engine
+# version coupling). `size` is an abstract t-shirt size the backend
+# Composition maps to its own units (RDS: db.t4g.micro / db.t4g.small).
+# A future in-cluster-operator backend would map `size` to its own
+# resource requests without any XRD change. Keycloak consumes the
+# abstraction, not a hard-coded RDS reference.
+#
+# Schema is intentionally strict (no x-kubernetes-preserve-unknown-fields:
+# true) — new fields require an XRD edit + a Composition update, never a
+# silent passthrough. Mirrors the platform-secret / platform-cluster XRD
+# style: apiextensions.crossplane.io/v2, scope Namespaced, no claim type.
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: xdatabases.platform.k8-platform.io
+  annotations:
+    # XRDs land before Compositions (wave -1) so the Composition's
+    # compositeTypeRef binds against an already-Established XRD.
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  group: platform.k8-platform.io
+  # v2 namespaced XR — users apply XDatabase directly into the consuming
+  # workload's namespace (Keycloak applies it in `keycloak`). No separate
+  # claim type; mirrors XPlatformSecret / XPlatformCluster.
+  scope: Namespaced
+  names:
+    kind: XDatabase
+    plural: xdatabases
+    listKind: XDatabaseList
+    singular: xdatabase
+  defaultCompositionRef:
+    name: xdatabase-rds
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                engine:
+                  type: string
+                  description: >-
+                    Database engine. Only `postgres` is supported today
+                    (Keycloak needs Postgres). Kept as an enum so a future
+                    backend can add engines without widening the type.
+                  enum:
+                    - postgres
+                  default: postgres
+                version:
+                  type: string
+                  description: >-
+                    Engine major version (e.g. "15"). Backend-agnostic
+                    string; the RDS Composition maps it to engineVersion.
+                    Optional — omit to take the backend default.
+                  pattern: "^[0-9]+(\\.[0-9]+)?$"
+                size:
+                  type: string
+                  description: >-
+                    Abstract t-shirt size. The backend Composition maps it
+                    to concrete units. RDS mapping (ai/testing-guidelines
+                    §1 — small instance classes only, single-AZ, minimal
+                    storage): small → db.t4g.micro, medium → db.t4g.small.
+                  enum:
+                    - small
+                    - medium
+                  default: small
+                storageGB:
+                  type: integer
+                  description: >-
+                    Allocated storage in GB. Defaults to 20 (the account's
+                    minimal-storage constraint, ai/testing-guidelines §1).
+                  minimum: 20
+                  maximum: 100
+                  default: 20
+                databaseName:
+                  type: string
+                  description: >-
+                    Name of the initial database created inside the
+                    instance (Keycloak uses `keycloak`). Lower-case
+                    alphanumeric; becomes RDS dbName.
+                  pattern: "^[a-z][a-z0-9_]{0,62}$"
+                region:
+                  type: string
+                  description: >-
+                    AWS region for the RDS backend. Defaults to us-east-1;
+                    account-region comes from a binding/EnvironmentConfig
+                    at provisioning time, never hardcoded downstream
+                    (AGENTS §8.1).
+                  pattern: "^[a-z]{2}-[a-z]+-[0-9]$"
+                  default: "us-east-1"
+              required:
+                - databaseName
+            status:
+              type: object
+              properties:
+                endpoint:
+                  type: string
+                  description: >-
+                    Database connection host (RDS instance address) once
+                    available. Feeds the consuming chart's
+                    externalDatabase.host.
+                port:
+                  type: integer
+                  description: >-
+                    Database connection port (5432 for postgres). Feeds the
+                    consuming chart's externalDatabase.port.
+                secretRef:
+                  type: object
+                  description: >-
+                    Reference to the Kubernetes connection Secret the
+                    platform materializes in the XR's namespace. The
+                    consuming chart points externalDatabase.existingSecret
+                    at this name. Keys: username, password (plus endpoint /
+                    port / attribute.* the provider writes).
+                  properties:
+                    name:
+                      type: string
+                    namespace:
+                      type: string
+                ready:
+                  type: boolean
+                  description: >-
+                    True once the backing database instance is available
+                    and the connection Secret has been written. Mirrors the
+                    XR Ready condition for quick boolean consumption.

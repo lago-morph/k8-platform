@@ -151,6 +151,11 @@ CRD_URLS=(
   "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/acm.aws.m.upbound.io_certificates.yaml"
   "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/acm.aws.m.upbound.io_certificatevalidations.yaml"
   "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/route53.aws.m.upbound.io_records.yaml"
+  # Phase 5 — XDatabase abstraction backed by an RDS Instance (the
+  # xdatabase-rds Composition provisions a postgres rds.aws.m.upbound.io
+  # Instance). Pinned to the same provider-upjet-aws v2.5.0 as the other
+  # AWS CRDs above so the kubeconform store stays single-version.
+  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/rds.aws.m.upbound.io_instances.yaml"
 )
 
 KYVERNO_BUNDLE_URL="https://github.com/kyverno/kyverno/raw/v1.13.0/config/install-latest-testing.yaml"

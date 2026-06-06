@@ -1,0 +1,137 @@
+# REAL-AWS / NIGHTLY — DO NOT run in the per-PR kind-only chainsaw matrix.
+# This scenario provisions a live AWS RDS Postgres instance via the
+# XDatabase abstraction; RDS create takes 5-10 minutes, so the Ready assert
+# timeout is 900s. Requires provider-aws-rds installed and IRSA creds with
+# rds:* + secretsmanager:* (the master-password path). Gated to the nightly
+# real-AWS workflow, NOT the push-triggered kind run.
+#
+# Contract under test (the full provisioning flow):
+#   1. Apply an XDatabase XR (engine postgres, size small → db.t4g.micro).
+#   2. The XR reaches Synced + Ready + Responsive (the 3 v2 conditions)
+#      within 900s — i.e. the RDS instance is `available`.
+#   3. The XR surfaces status.endpoint / status.port / status.secretRef.
+#   4. The connection Secret (named after the XR) exists in the XR namespace
+#      and carries the username/password keys Keycloak consumes.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: xdatabase-claim-creates-rds
+spec:
+  timeouts:
+    apply: 30s
+    # RDS create is 5-10 min; allow 900s for Ready (see header).
+    assert: 900s
+    delete: 120s
+  steps:
+    - name: apply an XDatabase XR
+      try:
+        - apply:
+            resource:
+              apiVersion: platform.k8-platform.io/v1alpha1
+              kind: XDatabase
+              metadata:
+                name: scenario01-db
+                namespace: default
+              spec:
+                engine: postgres
+                size: small
+                storageGB: 20
+                databaseName: keycloak
+                region: us-east-1
+
+    - name: wait for the XR to be Ready (RDS available — up to 900s)
+      try:
+        - assert:
+            resource:
+              apiVersion: platform.k8-platform.io/v1alpha1
+              kind: XDatabase
+              metadata:
+                name: scenario01-db
+                namespace: default
+              status:
+                # v2 XRs carry 3 conditions: Synced, Ready, Responsive
+                # (chainsaw matches arrays element-wise at same index).
+                conditions:
+                  - type: Synced
+                    status: "True"
+                  - type: Ready
+                    status: "True"
+                  - type: Responsive
+                    status: "True"
+
+    - name: assert the XR surfaces endpoint/port/secretRef on status
+      try:
+        - script:
+            content: |
+              set -eu
+              # chainsaw runs scripts under /bin/sh; pipefail is bash-only.
+              endpoint=$(kubectl get xdatabase -n default scenario01-db -o jsonpath='{.status.endpoint}')
+              port=$(kubectl get xdatabase -n default scenario01-db -o jsonpath='{.status.port}')
+              secret=$(kubectl get xdatabase -n default scenario01-db -o jsonpath='{.status.secretRef.name}')
+              echo "endpoint=$endpoint port=$port secret=$secret"
+              if [ -z "$endpoint" ]; then echo "FAIL: status.endpoint empty"; exit 1; fi
+              if [ "$port" != "5432" ]; then echo "FAIL: status.port=$port want 5432"; exit 1; fi
+              if [ "$secret" != "scenario01-db" ]; then echo "FAIL: status.secretRef.name=$secret want scenario01-db"; exit 1; fi
+
+    - name: assert the connection Secret exists with username/password keys
+      try:
+        - script:
+            content: |
+              set -eu
+              # The Secret is named after the XR (writeConnectionSecretToRef.name
+              # := metadata.name) and lands in the XR namespace.
+              if ! kubectl get secret -n default scenario01-db >/dev/null 2>&1; then
+                echo "FAIL: connection Secret scenario01-db not found"
+                exit 1
+              fi
+              for key in username password; do
+                v=$(kubectl get secret -n default scenario01-db -o jsonpath="{.data.$key}")
+                if [ -z "$v" ]; then echo "FAIL: connection Secret missing key $key"; exit 1; fi
+              done
+              echo "OK: connection Secret scenario01-db has username/password"
+
+    - name: clean up the XR (leave no live RDS instance behind)
+      try:
+        - delete:
+            ref:
+              apiVersion: platform.k8-platform.io/v1alpha1
+              kind: XDatabase
+              name: scenario01-db
+              namespace: default
+  # SPEC-A4 canonical catch block — keep in sync with
+  # tests/chainsaw/_lib/catch-block.yaml (enforced by
+  # tests/unit/test_chainsaw_catch_block.sh).
+  catch:
+    - describe:
+        apiVersion: platform.k8-platform.io/v1alpha1
+        kind: XDatabase      # overridden per-scenario when the XR kind differs
+        namespace: ($namespace)
+    - script:
+        content: |
+          set +e
+          # Enumerate v2 XR kinds across ALL namespaces. The scenarios in
+          # this repo apply XRs to `namespace: default` (per commit 8526f46
+          # "use literal 'default' namespace in composition-drift apply"),
+          # NOT to chainsaw's per-test scratch namespace. A $NAMESPACE-bound
+          # lookup would return nothing and the catch block would be
+          # diagnostically empty — exactly what the 2026-05-28 PR #125
+          # composition-drift timeout exposed (issue OI-2026-05-28-1).
+          # `-A` surfaces the XR regardless of where the scenario put it.
+          for xr_kind in xplatformsecret xplatformcluster xdatabase; do
+            kubectl get "$xr_kind" -A \
+              -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' \
+              | while read -r ns name; do
+                  [ -z "$name" ] && continue
+                  kubectl describe "$xr_kind" -n "$ns" "$name" 2>&1 | head -c 1500
+                  # Describe every MR referenced by this XR. MRs are
+                  # cluster-scoped on the upbound providers, so no -n flag.
+                  kubectl get "$xr_kind" -n "$ns" "$name" \
+                    -o jsonpath='{range .spec.resourceRefs[*]}{.apiVersion}{" "}{.kind}{" "}{.name}{"\n"}{end}' \
+                    | while read -r api kind mrname; do
+                        [ -z "$kind" ] && continue
+                        kubectl describe "$kind.$api" "$mrname" 2>&1 | head -c 1000
+                      done
+                done
+          done
+    - events:
+        namespace: ($namespace)

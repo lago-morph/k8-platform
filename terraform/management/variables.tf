@@ -166,6 +166,19 @@ variable "crossplane_provider_aws_route53_version" {
   default     = "v2.5.0"
 }
 
+variable "crossplane_provider_aws_rds_version" {
+  description = <<-EOT
+    Upbound provider-aws-rds package version. Child of provider-family-aws
+    needed by the XDatabase RDS Composition (phase 5) to reconcile the
+    rds.aws.m.upbound.io Instance managed resource that backs the
+    platform's database abstraction (Keycloak's Postgres). Pin to the
+    family version. Must match tests/chainsaw/versions.env
+    (PROVIDER_AWS_RDS_VERSION).
+  EOT
+  type        = string
+  default     = "v2.5.0"
+}
+
 variable "eso_version" {
   description = "External Secrets Operator Helm chart version"
   type        = string

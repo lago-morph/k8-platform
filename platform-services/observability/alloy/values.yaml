@@ -11,10 +11,12 @@
 # registration by the Application's valuesObject (AGENTS §8.1; CI-gated by
 # tests/unit/test_spoke_values_no_ephemeral.sh).
 #
-# Deployed by the hub ArgoCD as argocd/apps/spoke/observability-alloy-mgmt.yaml.
-# See that Application's header for the OPEN QUESTION about which AppProject a
-# hub-targeted third-party chart belongs to (the k8-platform project forbids
-# third-party charts; the platform-spoke project forbids the hub destination).
+# Deployed by the hub ArgoCD as argocd/apps/spoke/observability-alloy-mgmt.yaml,
+# under the dedicated `hub-addons` AppProject (argocd/projects/hub-addons.yaml).
+# That project resolves the former AppProject conflict (a hub-targeted
+# third-party chart fits neither k8-platform — no third-party charts on the hub
+# — nor platform-spoke — no hub destination) per Option A in
+# decisions/2026-06-06-phase4-alloy-phase5-db.md.
 
 # Run Alloy as a DaemonSet so it can tail every node's pod logs (the logs
 # pipeline reads /var/log on each node) and scrape node-local targets.

@@ -33,6 +33,7 @@ run_suite tests/unit/test_eks_module_defaults.sh
 run_suite tests/unit/test_helm_render.sh
 run_suite tests/unit/test_post_comment.sh
 run_suite tests/unit/test_kyverno_policy_lint.sh
+run_suite tests/unit/test_kyverno_crd_kinds_qualified.sh
 run_suite tests/unit/test_chainsaw_kind_config.sh
 run_suite tests/unit/test_chainsaw_catch_block.sh
 run_suite tests/unit/test_chainsaw_golden_files_present.sh
@@ -44,6 +45,7 @@ run_suite tests/unit/test_chainsaw_golden_catches_bug4.sh
 run_suite tests/unit/test_chainsaw_tag_chars.sh
 run_suite tests/unit/test_chainsaw_xr_conditions_complete.sh
 run_suite tests/unit/test_chainsaw_script_shell_portable.sh
+run_suite tests/unit/test_chainsaw_realaws_gated.sh
 run_suite tests/unit/test_chainsaw_asm_cleanup.sh
 run_suite tests/unit/test_platform_secret_xrd.sh
 run_suite tests/unit/test_platform_secret_composition.sh
@@ -72,6 +74,7 @@ run_suite tests/unit/test_spoke_values_no_ephemeral.sh
 run_suite tests/unit/test_hello_chart_render.sh
 run_suite tests/unit/test_spoke_apps.sh
 # phase-4 observability (REQ-OBS-01..05)
+run_suite tests/unit/test_hub_addons_appproject.sh
 run_suite tests/unit/test_observability_apps.sh
 # phase-6 first workload cluster (REQ-WL-01..05)
 run_suite tests/unit/test_workload1_apps.sh
@@ -79,6 +82,11 @@ run_suite tests/unit/test_workload1_apps.sh
 run_suite tests/unit/test_management_ingress_cert_coverage.sh
 # phase-5 auth (Keycloak)
 run_suite tests/unit/test_keycloak_apps.sh
+# phase-5 database (XDatabase XRD + RDS Composition, Keycloak DB)
+run_suite tests/unit/test_xdatabase_xrd.sh
+run_suite tests/unit/test_xdatabase_rds_composition.sh
+run_suite tests/unit/test_keycloak_db_secret_contract.sh
+run_suite tests/unit/test_keycloak_db_xr.sh
 
 echo ""
 if [ "$OVERALL" -eq 0 ]; then

@@ -52,7 +52,7 @@ spec:
           # diagnostically empty — exactly what the 2026-05-28 PR #125
           # composition-drift timeout exposed (issue OI-2026-05-28-1).
           # `-A` surfaces the XR regardless of where the scenario put it.
-          for xr_kind in xplatformsecret xplatformcluster; do
+          for xr_kind in xplatformsecret xplatformcluster xdatabase; do
             kubectl get "$xr_kind" -A \
               -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' \
               | while read -r ns name; do

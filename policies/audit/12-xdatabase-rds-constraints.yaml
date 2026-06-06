@@ -1,0 +1,98 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: xdatabase-rds-constraints
+  annotations:
+    policies.kyverno.io/title: Audit XDatabase RDS Instances against account constraints
+    policies.kyverno.io/category: Crossplane
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Runtime backstop for the AWS-account constraints the XDatabase RDS
+      Composition (crossplane/compositions/xdatabase.yaml) bakes in at author
+      time (ai/testing-guidelines section 1: micro/small instance classes only,
+      single-AZ, not-public, max 100GB). The static unit test
+      (test_xdatabase_rds_composition.sh) guards the in-git Composition; THIS
+      policy flags a rds.aws.m.upbound.io Instance whose rendered shape drifts
+      from those constraints on a live cluster (a hand-edit, a Composition
+      regression, or a stray Instance applied directly). Audit-only: it reports
+      a PolicyReport violation and an event, blocking nothing. The four
+      invariants: instanceClass in the micro/small whitelist; not publicly
+      accessible; allocatedStorage at most 100GB; engine postgres.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: instance-class-in-whitelist
+      match:
+        any:
+          - resources:
+              kinds:
+                - rds.aws.m.upbound.io/v1beta1/Instance
+      validate:
+        message: >-
+          RDS Instance instanceClass is not in the platform whitelist
+          (db.t4g.micro, db.t4g.small). The XDatabase RDS Composition maps the
+          abstract size to those classes only (ai/testing-guidelines section 1,
+          cost + single-AZ constraints); any other class is a drift.
+        deny:
+          conditions:
+            all:
+              - key: "{{ request.object.spec.forProvider.instanceClass }}"
+                operator: AnyNotIn
+                value:
+                  - db.t4g.micro
+                  - db.t4g.small
+
+    - name: not-publicly-accessible
+      match:
+        any:
+          - resources:
+              kinds:
+                - rds.aws.m.upbound.io/v1beta1/Instance
+      validate:
+        message: >-
+          RDS Instance has publiclyAccessible true. Platform databases are
+          reached in-VPC by the consuming workload only; a public endpoint
+          exposes the database to the internet.
+        deny:
+          conditions:
+            all:
+              - key: "{{ request.object.spec.forProvider.publiclyAccessible }}"
+                operator: Equals
+                value: true
+
+    - name: allocated-storage-within-limit
+      match:
+        any:
+          - resources:
+              kinds:
+                - rds.aws.m.upbound.io/v1beta1/Instance
+      validate:
+        message: >-
+          RDS Instance allocatedStorage exceeds the 100GB account limit
+          (ai/testing-guidelines section 1). The XDatabase XRD caps storageGB at
+          100; a larger allocatedStorage is a drift.
+        deny:
+          conditions:
+            all:
+              - key: "{{ request.object.spec.forProvider.allocatedStorage }}"
+                operator: GreaterThan
+                value: 100
+
+    - name: engine-postgres-only
+      match:
+        any:
+          - resources:
+              kinds:
+                - rds.aws.m.upbound.io/v1beta1/Instance
+      validate:
+        message: >-
+          RDS Instance engine is not postgres. The XDatabase abstraction only
+          supports postgres today (Keycloak needs Postgres); any other engine is
+          a drift from the XRD enum.
+        deny:
+          conditions:
+            all:
+              - key: "{{ request.object.spec.forProvider.engine }}"
+                operator: NotEquals
+                value: postgres

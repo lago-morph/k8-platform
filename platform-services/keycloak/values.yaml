@@ -40,18 +40,31 @@ auth:
   passwordSecretKey: admin-password
 
 ## External database (REQ: no bundled ephemeral Postgres). The Bitnami chart
-## reads these from the `keycloak-db` Secret. host/port live here (non-secret
-## topology, overlaid at registration if account-specific); credentials come
-## from the Secret keys.
+## reads these from the `keycloak-db` Secret — which is the connection Secret
+## the XDatabase XR named `keycloak-db` materializes (the RDS Composition's
+## writeConnectionSecretToRef.name is patched to the XR's metadata.name, so the
+## Secret name == the XR name == keycloak-db). The Composition writes connection
+## keys `username` / `password` / `endpoint` / `port` (the provider's
+## connection-detail key names), so existingSecretUserKey/PasswordKey MUST be
+## `username`/`password` — NOT the old `db-username`/`db-password` (which the
+## Composition never writes). Contract pinned by
+## tests/unit/test_keycloak_db_secret_contract.sh.
+##
+## host/port are NON-secret topology and stay as a PLACEHOLDER overlay: the
+## Bitnami keycloak chart has no existingSecret host/port key, so they cannot be
+## sourced from the connection Secret. They are overlaid at registration time
+## from the XR's status.endpoint / status.port (the RDS instance address/port
+## the Composition surfaces via its ToCompositeFieldPath patches) via the
+## Application's helm.valuesObject, the same mechanism as the spoke ingress/host.
 postgresql:
   enabled: false
 externalDatabase:
-  host: PLACEHOLDER_DB_HOST          # overlaid at registration (or a stable CNAME)
-  port: 5432
+  host: PLACEHOLDER_DB_HOST          # overlaid at registration from XR status.endpoint
+  port: 5432                         # overlaid at registration from XR status.port
   database: keycloak
   existingSecret: keycloak-db
-  existingSecretUserKey: db-username
-  existingSecretPasswordKey: db-password
+  existingSecretUserKey: username
+  existingSecretPasswordKey: password
 
 ## Ingress at auth.platform.<domain> via the spoke's nginx. No tls: block — the
 ## NLB terminates TLS with the wildcard ACM cert (REQ-AUTH-06). hostname is a
