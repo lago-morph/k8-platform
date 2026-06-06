@@ -40,6 +40,11 @@ spec:
       kind: "ClusterRole"
     - group: "rbac.authorization.k8s.io"
       kind: "ClusterRoleBinding"
+    # The single shared AWS ClusterProviderConfig (crossplane/providerconfig/)
+    # is a cluster-scoped Upbound provider config; crossplane-resources syncs it
+    # so every composed MR can resolve its providerConfigRef.
+    - group: "aws.m.upbound.io"
+      kind: "ClusterProviderConfig"
   namespaceResourceWhitelist:
     - group: "external-secrets.io"
       kind: "*"

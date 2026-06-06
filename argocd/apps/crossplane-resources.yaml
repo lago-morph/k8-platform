@@ -40,7 +40,19 @@ spec:
       #     part of SEG-1 because v2 namespaced XRs use standard
       #     Kubernetes RBAC, not Kyverno ClusterPolicy, for namespace-
       #     scope enforcement.
-      include: '{xrds/platform-*.yaml,compositions/*.yaml,rbac/*.yaml}'
+      # auto-008: widened `xrds/platform-*.yaml` → `xrds/*.yaml` so the
+      # XSpokeAccess XRD (xrds/xspokeaccess.yaml) — and any other non-
+      # `platform-`-prefixed XRD (e.g. xrds/xdatabase.yaml) — is synced
+      # alongside its Composition (compositions/*.yaml). Without this the
+      # Composition would sync but its XRD would not, leaving the
+      # compositeTypeRef unbound. The glob still matches only DIRECT
+      # children of xrds/ (not the xrds/*/render-fixtures/ subdirs); those
+      # are additionally kept out by the explicit `exclude` below.
+      # auto-011: added `providerconfig/*.yaml` so the shared AWS
+      # ClusterProviderConfig `default` (crossplane/providerconfig/) syncs —
+      # without it every composed MR fails with "cannot get referenced
+      # ProviderConfig: ClusterProviderConfig ... default not found".
+      include: '{xrds/*.yaml,compositions/*.yaml,rbac/*.yaml,providerconfig/*.yaml}'
       # Explicit exclude — the include glob above did NOT actually keep the
       # fixtures out. ArgoCD swept xrds/platform-*/render-fixtures/{input,
       # expected}.yaml into the sync, so each render-probe XR appeared TWICE →
