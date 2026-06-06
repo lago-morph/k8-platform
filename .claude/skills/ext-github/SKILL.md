@@ -13,7 +13,11 @@ description: >-
   "trigger CI", "dispatch terraform-test", "list workflow runs",
   "get workflow run status", "list jobs for run", "download job logs",
   "get CI logs", "kick the build", "jentic GitHub", "the sandbox can't
-  reach GitHub Actions API".
+  reach GitHub Actions API". Also creates/updates repo files — notably
+  `.github/workflows/*` — that the git-push OAuth token and the GitHub MCP
+  write tools both refuse (the `workflow`-scope gap); trigger phrases
+  "write the workflow file", "push the workflow via jentic", "edit a file
+  in .github/workflows".
 allowed-tools:
   - Read
   - Bash
@@ -39,9 +43,18 @@ dispatch a phase × action run, poll for completion, then on failure
 fetch logs for diagnosis. Pairs with `terraform-ci-watch` (which owns
 the polling loop and the 3-strike escalation envelope).
 
-Auth: jentic holds a fine-grained PAT scoped to `lago-morph/k8-platform`
-(Actions: read+write, Contents: read, Metadata: read). No tokens enter
-this repo or sandbox.
+Auth: jentic holds a fine-grained PAT scoped to `lago-morph/k8s-platform`
+(Actions: read+write, Contents: read+write, Workflows: read+write,
+Metadata: read). No tokens enter this repo or sandbox. The Contents +
+Workflows **write** grants were added 2026-06-06 specifically to enable
+endpoint #5 — the only write path a web sandbox has for
+`.github/workflows/*` files (the git-push OAuth token and the GitHub MCP
+write tools both lack `workflow` scope). See §8.
+
+> **Repo name:** the canonical repo is `lago-morph/k8s-platform`. The four
+> read/dispatch recordings below still carry the pre-rename `k8-platform`
+> and work via GitHub's redirect; the file-write recording uses the current
+> `k8s-platform` (a write PUT should target the canonical name).
 
 ## 2. Endpoints
 
@@ -51,6 +64,7 @@ this repo or sandbox.
 | List recent runs of a workflow (and substitute for single-run GET) | `GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs` | `list_workflow_runs.json` | `op_e5f9dfd148ed5018` | 2026-05-23 |
 | List jobs in a run (step 1 of the logs workaround) | `GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs` | `list_jobs_for_workflow_run.json` | `op_2064ead94c9950bc` | 2026-05-23 |
 | Download per-job logs (substitute for run-wide logs) | `GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs` | `download_job_logs.json` | `op_c08d23e5bd6966cb` | 2026-05-23 |
+| Create/update a repo file (incl. `.github/workflows/*`) | `PUT /repos/{owner}/{repo}/contents/{path}` | `create_or_update_file_contents.json` | `op_12ee1daaad73b14b` | 2026-06-06 |
 
 `Last verified` is the date the recording was last confirmed working
 against the live API. If a call from this skill starts failing and the
@@ -147,6 +161,57 @@ write the intended next action — including target `workflow_id`,
 of `ai/handoff.md`, commit, and stop. A human resumes by dispatching
 manually via the GitHub Actions UI. See the "Jentic outage" paragraph
 in `ai/testing-guidelines.md`.
+
+## 8. Writing repo files — the `.github/workflows/*` path
+
+Endpoint #5 (`create_or_update_file_contents.json`, `op_12ee1daaad73b14b`)
+is the **only** way a Claude-Code-on-the-web sandbox can land a change to
+a `.github/workflows/*` file. Both other write paths refuse it:
+
+- `git push` over the in-container proxy → `remote rejected … refusing to
+  allow an OAuth App to create or update workflow … without 'workflow'
+  scope` (anthropics/claude-code #61189).
+- the GitHub MCP write tools → `Resource not accessible` (same OAuth
+  identity, no `workflow` scope).
+
+This endpoint uses jentic's PAT instead, which carries Contents +
+Workflows write (see §1). Use it for ANY repo file write the git path
+can't do — workflow files are the main case; a normal source file should
+still go via `git push` (cheaper, keeps local and remote in lockstep).
+
+**Call contract:**
+
+1. **`content` is base64 of the WHOLE file** — this PUT replaces the file
+   wholesale, it does not patch. Build the new file locally, validate it
+   (`python3 -c 'import yaml; yaml.safe_load(...)'` for workflow YAML),
+   then `base64 -w0`.
+2. **`sha` is REQUIRED when updating** an existing file — it's the blob
+   sha of the file being replaced (`git rev-parse HEAD:<path>` when local
+   == remote). Omit `sha` only when creating a brand-new file. A stale or
+   missing `sha` on an update returns `409 Conflict`.
+3. **`branch`** — always target the feature branch, never `main`
+   (AGENTS §3). Defaults to the repo's default branch if omitted, so do
+   NOT omit it.
+4. **The PUT creates its own commit on the remote** (committer = the PAT's
+   user), so your local clone falls one commit behind. Reconcile with
+   `git fetch origin <branch> && git reset --hard origin/<branch>` (safe
+   when the only local change is the same edit you just PUT) — or `git
+   pull --ff-only` if you kept the file unedited locally.
+5. **One file per call.** For a multi-file workflow change, PUT each file
+   serially (GitHub serializes contents writes per the op's own note;
+   parallel writes conflict).
+
+**Concurrency / safety:** like `workflow_dispatch` this is a mutating
+call, but it is idempotent on content (re-PUTting identical bytes with the
+current sha is a no-op commit). No concurrency gate beyond the correct
+`sha`. One-shot per §4 — on any 4xx/5xx, stop and surface; a `409` almost
+always means the `sha` is stale (re-fetch it and retry once).
+
+**Live-fired 2026-06-06** against `lago-morph/k8s-platform`, branch
+`claude/phase-6-cleanup-prep-xOZBG`, updating
+`.github/workflows/unit-tests.yml` (the yq + crossplane CLI version pins) —
+returned `200`, commit `803ef5f`. This is what proved the
+Contents+Workflows write grant works end-to-end through jentic.
 
 ---
 

@@ -121,6 +121,35 @@ read_function_version() {
 }
 
 # ------------------------------------------------------------------------
+# Read the pinned Crossplane version for the render-orchestrator image.
+#
+# `crossplane render` runs the actual composition rendering ("crossplane
+# internal render") inside a Crossplane Docker image. That image defaults
+# to the FLOATING `xpkg.crossplane.io/crossplane/crossplane:stable` tag,
+# which resolves to the latest v1.x stable (e.g. v1.20.9) — a binary that
+# has no `internal render` subcommand, so render fails with
+# `unexpected argument internal`. We pin it to the SAME version as the
+# management cluster's chart (CROSSPLANE_CHART_VERSION in versions.env) so
+# the dry-run renders with the exact Crossplane the cluster runs. See
+# OI-2026-06-06-1.
+# ------------------------------------------------------------------------
+read_crossplane_version() {
+  if [ ! -f "$VERSIONS_ENV" ]; then
+    err "$VERSIONS_ENV not found — required for pinned crossplane version."
+    return 2
+  fi
+  # shellcheck disable=SC1090
+  . "$VERSIONS_ENV"
+  if [ -z "${CROSSPLANE_CHART_VERSION:-}" ]; then
+    err "CROSSPLANE_CHART_VERSION not set in $VERSIONS_ENV"
+    return 2
+  fi
+  # The chart version omits the leading `v` (e.g. 2.3.0); the render flag
+  # and the crossplane image tag want it (v2.3.0).
+  echo "v${CROSSPLANE_CHART_VERSION}"
+}
+
+# ------------------------------------------------------------------------
 # Read the pinned function-environment-configs version from versions.env
 # (FUNCTION_ENVIRONMENT_CONFIGS_VERSION). Only needed for Compositions
 # whose pipeline references function-environment-configs.
@@ -202,6 +231,8 @@ render_one() {
   local xrd="$1" comp="$2" input="$3" required="${4:-}"
   local func_ver
   func_ver=$(read_function_version) || return 2
+  local xp_ver
+  xp_ver=$(read_crossplane_version) || return 2
 
   # crossplane render expects: <xr> <composition> <functions>
   # The "functions" arg is a YAML file describing the function packages
@@ -223,7 +254,7 @@ EOF
   # it to the functions file too, otherwise render rejects the unknown
   # functionRef. The EnvironmentConfig objects it reads are supplied via
   # --required-resources (the fixture's required-resources.yaml).
-  local render_args=(--include-full-xr --include-function-results)
+  local render_args=(--include-full-xr --include-function-results --crossplane-version "$xp_ver")
   if grep -q "function-environment-configs" "$comp"; then
     local env_ver
     env_ver=$(read_env_function_version) || return 2

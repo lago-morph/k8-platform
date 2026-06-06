@@ -1,0 +1,37 @@
+{
+  "endpoint_ref": "op_12ee1daaad73b14b",
+  "recorded_at": "2026-06-06T06:03:37Z",
+  "last_verified": "2026-06-06",
+  "verified": true,
+  "purpose": "Create or update a file in the repo — INCLUDING files under .github/workflows/, which the sandbox git-push OAuth token and the GitHub MCP write tools both refuse ('without `workflow` scope'). Requires the jentic PAT to carry Contents: read+write AND Workflows: read+write (fine-grained). See SKILL.md §8.",
+  "request": {
+    "method": "PUT",
+    "url_template": "https://api.github.com/repos/{owner}/{repo}/contents/{path}",
+    "headers": {
+      "Accept": "application/vnd.github+json",
+      "Content-Type": "application/json",
+      "X-GitHub-Api-Version": "2022-11-28"
+    },
+    "body": {
+      "owner": "lago-morph",
+      "repo": "k8s-platform",
+      "path": ".github/workflows/unit-tests.yml",
+      "branch": "<feature-branch>",
+      "message": "<commit message>",
+      "content": "<base64-encoded full file content>",
+      "sha": "<blob sha of the file being replaced — UPDATE only>"
+    },
+    "body_inputs_schema": {
+      "owner":   { "required": true },
+      "repo":    { "required": true },
+      "path":    { "required": true },
+      "branch":  { "required": false, "default": "(repository default branch)" },
+      "message": { "required": true },
+      "content": { "required": true },
+      "sha":     { "required": false }
+    }
+  },
+  "response": {
+    "status": 200
+  }
+}
