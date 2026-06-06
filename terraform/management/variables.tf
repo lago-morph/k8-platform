@@ -50,8 +50,11 @@ variable "node_desired_size" {
 }
 
 variable "node_min_size" {
+  # 3, not 1: the terraform-aws-modules/eks module IGNORES desired_size changes
+  # (autoscaler-friendly), so bumping desired alone is a no-op in the plan. Pin
+  # min_size to force the ASG to the intended 3-node count.
   type    = number
-  default = 1
+  default = 3
 }
 
 variable "node_max_size" {

@@ -61,6 +61,12 @@ module "eks" {
       # inject maxPods=110 (the AWS max-pods-calculator value for t3.medium with
       # prefix delegation) as a pre-nodeadm cloudinit part. Changing this rolls
       # the node group so every node relaunches with the higher cap.
+      #
+      # enable_bootstrap_user_data: required for the module to MERGE
+      # cloudinit_pre_nodeadm into the launch-template user-data on an
+      # EKS-managed AL2023 node group. Without it the module leaves bootstrap to
+      # EKS and the cloudinit part produces no launch-template diff (no recycle).
+      enable_bootstrap_user_data = true
       cloudinit_pre_nodeadm = [
         {
           content_type = "application/node.eks.aws"
