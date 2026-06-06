@@ -19,7 +19,24 @@ resource "helm_release" "ingress_nginx" {
   version          = var.ingress_nginx_version
   namespace        = "ingress-nginx"
   create_namespace = true
+  # The chart's admission webhook ships a pre-upgrade/pre-install HOOK Job
+  # (kube-webhook-certgen). On this small, heavily-loaded management cluster
+  # (2x t3.medium running Crossplane + 6 providers + functions + ESO + Kyverno
+  # + ArgoCD + ingress-nginx + external-dns) that hook Job timed out at the
+  # release's default 300s on every upgrade (runs 27044853457, 27046190810),
+  # blocking even a one-annotation change (the *.management.<domain> cert swap).
+  # Disable the admission webhook on the management cluster: it only fronts one
+  # Ingress (ArgoCD), Kyverno still audits, and the spoke clusters that host real
+  # app ingresses are unaffected. Removing the hook lets the upgrade complete.
+  # wait=false so the apply doesn't block on the controller rollout (the
+  # e2e-verify step checks readiness separately); generous timeout as a backstop.
+  wait    = false
+  timeout = 900
 
+  set {
+    name  = "controller.admissionWebhooks.enabled"
+    value = "false"
+  }
   set {
     name  = "controller.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-type"
     value = "nlb"
