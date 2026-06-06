@@ -77,6 +77,8 @@ run_suite tests/unit/test_observability_apps.sh
 run_suite tests/unit/test_workload1_apps.sh
 # management ingress cert coverage (origin/main)
 run_suite tests/unit/test_management_ingress_cert_coverage.sh
+# phase-5 auth (Keycloak)
+run_suite tests/unit/test_keycloak_apps.sh
 
 echo ""
 if [ "$OVERALL" -eq 0 ]; then

@@ -1,0 +1,24 @@
+# REQ-AUTH-09 — bind the Keycloak group kc:k8s-viewers to the built-in `view`
+# ClusterRole on the platform (spoke) cluster.
+#
+# Same federation path as kc-k8s-admins-cluster-admin.yaml: Cognito group
+# `k8s-viewers` → Keycloak `groups` claim (REQ-AUTH-08) → API server group
+# `kc:k8s-viewers` (the `kc:` prefix is set by the EKS OIDC IdP config,
+# REQ-AUTH-07). `view` is a read-only built-in role; this binding does NOT grant
+# cluster-admin, so it is not subject to the Kyverno cluster-admin guard — but it
+# is named with the `kc-k8s-viewers-` prefix for symmetry and audit clarity
+# (platform-owned Keycloak RBAC).
+#
+# Deployed via ArgoCD from clusters/<cluster>/ (REQ-AUTH-09).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kc-k8s-viewers-view
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: "kc:k8s-viewers"

@@ -1,0 +1,140 @@
+# Keycloak `platform` realm import (REQ-AUTH-02/03/07/08).
+#
+# Mounted by the Keycloak chart (platform-services/keycloak/values.yaml
+# extraVolumes/extraVolumeMounts → /opt/bitnami/keycloak/data/import) and applied
+# with `--import-realm` at startup. Keycloak is a pure BROKER here: it federates
+# to Cognito and shapes tokens; NO users or groups are created or maintained in
+# Keycloak itself (REQ-AUTH-03/08).
+#
+# This realm config encodes three contracts:
+#
+#   1. Cognito as an OIDC identity provider (alias `cognito`, REQ-AUTH-02). The
+#      issuer/authorization/token/jwks/userInfo URLs and the confidential client
+#      id/secret are account-EPHEMERAL (AGENTS §8.1) — they are TODO placeholders
+#      here. LIVE WIRING IS DEFERRED: at live-coupling time, source them from
+#      terraform/base outputs (cognito_issuer_url, cognito_client_id,
+#      cognito_client_secret — see terraform/base/outputs.tf) and inject the
+#      secret via the keycloak-oidc-clients XPlatformSecret, NOT into git.
+#
+#   2. An attribute/group mapper that lifts the Cognito `cognito:groups` claim
+#      into a `groups` claim on Keycloak-issued ID tokens (REQ-AUTH-08). This is
+#      the ONLY source of group membership presented to Kubernetes — no group
+#      state in Keycloak.
+#
+#   3. The public PKCE `kubernetes` client (REQ-AUTH-07): publicClient=true, NO
+#      secret, PKCE (S256) enforced, used by the oidc-login kubectl plugin
+#      (REQ-AUTH-10, docs/operations.md). A `groups` protocol mapper puts the
+#      groups into the ID token so the EKS API server's groups claim resolves to
+#      `kc:k8s-admins` / `kc:k8s-viewers` (prefix set by the EKS IdP config,
+#      REQ-AUTH-07; bound to roles by clusters/platform/rbac/kc-*.yaml).
+#
+# TODO (live wiring — deferred per the brief; tracked in docs/operations.md
+# "Keycloak realm — live wiring"):
+#   - COGNITO_ISSUER_URL / COGNITO_AUTH_URL / COGNITO_TOKEN_URL / COGNITO_JWKS_URL
+#     / COGNITO_USERINFO_URL  ← terraform/base outputs + the Cognito hosted-UI
+#     domain (aws_cognito_user_pool_domain.main).
+#   - COGNITO_CLIENT_ID / COGNITO_CLIENT_SECRET  ← cognito_client_id /
+#     cognito_client_secret outputs, secret delivered via XPlatformSecret.
+#   - <domain> in the kubernetes client redirect URIs.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-realm-platform
+  namespace: keycloak
+  annotations:
+    argocd.argoproj.io/sync-wave: "36"
+data:
+  platform-realm.json: |
+    {
+      "realm": "platform",
+      "enabled": true,
+      "comment": "Broker-only realm; users/groups live in Cognito (REQ-AUTH-03/08).",
+      "identityProviders": [
+        {
+          "alias": "cognito",
+          "displayName": "Cognito",
+          "providerId": "oidc",
+          "enabled": true,
+          "trustEmail": true,
+          "storeToken": false,
+          "firstBrokerLoginFlowAlias": "first broker login",
+          "config": {
+            "clientId": "TODO_COGNITO_CLIENT_ID",
+            "clientSecret": "TODO_COGNITO_CLIENT_SECRET",
+            "clientAuthMethod": "client_secret_post",
+            "issuer": "TODO_COGNITO_ISSUER_URL",
+            "authorizationUrl": "TODO_COGNITO_AUTH_URL",
+            "tokenUrl": "TODO_COGNITO_TOKEN_URL",
+            "jwksUrl": "TODO_COGNITO_JWKS_URL",
+            "userInfoUrl": "TODO_COGNITO_USERINFO_URL",
+            "useJwksUrl": "true",
+            "validateSignature": "true",
+            "pkceEnabled": "true",
+            "pkceMethod": "S256",
+            "defaultScope": "openid email profile"
+          }
+        }
+      ],
+      "identityProviderMappers": [
+        {
+          "name": "cognito-groups-to-groups",
+          "identityProviderAlias": "cognito",
+          "identityProviderMapper": "oidc-advanced-group-idp-mapper",
+          "comment": "REQ-AUTH-08: copy the Cognito group claim into a `groups` attribute on the brokered user; no group state is created in Keycloak.",
+          "config": {
+            "syncMode": "FORCE",
+            "claims": "[{\"key\":\"cognito:groups\",\"value\":\".*\"}]",
+            "are.claim.values.regex": "true",
+            "attribute": "groups"
+          }
+        }
+      ],
+      "clients": [
+        {
+          "clientId": "kubernetes",
+          "comment": "REQ-AUTH-07: public PKCE client for kubectl via oidc-login. No secret.",
+          "enabled": true,
+          "protocol": "openid-connect",
+          "publicClient": true,
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": false,
+          "redirectUris": [
+            "http://localhost:8000",
+            "http://localhost:18000"
+          ],
+          "attributes": {
+            "pkce.code.challenge.method": "S256"
+          },
+          "protocolMappers": [
+            {
+              "name": "groups",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-usermodel-attribute-mapper",
+              "comment": "REQ-AUTH-08: surface the brokered `groups` attribute as a `groups` claim in the ID token consumed by the EKS API server.",
+              "config": {
+                "user.attribute": "groups",
+                "claim.name": "groups",
+                "jsonType.label": "String",
+                "multivalued": "true",
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+                "userinfo.token.claim": "true"
+              }
+            },
+            {
+              "name": "username",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-usermodel-property-mapper",
+              "comment": "REQ-AUTH-07: username claim is preferred_username.",
+              "config": {
+                "user.attribute": "username",
+                "claim.name": "preferred_username",
+                "jsonType.label": "String",
+                "id.token.claim": "true",
+                "access.token.claim": "true"
+              }
+            }
+          ]
+        }
+      ]
+    }
