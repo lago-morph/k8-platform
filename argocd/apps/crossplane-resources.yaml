@@ -41,6 +41,18 @@ spec:
       #     Kubernetes RBAC, not Kyverno ClusterPolicy, for namespace-
       #     scope enforcement.
       include: '{xrds/platform-*.yaml,compositions/*.yaml,rbac/*.yaml}'
+      # Explicit exclude — the include glob above did NOT actually keep the
+      # fixtures out. ArgoCD swept xrds/platform-*/render-fixtures/{input,
+      # expected}.yaml into the sync, so each render-probe XR appeared TWICE →
+      # "one or more synchronization tasks are not valid" → the WHOLE app failed
+      # to sync, so the XRDs/Compositions never installed and the
+      # platform-cluster XR could not be created ("CRD not installed"). Worse:
+      # had it ever synced it would have applied render-probe-cluster as a REAL
+      # XPlatformCluster and provisioned a throwaway EKS cluster. Observed live
+      # 2026-06-06. NEXT SESSION: verify crossplane-resources reaches Synced with
+      # this exclude; if ArgoCD's glob still leaks the fixtures, move them out of
+      # crossplane/ entirely (e.g. tests/render-fixtures/) and repoint SPEC-S9.
+      exclude: '**/render-fixtures/**'
       # claims/ deliberately excluded — those are example manifests,
       # not platform resources. Users apply them by hand.
   destination:

@@ -8,9 +8,68 @@ last, the current state, and the next concrete steps. Keep it factual
 
 ## NEW SESSION QUICKSTART (read this first)
 
-**Resume context: 2026-06-05, end of the `auto-005` long-run. The AWS account
-EXPIRED at session end. All of this session's work is committed + pushed to
-branch `claude/long-run-BYIB6` → PR #142 (NOT merged to main).**
+**Resume context: 2026-06-06 (`auto-007` — phase-3 provisioning push) on a LIVE
+account (phases 0-1 already applied, management cluster up). Cleared FOUR phase-3
+blockers; the `XPlatformCluster` XR reached `Ready=False/Creating` with 11 managed
+resources composing before the AWS account was RESET (~02:30). Code is durable in
+git; live AWS is gone. The auto-005 "rebuild 0→2" content further below still
+applies on the fresh account.**
+
+Branches/PRs from this session (NOT merged):
+- **#149** `fix/management-argocd-cert-coverage` — the `*.management.<domain>` ACM
+  cert (`acm-management.tf`) + ingress-nginx ssl-cert repoint, PLUS `node_min_size=3`
+  and the VPC-CNI **prefix-delegation** addon (`eks.tf`).
+- **#150** `docs/agents-never-remove-error-checks` — AGENTS §6.23 (never disable a
+  check to dodge an undiagnosed error).
+- **this PR** `chore/handoff-phase3-progress-2026-06-06` — render-fixtures exclude
+  fix (`argocd/apps/crossplane-resources.yaml`) + this handoff.
+
+### The FOUR phase-3 blockers found + fixed this session
+
+1. **ArgoCD unreachable from sandbox — cert SAN gap (the "directly reachable" note
+   below was WRONG).** The base wildcard `*.<acct>.realhandsonlabs.net` covers only
+   ONE label, so NOT the two-label host `argocd.management.<acct>…`. The sandbox
+   egress is an Anthropic MITM gateway doing STRICT upstream SAN verification → 503
+   "verify SAN list", refused to proxy. FIX (#149): a dedicated `*.management.<domain>`
+   ACM cert on the ingress NLB. After it landed, `argocd login` from the sandbox works.
+2. **`kubectl` from the sandbox is STRUCTURALLY blocked.** The same gateway can't
+   verify the EKS API's **private-CA** serving cert on the upstream leg (`unable to
+   get local issuer certificate`) → every kube-API call 503s. Trusting the gateway
+   CA fixes the CLIENT leg only. Use the **`argocd` CLI** (via the public NLB) + the
+   **AWS CLI** for all sandbox-side diagnostics; kube-API needs CI.
+3. **ingress-nginx admission-webhook hook timeout = pod-IP exhaustion, NOT mem/CPU.**
+   Both t3.medium nodes were at 3/3 ENIs, 18/18 IPs (max-pods ~17), CPU idle 5-7% —
+   diagnosed via AWS CLI ENI/IP counts (kube-API blocked). The certgen hook Job
+   couldn't get an IP → couldn't schedule → helm hook timed out (and a taint-driven
+   recreate DESTROYED ingress-nginx, taking ArgoCD down until restored). FIX (#149):
+   `node_min_size=3` (the eks module IGNORES `desired_size`, so `min_size` is the
+   lever; AWS rejects `min>desired`, so scale `desired`→3 via
+   `aws eks update-nodegroup-config` FIRST) + the prefix-delegation addon. Restored
+   to 3 healthy nodes; cert fix confirmed (`argocd login` OK).
+4. **`crossplane-resources` app couldn't sync → XRDs never installed.** SPEC-S9
+   `render-fixtures/{input,expected}.yaml` under `crossplane/xrds/platform-*/` were
+   swept into the synced path, so each `render-probe-*` XR appeared TWICE → invalid
+   sync → nothing applied. UNBLOCKED live by syncing only the XRDs+Compositions
+   (`argocd app sync crossplane-resources --resource …`); DURABLE fix in this PR
+   (`exclude: '**/render-fixtures/**'`). Then `argocd app sync platform-cluster-claim`
+   applied the XR and Crossplane began provisioning (11 MRs). A
+   `cluster-cert-validation-record` ReconcileError was transient ordering (waits on
+   the cert's DNS-validation CNAME).
+
+### Terminology + a half-done follow-up
+- It's an **`XPlatformCluster` XR**, not a "claim" (Crossplane v2 has no claims —
+  AGENTS §12.1). `platform-cluster-claim` is only the (v1-era) ArgoCD-app/file name.
+- **prefix delegation is HALF done:** #149 adds the ADDON but NOT the kubelet
+  `maxPods` bump (nodes still cap ~17). TRAP: `enable_bootstrap_user_data=true`
+  emitted **AL2 `/etc/eks/bootstrap.sh`** user-data — WRONG for the AL2023 AMI, no
+  `maxPods` — which would have failed node bootstrap and downed the cluster (caught
+  by plan + user-data DECODE, not applied). To finish: pin
+  `ami_type=AL2023_x86_64_STANDARD`, re-plan, DECODE the LT user-data to confirm
+  nodeadm-format `maxPods: 110`, THEN apply (node recycle). 3×17≈51 slots suffices
+  without it.
+- **`crossplane render` CI breakage** (`unexpected argument internal`) fails
+  `test_composition_render_fixtures.sh` on every push — ENVIRONMENTAL (crossplane CLI
+  version), unrelated to any change here; needs its own pin fix (log to open-issues).
 
 ⚠️ Per AGENTS §8.4 the next session lands on a FRESH, EMPTY account (only the
 Route53 zone pre-exists). Every phase is `code-only` on the new account until
@@ -97,8 +156,8 @@ To CHECK AWS creds, dispatch a workflow (AGENTS §8.5) — do not assume stale.
 
 | Field | Value |
 |---|---|
-| Active phase | **Account EXPIRED at end of auto-005. Phases 0-2 were built+verified live this session (run IDs above); nothing is live now. Next: merge #142 → rebuild 0-2 → enable platform-cluster sync → phase 3.** |
-| Last update | 2026-06-05 (auto-005 long-run wrap-up) |
+| Active phase | **Account RESET 2026-06-06 (auto-007). Phase-3 XR provisioning was reached LIVE (11 MRs composing) then wiped. Nothing live now. Next: rebuild 0→1→2 (merge #142 + #149 + #150 + this PR), then phase-3 sync — the 4 blockers in QUICKSTART are all fixed.** |
+| Last update | 2026-06-06 (auto-007 — phase-3 blockers cleared) |
 | AWS account | **ephemeral — derive from `aws sts get-caller-identity`** (AGENTS §8.1) |
 | Route53 zone | `<account-id>.realhandsonlabs.net.` |
 | EKS cluster | `k8-platform-mgmt` in the region from `$AWS_REGION` |
