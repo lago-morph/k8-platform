@@ -65,7 +65,16 @@ resource "terraform_data" "crossplane_provider_aws_cluster_services" {
     EOT
   }
 
-  depends_on = [helm_release.crossplane]
+  # Apply the child providers ONLY AFTER the family Provider
+  # (terraform_data.crossplane_aws_provider in helm.tf) has been applied and
+  # reached Healthy. The family Provider is named upbound-provider-family-aws —
+  # exactly the name these child providers' dependency resolver derives for the
+  # family package. Ordering after it means the family object already exists
+  # when the children resolve their dependency, so they de-dupe onto it instead
+  # of racing to create a second Provider for the same package. Without this
+  # ordering the two were applied in the same unordered terraform batch (~6s
+  # apart) and deadlocked the package manager (OI-2026-06-06-2).
+  depends_on = [terraform_data.crossplane_aws_provider]
 }
 
 # ---- function-environment-configs --------------------------------------

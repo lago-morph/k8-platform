@@ -214,7 +214,19 @@ locals {
     apiVersion: pkg.crossplane.io/v1
     kind: Provider
     metadata:
-      name: provider-family-aws
+      # Named upbound-provider-family-aws (NOT provider-family-aws) so this
+      # explicit Provider IS the same object the crossplane-phase3.tf child
+      # providers (provider-aws-{eks,iam,acm,route53}) auto-resolve as their
+      # family dependency — Crossplane derives that dependency Provider's name
+      # deterministically from the package's own metadata.name. With the old
+      # name provider-family-aws, the children spawned a SECOND Provider
+      # (upbound-provider-family-aws) ~6s later for the same package; two
+      # Provider objects owning revisions of one package deadlocked the
+      # package manager (all six providers HEALTHY=False, RUNTIME=False, zero
+      # Deployments/SAs) so the pinned SA never appeared — OI-2026-06-06-2,
+      # run 27054926075. Collapsing onto the dependency name means the
+      # children de-dupe onto this object instead of racing to create a rival.
+      name: upbound-provider-family-aws
     spec:
       package: "xpkg.upbound.io/upbound/provider-family-aws:${var.crossplane_provider_family_aws_version}"
       runtimeConfigRef:
@@ -244,7 +256,7 @@ resource "terraform_data" "crossplane_aws_provider" {
     # family-provider Deployment isn't labelled
     # pkg.crossplane.io/provider=provider-family-aws — OI-2026-06-05-4),
     # replaced with a Healthy-wait + SA-readiness wait + diagnostics dump.
-    "provisioner-command-2026-06-05-sa-readiness",
+    "provisioner-command-2026-06-06-single-family-provider",
   ]
 
   provisioner "local-exec" {
@@ -262,7 +274,7 @@ MANIFEST
       # provider to be Healthy so its Deployment + SA exist before we verify
       # them (OI-2026-06-05-3, run 27023573285).
       KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl wait \
-        --for=condition=Healthy provider.pkg.crossplane.io/provider-family-aws \
+        --for=condition=Healthy provider.pkg.crossplane.io/upbound-provider-family-aws \
         --timeout=300s
 
       # Diagnostics (best-effort, never fails the apply). The v2.5.0
@@ -278,6 +290,24 @@ MANIFEST
         -o 'jsonpath={range .items[*]}{.metadata.name}{"  sa="}{.spec.serviceAccountName}{"\n"}{end}' 2>&1 || true
       echo "--- providers / providerrevisions ---"
       KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl get providers.pkg.crossplane.io,providerrevisions.pkg.crossplane.io 2>&1 || true
+
+      # Assert exactly ONE Provider owns the family-aws package. The
+      # deadlock in OI-2026-06-06-2 was two Provider objects
+      # (provider-family-aws + upbound-provider-family-aws) owning revisions
+      # of the same xpkg.upbound.io/upbound/provider-family-aws package. After
+      # the rename there must be exactly one. Count Providers whose
+      # spec.package contains "provider-family-aws"; warn LOUDLY if >1 so a
+      # re-introduced duplicate is visible in the log without a re-run.
+      FAMILY_OWNERS=$(KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl get providers.pkg.crossplane.io \
+        -o 'jsonpath={range .items[*]}{.spec.package}{"\n"}{end}' 2>/dev/null \
+        | grep -c 'provider-family-aws' || echo 0)
+      echo "--- family-aws package Provider owner count: $FAMILY_OWNERS (expect 1) ---"
+      if [ "$FAMILY_OWNERS" -gt 1 ]; then
+        echo "WARNING: $FAMILY_OWNERS Provider objects own the family-aws package" >&2
+        echo "WARNING: this is the OI-2026-06-06-2 duplicate-owner deadlock; the" >&2
+        echo "WARNING: explicit Provider name must equal the child providers'" >&2
+        echo "WARNING: dependency name (upbound-provider-family-aws)." >&2
+      fi
 
       # The DRC (applied WITH the Provider above) pins the family-provider SA to
       # upbound-provider-family-aws so it matches the IRSA trust subject in
@@ -309,8 +339,23 @@ MANIFEST
         -o jsonpath='{.metadata.name}' 2>/dev/null || echo "MISSING")
       if [ "$SA" != "upbound-provider-family-aws" ]; then
         echo "ERROR: expected SA upbound-provider-family-aws, got: $SA" >&2
-        echo "DRC serviceAccountTemplate.metadata.name override appears ineffective." >&2
-        echo "See ai/crossplane-v1-v2-un-fuckify/20-plan-SEG-2-terraform-infra.md §4 path (b)." >&2
+        echo "The SA can be MISSING for two distinct reasons: (a) the DRC" >&2
+        echo "serviceAccountTemplate.metadata.name override was ignored, or" >&2
+        echo "(b) NO provider runtime Deployment was ever stood up to own a SA" >&2
+        echo "(the OI-2026-06-06-2 duplicate-owner package-manager deadlock)." >&2
+        echo "Dumping package-manager state to disambiguate WITHOUT a re-run." >&2
+        echo "===== FAILURE DIAGNOSTICS (each step best-effort) =====" >&2
+        echo "--- providerrevisions (get) ---" >&2
+        KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl get providerrevision 2>&1 || true
+        echo "--- providerrevisions (describe) ---" >&2
+        KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl describe providerrevision 2>&1 || true
+        echo "--- package lock (get lock lock -o yaml) ---" >&2
+        KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl get lock lock -o yaml 2>&1 || true
+        echo "--- crossplane controller logs (tail 120) ---" >&2
+        KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl -n crossplane-system logs deploy/crossplane --tail=120 2>&1 || true
+        echo "--- provider,deploy,sa in crossplane-system (--show-labels) ---" >&2
+        KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl -n crossplane-system get provider,deploy,sa --show-labels 2>&1 || true
+        echo "===== END FAILURE DIAGNOSTICS =====" >&2
         exit 1
       fi
     EOT
