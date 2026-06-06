@@ -16,12 +16,13 @@ stacked-PR default yielded to it).
 - **maxPods → 110 DONE and proven.** Nodes now allow ~110 pods (was ~17). The
   AL2023 + nodeadm node group came up green in 1m47s on the live fresh build.
 - **Phase 0 (base): VERIFIED** green (run 27070773919).
-- **Phase 1 (management): essentially validated** — EKS ACTIVE, 3 nodes Ready,
-  ArgoCD + Crossplane (+ all providers, 1 family Provider, Healthy) + ESO +
-  Kyverno + ingress-nginx + external-dns all running, IRSA OK, all
-  policies/audit applied. **Four real bugs found and fixed with regression
-  tests** along the way (see §2). The last gate (argocd DNS record) is fixed and
-  re-applying as of run **27071999686**/`f0279b4` — pending green confirmation.
+- **Phase 1 (management): VERIFIED — fully green live** (run **27072048311**,
+  commit `f0279b4`): EKS ACTIVE, 3 nodes Ready, ArgoCD+Crossplane(+providers)+ESO
+  +Kyverno+ingress-nginx+external-dns running, IRSA OK, all policies applied,
+  **ArgoCD UI reachable (HTTP 200)** via the now-published Route53 record, and
+  **provider-aws-rds installed** (CRD-wait ordering worked; policy 12 applied).
+  **Five real bugs found and fixed with regression tests** (see §2) — all
+  live-proven by this run.
 - **Phase 4 (observability): COMPLETE** — hub Grafana Alloy via a new
   `hub-addons` AppProject (Option A). Adversarial-reviewed tests + a Kyverno
   runtime backstop. Committed.

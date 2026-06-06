@@ -13,9 +13,9 @@ last, the current state, and the next concrete steps. Keep it factual
 > branch `claude/k8-pods-phase-validation-7oqVK` (PR #159), NOT yet merged.
 > - **maxPods → 110 DONE + proven**: AL2023 + nodeadm node group up in 1m47s live
 >   (eks.tf). Nodes now allow ~110 pods, not ~17.
-> - **Phase 0 VERIFIED** (run 27070773919). **Phase 1** essentially up (EKS ACTIVE,
->   3 nodes, ArgoCD+Crossplane+providers+ESO+Kyverno+ingress+external-dns all
->   running); last gate (argocd DNS) FIXED + re-applying as run `f0279b4`.
+> - **Phase 0 VERIFIED** (run 27070773919). **Phase 1 VERIFIED — fully green**
+>   (run 27072048311): EKS ACTIVE, 3 nodes, full stack running, ArgoCD UI HTTP
+>   200, provider-aws-rds installed, all policies applied. All 5 fixes live-proven.
 > - **4 real bugs fixed w/ regression tests** (run-summary §2): helm static-token
 >   expiry → **exec auth**; Kyverno bare-CRD-kind → **group-qualified**;
 >   external-dns **--aws-zone-match-parent** (subdomain filter on the parent zone
