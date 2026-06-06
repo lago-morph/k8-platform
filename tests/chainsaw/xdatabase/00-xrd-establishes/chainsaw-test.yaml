@@ -1,0 +1,204 @@
+# XRD establishment + schema validation for XDatabase (phase 5).
+#
+# Real RDS provisioning takes 5-10 minutes and is impractical for per-PR
+# chainsaw runs (that flow is the real-AWS/nightly 01 + 02 scenarios). This
+# kind-only scenario asserts the *contract*:
+#
+#   1. The XDatabase XRD is Established (the CRD installed cleanly).
+#   2. The XR CRD (xdatabases.platform.k8-platform.io) lands in the cluster.
+#   3. The Composition is accepted (pipeline shape + function refs valid).
+#   4. A valid XR passes server-side admission (schema validation: required
+#      databaseName, enum/default size+engine, region pattern).
+#   5. Invalid XRs are REJECTED at admission (proves the openAPIV3Schema is
+#      enforced — no x-kubernetes-preserve-unknown-fields: true):
+#        - bad region (pattern violation)
+#        - missing databaseName (required field)
+#        - out-of-enum size
+#        - bad databaseName pattern
+#
+# Server-dry-run is used so no Composition rendering fires (which would need
+# provider-aws-rds installed in the kind cluster). The contract under test
+# is the XRD schema + admission, not RDS reconciliation.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: xdatabase-xrd-establishes
+spec:
+  timeouts:
+    apply: 30s
+    assert: 120s
+  steps:
+    - name: apply the XDatabase XRD
+      try:
+        - apply:
+            file: ../../../../crossplane/xrds/xdatabase.yaml
+
+    - name: assert XRD reaches Established
+      # v2: namespaced XRDs only emit `Established` (no claim CRD = no
+      # Offered condition). kubectl wait is order-agnostic.
+      try:
+        - script:
+            content: |
+              set -eu
+              kubectl wait --for=condition=Established --timeout=60s \
+                xrd/xdatabases.platform.k8-platform.io
+
+    - name: assert the XR CRD landed in the cluster
+      try:
+        - assert:
+            resource:
+              apiVersion: apiextensions.k8s.io/v1
+              kind: CustomResourceDefinition
+              metadata:
+                name: xdatabases.platform.k8-platform.io
+
+    - name: apply the XDatabase RDS Composition
+      try:
+        - apply:
+            file: ../../../../crossplane/compositions/xdatabase.yaml
+
+    - name: assert a valid XR passes server-side validation
+      # --dry-run=server avoids triggering Composition rendering (which would
+      # need provider-aws-rds in the kind cluster). The contract here is the
+      # XRD schema, not RDS reconciliation (live RDS is the 01 scenario).
+      try:
+        - script:
+            content: |
+              set -eu
+              kubectl apply --dry-run=server -f - <<'YAML'
+              apiVersion: platform.k8-platform.io/v1alpha1
+              kind: XDatabase
+              metadata:
+                name: schema-valid
+                namespace: default
+              spec:
+                engine: postgres
+                size: small
+                storageGB: 20
+                databaseName: keycloak
+                region: us-east-1
+              YAML
+
+    - name: assert an invalid-region XR is REJECTED
+      try:
+        - script:
+            content: |
+              set -eu
+              if kubectl apply --dry-run=server -f - <<'YAML' 2>/tmp/err-region.log
+              apiVersion: platform.k8-platform.io/v1alpha1
+              kind: XDatabase
+              metadata:
+                name: schema-invalid-region
+                namespace: default
+              spec:
+                databaseName: keycloak
+                region: NOT-A-REGION
+              YAML
+              then
+                echo "FAIL: invalid region was accepted"
+                exit 1
+              fi
+              grep -q "spec.region" /tmp/err-region.log
+
+    - name: assert a missing-databaseName XR is REJECTED
+      # databaseName is the sole required field; omitting it must fail at
+      # admission, not silently default.
+      try:
+        - script:
+            content: |
+              set -eu
+              if kubectl apply --dry-run=server -f - <<'YAML' 2>/tmp/err-dbname.log
+              apiVersion: platform.k8-platform.io/v1alpha1
+              kind: XDatabase
+              metadata:
+                name: schema-invalid-nodbname
+                namespace: default
+              spec:
+                engine: postgres
+                region: us-east-1
+              YAML
+              then
+                echo "FAIL: XR without databaseName was accepted"
+                exit 1
+              fi
+              grep -qE "spec\.databaseName|databaseName|required" /tmp/err-dbname.log
+
+    - name: assert an out-of-enum size XR is REJECTED
+      try:
+        - script:
+            content: |
+              set -eu
+              if kubectl apply --dry-run=server -f - <<'YAML' 2>/tmp/err-size.log
+              apiVersion: platform.k8-platform.io/v1alpha1
+              kind: XDatabase
+              metadata:
+                name: schema-invalid-size
+                namespace: default
+              spec:
+                databaseName: keycloak
+                size: enormous
+              YAML
+              then
+                echo "FAIL: out-of-enum size was accepted"
+                exit 1
+              fi
+              grep -qE "spec\.size|size" /tmp/err-size.log
+
+    - name: assert a bad-databaseName-pattern XR is REJECTED
+      # databaseName pattern is ^[a-z][a-z0-9_]{0,62}$ — an uppercase /
+      # leading-digit name must fail at admission.
+      try:
+        - script:
+            content: |
+              set -eu
+              if kubectl apply --dry-run=server -f - <<'YAML' 2>/tmp/err-dbpat.log
+              apiVersion: platform.k8-platform.io/v1alpha1
+              kind: XDatabase
+              metadata:
+                name: schema-invalid-dbpat
+                namespace: default
+              spec:
+                databaseName: 9BadName
+              YAML
+              then
+                echo "FAIL: bad databaseName pattern was accepted"
+                exit 1
+              fi
+              grep -qE "spec\.databaseName|databaseName" /tmp/err-dbpat.log
+  # SPEC-A4 canonical catch block — keep in sync with
+  # tests/chainsaw/_lib/catch-block.yaml (enforced by
+  # tests/unit/test_chainsaw_catch_block.sh).
+  catch:
+    - describe:
+        apiVersion: platform.k8-platform.io/v1alpha1
+        kind: XDatabase      # overridden per-scenario when the XR kind differs
+        namespace: ($namespace)
+    - script:
+        content: |
+          set +e
+          # Enumerate v2 XR kinds across ALL namespaces. The scenarios in
+          # this repo apply XRs to `namespace: default` (per commit 8526f46
+          # "use literal 'default' namespace in composition-drift apply"),
+          # NOT to chainsaw's per-test scratch namespace. A $NAMESPACE-bound
+          # lookup would return nothing and the catch block would be
+          # diagnostically empty — exactly what the 2026-05-28 PR #125
+          # composition-drift timeout exposed (issue OI-2026-05-28-1).
+          # `-A` surfaces the XR regardless of where the scenario put it.
+          for xr_kind in xplatformsecret xplatformcluster xdatabase; do
+            kubectl get "$xr_kind" -A \
+              -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' \
+              | while read -r ns name; do
+                  [ -z "$name" ] && continue
+                  kubectl describe "$xr_kind" -n "$ns" "$name" 2>&1 | head -c 1500
+                  # Describe every MR referenced by this XR. MRs are
+                  # cluster-scoped on the upbound providers, so no -n flag.
+                  kubectl get "$xr_kind" -n "$ns" "$name" \
+                    -o jsonpath='{range .spec.resourceRefs[*]}{.apiVersion}{" "}{.kind}{" "}{.name}{"\n"}{end}' \
+                    | while read -r api kind mrname; do
+                        [ -z "$kind" ] && continue
+                        kubectl describe "$kind.$api" "$mrname" 2>&1 | head -c 1000
+                      done
+                done
+          done
+    - events:
+        namespace: ($namespace)

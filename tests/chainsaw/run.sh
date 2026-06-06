@@ -348,7 +348,7 @@ dump_diagnostics() {
 
   echo ""
   echo "── describe stuck composites (first 60 lines each) ────────────"
-  for kind in xplatformsecret xplatformcluster; do
+  for kind in xplatformsecret xplatformcluster xdatabase; do
     for name in $(kubectl get "$kind" -o name 2>/dev/null); do
       echo ""
       echo "── describe $name ──"

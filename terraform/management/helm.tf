@@ -468,6 +468,37 @@ resource "terraform_data" "crossplane_provider_aws_secretsmanager" {
   depends_on = [terraform_data.crossplane_aws_provider]
 }
 
+# Install provider-aws-rds. Same pattern as provider-aws-secretsmanager
+# above: the family-aws package is a meta-package, and the XDatabase RDS
+# Composition (phase 5) needs the rds child provider to actually reconcile
+# the rds.aws.m.upbound.io Instance managed resource that backs the
+# platform's database abstraction (Keycloak's Postgres). Without it the
+# XDatabase XR stays Synced=False forever.
+resource "terraform_data" "crossplane_provider_aws_rds" {
+  triggers_replace = [
+    var.crossplane_provider_aws_rds_version,
+  ]
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      aws eks update-kubeconfig \
+        --name ${module.eks.cluster_name} \
+        --region ${var.aws_region} \
+        --kubeconfig /tmp/k8-platform-kubeconfig
+      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl apply -f - <<'MANIFEST'
+      apiVersion: pkg.crossplane.io/v1
+      kind: Provider
+      metadata:
+        name: provider-aws-rds
+      spec:
+        package: "xpkg.upbound.io/upbound/provider-aws-rds:${var.crossplane_provider_aws_rds_version}"
+      MANIFEST
+    EOT
+  }
+
+  depends_on = [terraform_data.crossplane_aws_provider]
+}
+
 # ---- Kyverno (audit-mode policy engine) ----
 # Acts as a continuously-running assertion store: policies in policies/audit/
 # declare what "well-configured" looks like, and any drift (chart bump, hand

@@ -326,6 +326,52 @@ SA-name change is ever needed. terraform validate passes.
 
 ---
 
+## OI-2026-06-06-3 — XDatabase RDS `<xr>-master` password Secret is not GC'd on XR delete
+
+**Status:** **open — characterized, low-severity cleanup gap; not blocking phase 5.**
+**Surfaced:** 2026-06-06, phase-5 finalization (XDatabase XRD + RDS Composition,
+`crossplane/compositions/xdatabase.yaml`). Found during the adversarial review of
+the Composition's connection-secret wiring.
+
+**Symptom / observations (§6.17):**
+- **Observation:** the RDS Composition sets `spec.forProvider.autoGeneratePassword:
+  true` with `spec.forProvider.passwordSecretRef.{name,key}` patched to
+  `<xr-name>-master` / `password`. The Upbound `provider-aws-rds` Instance
+  controller GENERATES that Secret in the Instance MR's namespace (= the XR
+  namespace). It holds the master DB password.
+- **Observation:** that `<xr>-master` Secret is created by the provider, not by
+  the Composition's `function-patch-and-transform` resource list. It therefore
+  carries NO `ownerReference` back to the XR or the Instance MR — Crossplane's
+  composed-resource GC only reaps resources it composed, and the connection
+  Secret (`writeConnectionSecretToRef`) is handled by the standard connection-
+  secret lifecycle, but the generated `passwordSecretRef` Secret is not.
+- **Hypothesis (labelled, not confirmed — no live RDS run yet):** on
+  `kubectl delete xdatabase keycloak-db`, the XR → Instance MR → RDS instance
+  tear down (managementPolicies includes Delete), and the connection Secret is
+  removed, but the `keycloak-db-master` Secret is LEFT BEHIND as an orphan in the
+  keycloak namespace.
+
+**What's ruled out:** the connection Secret itself orphaning — that one IS owned
+via `writeConnectionSecretToRef` and is asserted gone by the
+`02-deletion-cleanup` chainsaw scenario. This entry is ONLY about the separate
+`-master` generated Secret.
+
+**Why it does not block phase 5:** the orphan is a single empty-after-DB-gone
+Secret in the consumer namespace; it leaks no live cloud resource and no cost.
+The `02-deletion-cleanup` chainsaw scenario asserts both the connection Secret
+AND the `-master` Secret are gone, so this gap is OBSERVABLE in CI the moment a
+real-AWS run executes (the scenario will fail on the `-master` assert if the
+orphan is real — turning this hypothesis into a confirmed bug with evidence).
+
+**Next diagnostic / fix:** (1) run the real-AWS `02-deletion-cleanup` scenario to
+confirm/deny the orphan. (2) If confirmed, the clean fix is to compose the
+`-master` Secret as an explicit `kubernetes` provider Object (or a Composition
+resource) carrying the owner reference, OR to add a finalizer/cleanup step; do
+NOT hand-delete in the scenario (that would mask the gap per §6.24). Track the
+fix as its own PR.
+
+---
+
 ## OI-2026-06-06-1 — `crossplane render` defaulted to a floating `:stable` orchestrator image → `unexpected argument internal`
 
 **Status:** **RESOLVED** (root-caused + fixed + verified green with the real

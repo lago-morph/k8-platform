@@ -1,0 +1,47 @@
+# kubeconform-skip: XDatabase CRD schema is validated offline by
+# tests/unit/test_xdatabase_xrd.sh (the XRD) and the rendered RDS Instance by
+# tests/unit/test_xdatabase_rds_composition.sh; the XR kind itself is the same
+# v2 namespaced kind those tests cover. Listed here for parity with
+# keycloak-secrets.yaml (same XPlatform-style v2 XR skip rationale).
+#
+# Keycloak's Postgres database, provisioned via the platform's XDatabase
+# abstraction (phase 5, REQ-AUTH DB; decisions/2026-06-06-phase4-alloy-phase5-db.md:
+# "a general XDatabase-style XRD that abstracts the database backend; RDS via
+# Crossplane as the only implementation for now").
+#
+# This is a namespaced Crossplane v2 XR (apiextensions.crossplane.io/v2,
+# scope: Namespaced — there is NO separate claim type; mirrors XPlatformSecret).
+# Applying it provisions an AWS RDS Postgres instance (via the xdatabase-rds
+# Composition) and publishes a single Kubernetes connection Secret in the
+# keycloak namespace.
+#
+# NAME CONTRACT (load-bearing — pinned by
+# tests/unit/test_keycloak_db_secret_contract.sh + test_keycloak_db_xr.sh):
+# the XR is NAMED `keycloak-db`. The RDS Composition patches
+# writeConnectionSecretToRef.name := metadata.name, so the connection Secret
+# the provider writes is ALSO named `keycloak-db`. That is exactly the name
+# Keycloak's values.yaml points externalDatabase.existingSecret at, and the
+# Composition writes the connection keys `username` / `password` (the keys
+# values.yaml reads via existingSecretUserKey / existingSecretPasswordKey).
+# The XR's status.endpoint / status.port are overlaid at registration into the
+# chart's externalDatabase.host / externalDatabase.port (the bitnami keycloak
+# chart has no existingSecret host/port key).
+#
+# Sync ordering: wave "34" — BEFORE the keycloak-secrets XRs (wave 35) and well
+# BEFORE the Keycloak workload Application (wave 40), so the database is being
+# provisioned (or already up) by the time the Keycloak pods start and read the
+# connection Secret. RDS create takes 5-10 min; the chart's pods retry on a
+# missing DB, and ArgoCD's wave ordering kicks off the DB first.
+apiVersion: platform.k8-platform.io/v1alpha1
+kind: XDatabase
+metadata:
+  name: keycloak-db
+  namespace: keycloak
+  annotations:
+    argocd.argoproj.io/sync-wave: "34"
+spec:
+  engine: postgres
+  size: small
+  storageGB: 20
+  databaseName: keycloak
+  region: us-east-1
