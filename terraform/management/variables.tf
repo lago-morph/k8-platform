@@ -187,10 +187,16 @@ variable "crossplane_provider_kubernetes_version" {
     using the in-cluster SA (InjectedIdentity) — see
     crossplane-phase3.tf. provider-kubernetes is published by
     crossplane-contrib, not Upbound, so it is NOT pinned to the
-    provider-family-aws version.
+    provider-family-aws version. MUST be a tag published to
+    xpkg.upbound.io/crossplane-contrib/provider-kubernetes AND be
+    Crossplane-v2 compatible: the v1.x line (v1.0.0+) is the first to
+    support Crossplane v2 (the SafeStart capability + kubernetes.m.crossplane.io
+    APIs); the old v0.x tags (e.g. v0.16.0) are NOT published to xpkg
+    (install fails MANIFEST_UNKNOWN 404) and predate v2. v1.2.1 is the
+    latest published stable (2026-02-25).
   EOT
   type        = string
-  default     = "v0.16.0"
+  default     = "v1.2.1"
 }
 
 variable "eso_version" {
