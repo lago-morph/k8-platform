@@ -24,10 +24,15 @@ resource "helm_release" "ingress_nginx" {
     name  = "controller.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-type"
     value = "nlb"
   }
-  # ACM wildcard cert — NLB terminates TLS; nginx sees plain HTTP.
+  # ACM cert — NLB terminates TLS; nginx sees plain HTTP. Uses the
+  # *.management.<domain> cert (acm-management.tf), NOT the base *.<domain>
+  # wildcard: the base wildcard matches only one label and does NOT cover the
+  # two-label service hosts like argocd.management.<domain>, which made strict
+  # TLS clients reject the listener cert on SAN (OI-2026-06-05-5). The management
+  # NLB only serves *.management.<domain> hosts, so this is correct coverage.
   set {
     name  = "controller.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-ssl-cert"
-    value = try(data.terraform_remote_state.base.outputs.acm_certificate_arn, "")
+    value = local.management_acm_certificate_arn
   }
   set {
     name  = "controller.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-ssl-ports"

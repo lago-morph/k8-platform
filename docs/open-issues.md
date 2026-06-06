@@ -326,4 +326,49 @@ SA-name change is ever needed. terraform validate passes.
 
 ---
 
+## OI-2026-06-06-1 — `crossplane render` defaulted to a floating `:stable` orchestrator image → `unexpected argument internal`
+
+**Status:** **RESOLVED** (root-caused + fixed + verified green with the real
+tools this session).
+**Surfaced:** every push — `unit-tests.yml` `test_composition_render_fixtures.sh`
+failed its 2 `*_render_matches_golden` subtests on `main` (e.g. run 27050411763,
+HEAD `f39fee40`):
+```
+crossplane: error: cannot render composite resource: cannot run crossplane
+internal render in Docker: container exited with status 1: crossplane: error:
+unexpected argument internal
+```
+
+**Root cause (CONFIRMED, not hypothesis — reproduced locally with `--verbose`):**
+`crossplane render` does the actual composition rendering by running
+`crossplane internal render` inside a **Crossplane Docker image**, separate from
+the function container. That orchestrator image defaults to the FLOATING tag
+`xpkg.crossplane.io/crossplane/crossplane:stable`, which currently resolves to
+**v1.20.9** (the v1.x stable line). v1.20.9 has no `internal render` subcommand,
+so it rejects the args with `unexpected argument internal`. The function image
+(`function-patch-and-transform:v0.10.6`) was never the problem; the breakage was
+purely the un-pinned orchestrator image drifting. It was NOT a CLI-version drift
+(reproduced identically with the CLI pinned to v2.3.0) and NOT any manifest bug.
+
+**Fix:**
+1. `scripts/composition-render.sh` now passes `--crossplane-version v${CROSSPLANE_CHART_VERSION}`
+   (→ `v2.3.0`) to `crossplane render`, pinning the orchestrator image to the
+   SAME Crossplane the management cluster runs (`read_crossplane_version()` reads
+   the existing `versions.env` pin — single source of truth, cannot drift from
+   the chart).
+2. `.github/workflows/unit-tests.yml` now installs the crossplane CLI pinned to
+   `v${CROSSPLANE_CHART_VERSION}` from the releases `crank` binary, instead of
+   `install.sh` from `main` (the flag-parsing CLI must also be pinned).
+
+**Verification:** with mikefarah `yq` v4.44.3 + crossplane CLI v2.3.0 + a running
+dockerd, `bash tests/unit/test_composition_render_fixtures.sh` → **12/12 pass**
+(both goldens match, both determinism sub-tests pass). The existing render test
+is the regression catcher: if the pin is removed the floating image returns and
+the test reds again.
+
+**Note:** the sandbox ships the Python `yq` (kislyuk) by default, which silently
+breaks `normalize_stream`'s mikefarah syntax and produces spurious golden
+mismatches locally — install mikefarah/yq v4.44.3 before running the render test
+in the sandbox (CI already does).
+
 <!-- New entries go above this line, newest first. -->
