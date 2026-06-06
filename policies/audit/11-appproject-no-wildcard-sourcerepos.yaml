@@ -24,8 +24,14 @@ spec:
       match:
         any:
           - resources:
+              # Group-qualified (Group/Version/Kind), NOT a bare "AppProject":
+              # Kyverno's validate-policy webhook must convert the matched kind
+              # to a GVR, and a bare CRD kind yields "*/*/AppProject/" → "failed
+              # to find resource" at policy admission (run 27071480486). The
+              # argoproj.io AppProject CRD is installed (ArgoCD helm) before this
+              # policy applies, so the qualified form resolves cleanly.
               kinds:
-                - AppProject
+                - argoproj.io/v1alpha1/AppProject
       validate:
         message: >-
           AppProject sourceRepos contains a wildcard entry. Privileged projects
