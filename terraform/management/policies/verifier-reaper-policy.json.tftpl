@@ -1,0 +1,87 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "VerifyReadsNoWildcardActions",
+      "Effect": "Allow",
+      "Action": [
+        "sts:GetCallerIdentity",
+        "eks:DescribeCluster",
+        "eks:ListClusters",
+        "eks:DescribeNodegroup",
+        "eks:ListNodegroups",
+        "eks:DescribeAccessEntry",
+        "eks:ListAccessEntries",
+        "eks:ListAssociatedAccessPolicies",
+        "rds:DescribeDBInstances",
+        "rds:DescribeDBSubnetGroups",
+        "rds:ListTagsForResource",
+        "iam:GetRole",
+        "iam:GetRolePolicy",
+        "iam:ListRolePolicies",
+        "iam:ListAttachedRolePolicies",
+        "iam:GetOpenIDConnectProvider",
+        "iam:ListOpenIDConnectProviders",
+        "acm:DescribeCertificate",
+        "acm:ListCertificates",
+        "route53:GetHostedZone",
+        "route53:ListHostedZones",
+        "route53:ListResourceRecordSets",
+        "secretsmanager:DescribeSecret",
+        "secretsmanager:GetResourcePolicy",
+        "secretsmanager:ListSecrets",
+        "tag:GetResources",
+        "accessanalyzer:ListAnalyzers",
+        "accessanalyzer:GetAnalyzer",
+        "servicequotas:GetServiceQuota",
+        "servicequotas:ListServiceQuotas",
+        "cloudtrail:LookupEvents"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "VerifySyntheticSecretReadScoped",
+      "Effect": "Allow",
+      "Action": ["secretsmanager:GetSecretValue"],
+      "Resource": "arn:aws:secretsmanager:${region}:${account_id}:secret:live-verify/*"
+    },
+    {
+      "Sid": "ReaperDeletesTagConditioned",
+      "Effect": "Allow",
+      "Action": [
+        "eks:DeleteCluster",
+        "eks:DeleteNodegroup",
+        "eks:DeleteAccessEntry",
+        "rds:DeleteDBInstance",
+        "rds:DeleteDBSubnetGroup",
+        "iam:DeleteRole",
+        "iam:DeleteRolePolicy",
+        "iam:DeleteOpenIDConnectProvider",
+        "iam:DetachRolePolicy",
+        "secretsmanager:DeleteSecret"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/live-verify": "${run_id_tag}"
+        }
+      }
+    },
+    {
+      "Sid": "ReaperRoute53RecordsScoped",
+      "Effect": "Allow",
+      "Action": ["route53:ChangeResourceRecordSets"],
+      "Resource": "arn:aws:route53:::hostedzone/${zone_id}"
+    },
+    {
+      "Sid": "AccountMutexDynamoDB",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:DeleteItem"
+      ],
+      "Resource": "arn:aws:dynamodb:${region}:${account_id}:table/${lock_table}"
+    }
+  ]
+}
