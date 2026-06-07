@@ -66,6 +66,12 @@ resource "aws_iam_policy" "crossplane_aws" {
           "iam:GetRole", "iam:ListRolePolicies", "iam:ListAttachedRolePolicies",
           "iam:CreateOpenIDConnectProvider", "iam:DeleteOpenIDConnectProvider",
           "iam:GetOpenIDConnectProvider",
+          # The XSpokeAccess Composition tags the spoke OIDC provider
+          # (ManagedBy / PlatformAbstraction / ClusterName). EKS OIDC-provider
+          # create-with-tags fails closed without Tag* (auto-012): observed
+          # "AccessDenied ... iam:TagOpenIDConnectProvider" at spoke-access
+          # sync. Untag pairs with it for managementPolicies Update/Delete.
+          "iam:TagOpenIDConnectProvider", "iam:UntagOpenIDConnectProvider",
           "iam:TagRole", "iam:UntagRole",
           "iam:PassRole",
         ]

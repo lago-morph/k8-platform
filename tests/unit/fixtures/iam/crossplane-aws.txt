@@ -9,6 +9,10 @@ iam:GetRole
 iam:CreateRole
 iam:PassRole
 iam:CreateOpenIDConnectProvider
+# auto-012: the XSpokeAccess Composition tags the spoke OIDC provider, so
+# CreateOpenIDConnectProvider-with-tags fails closed without Tag*. Observed
+# live as "AccessDenied ... iam:TagOpenIDConnectProvider" at spoke-access sync.
+iam:TagOpenIDConnectProvider
 secretsmanager:GetSecretValue
 secretsmanager:DescribeSecret
 # Phase 3 (docs/decisions/0003): the XPlatformCluster Composition
