@@ -41,6 +41,12 @@ sources:
 extraArgs:
   - "--aws-zone-match-parent"
 serviceAccount:
+  # Pin the SA NAME to `external-dns` (auto-012). The XSpokeAccess Composition's
+  # IRSA trust policy hardcodes the subject
+  # system:serviceaccount:external-dns:external-dns; without this the chart names
+  # the SA after the release (`spoke-external-dns`), the sub claim mismatches, and
+  # AssumeRoleWithWebIdentity is denied so external-dns publishes NO records.
+  name: external-dns
   annotations:
     # Overlaid by the Application's valuesObject (spoke external-dns IRSA role):
     eks.amazonaws.com/role-arn: "PLACEHOLDER_OVERRIDDEN_BY_APPLICATION"
