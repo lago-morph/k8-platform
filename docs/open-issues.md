@@ -11,6 +11,134 @@ is the sequence number for that date.
 
 ---
 
+## OI-2026-06-07-1 — spoke ArgoCD cluster Secret has no durable (GitOps) form
+
+**Status:** open — live-bootstrapped this run; durable mechanism not yet authored.
+**Surfaced:** 2026-06-07, auto-012, phase-3 spoke registration.
+
+**What happened:** the `platform-spoke` ArgoCD cluster Secret was created LIVE via
+the ArgoCD REST API (`POST /api/v1/clusters`, awsAuthConfig.clusterName +
+tlsClientConfig.caData from `aws eks describe-cluster`). The hub app-controller
+authenticates with its IRSA role (now annotated — see auto-012) against the EKS
+AccessEntry. Registration `connectionState: Successful`, serverVersion 1.32.
+
+**Why it is not durable:** the endpoint+CA are account-ephemeral (§8.1, uncommittable)
+and the EKS Cluster MR publishes NO connection secret (writeConnectionSecretToRef
+empty), so there is nothing for a provider-kubernetes Object to reference, and the
+ArgoCD cluster-secret `config` requires caData embedded in a JSON string (which
+provider-kubernetes references cannot assemble — only a Crossplane Composition's
+`CombineFromComposite` fmt can). The cluster Secret will not be re-created on a
+fresh account.
+
+**Recommended durable mechanism:** add a provider-kubernetes `Object` to the
+XSpokeAccess Composition that builds the cluster Secret, assembling `config` JSON
+via `CombineFromComposite` from the cluster endpoint + caData overlaid onto the XR
+(same overlay pattern as `spec.oidcIssuer`), + RBAC for the provider-kubernetes SA
+to write Secrets in `argocd` ns (same class as the ESO ClusterRole, #160). Needs
+render fixtures + chainsaw (§6.8 — new Object kind in a v2 composition).
+
+**Next step:** author the Composition Object + RBAC; delete the REST-bootstrapped
+secret at cutover so the Object owns it.
+
+---
+
+## OI-2026-06-07-2 — registration-time ephemeral overlays fought by bootstrap selfHeal
+
+**Status:** open — design decision needed (decision brief pending).
+**Surfaced:** 2026-06-07, auto-012.
+
+**What happened:** the spoke apps (`spoke-hello`, `spoke-ingress-nginx`,
+`spoke-external-dns`, `spoke-keycloak`) carry committed PLACEHOLDER helm values
+(domain, cert ARN, external-dns role ARN, region) that auto-008 designed to be
+"overlaid at registration" into the Application's helm valuesObject/parameters.
+But the `bootstrap` app-of-apps has `selfHeal: true` and manages those Application
+objects from `main`, so it reverts any `argocd app set` overlay within its
+reconcile interval. The values are account-ephemeral (§8.1) so they cannot be
+committed to satisfy bootstrap. This is the auto-008 "finalize live" gap.
+
+**Workaround used this run:** paused bootstrap (`argocd app set bootstrap
+--sync-policy none`) during the finalize-live window. MUST be re-enabled.
+
+**Candidate durable mechanisms (decision needed):**
+1. **ApplicationSet cluster-generator** — store the ephemeral values as annotations
+   on the `platform-spoke` cluster Secret; generate the spoke apps from an
+   ApplicationSet that templates `{{.metadata.annotations.*}}` into valuesObject.
+   Idiomatic; survives selfHeal; refactors 3-4 apps.
+2. **bootstrap `ignoreDifferences` + `RespectIgnoreDifferences`** on the child
+   Applications' helm value fields (targeted by app name). Minimal; lets the
+   registration overlays persist as out-of-band drift bootstrap won't revert.
+3. **Composition-written ConfigMap on the spoke** consumed by the charts (poor fit
+   — charts need literals for Service/SA annotations).
+
+**Next step:** decision brief (Round 1+2 adversarial) → implement.
+
+---
+
+## OI-2026-06-07-3 — shared-VPC subnets not tagged for the spoke cluster (LB + general)
+
+**Status:** open — tagged live this run; durable terraform form pending.
+**Surfaced:** 2026-06-07, auto-012, spoke ingress-nginx NLB never provisioned.
+
+**What happened:** mgmt + spoke share VPC `vpc-…`. The ELB-role subnets are tagged
+`kubernetes.io/cluster/k8-platform-mgmt` but NOT `…/k8-platform-services`, so the
+spoke's in-tree AWS cloud provider excluded them (they "belong" to another cluster)
+and could not find subnets for the internet-facing ingress NLB. EKS only tags the
+subnets in a cluster's own vpcConfig (the spoke uses private node subnets), so the
+public ELB subnets were never tagged for the spoke.
+
+**Fix applied live:** `aws ec2 create-tags … Key=kubernetes.io/cluster/k8-platform-services,Value=shared`
+on the public (role/elb) and internal-elb subnets.
+
+**Durable form:** terraform/base should tag the shared ELB subnets `shared` for
+every EKS cluster the VPC hosts (or the platform-cluster Composition should add the
+spoke tag). Base does not currently know spoke cluster names — a small list/var.
+
+**Next step:** add the spoke cluster tag to terraform/base subnet tagging.
+
+---
+
+## OI-2026-06-07-4 — hub→spoke EKS-API security-group rule has no durable form
+
+**Status:** open — added live this run; durable composition/terraform form pending.
+**Surfaced:** 2026-06-07, auto-012.
+
+**What happened:** the hub ArgoCD app-controller (mgmt node SG `sg-…`) could not
+reach the spoke EKS API (private endpoint) — the spoke EKS cluster SG had no inbound
+443 from the mgmt nodes. Added live:
+`authorize-security-group-ingress` 443 from the mgmt node SG to the spoke cluster SG.
+
+**Durable form:** a `SecurityGroupIngressRule` MR in the platform-cluster
+Composition (groupId from the Cluster MR's clusterSecurityGroupId, source = mgmt SG
+from an extended `cluster-network` EnvironmentConfig).
+
+**Next step:** add the mgmt SG to the EnvironmentConfig + the ingress-rule MR.
+
+---
+
+## OI-2026-06-07-5 — phase-5 RDS connection secret is hub-local; Keycloak runs on the spoke
+
+**Status:** open — RDS + secret verified on hub; cross-cluster delivery undesigned.
+**Surfaced:** 2026-06-07, auto-012, phase-5.
+
+**What happened:** the `keycloak-db` XDatabase XR is processed by the HUB crossplane
+(crossplane runs on the hub), so the RDS connection Secret `keycloak-db` lands in
+the HUB's `keycloak` namespace (verified: keys address/host/port/username/password,
+RDS Instance Ready=True, endpoint on :5432). But Keycloak (spoke-keycloak app) runs
+on the SPOKE and reads `existingSecret: keycloak-db` there. The secret is not
+delivered cross-cluster, so Keycloak cannot yet consume it.
+
+**Also note (RDS networking):** the Instance MR sets no DB subnet group, so RDS
+landed in the default subnet group; reachability from the spoke nodes is unverified.
+
+**Candidate mechanisms:** ESO PushSecret hub→spoke; a provider-kubernetes Object
+writing the secret to the spoke; or applying the XDatabase XR on the spoke (needs
+crossplane on the spoke). Decision needed.
+
+**Next step:** decide + implement cross-cluster delivery, then verify Keycloak boots
+against RDS.
+
+---
+
 ## OI-2026-06-05-5 — live ArgoCD sync unreachable from the Claude-Code-web sandbox
 
 **Status:** **open — environmental blocker characterized, not a code bug.**

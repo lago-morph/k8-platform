@@ -1,0 +1,48 @@
+# ArgoCD Application — the phase-5 keycloak-db XDatabase XR (RDS Postgres).
+#
+# Applied to the HUB cluster (https://kubernetes.default.svc): Crossplane runs on
+# the management/hub cluster, so the namespaced v2 XDatabase XR is reconciled there
+# and the RDS Instance + connection Secret are produced in the HUB `keycloak`
+# namespace (auto-012). This is a SEPARATE Application from crossplane-resources
+# (whose include glob is narrowed to crossplane/{xrds,compositions,rbac,
+# providerconfig}) and from the spoke keycloak chart app (spoke-keycloak), which
+# runs the Keycloak workload on the spoke.
+#
+# OPEN: the connection Secret is hub-local; Keycloak runs on the SPOKE and needs
+# the secret there. Cross-cluster delivery is tracked in
+# docs/open-issues.md OI-2026-06-07-5 (ESO PushSecret / provider-kubernetes Object
+# / XR-on-spoke). Until that lands, this app only provisions RDS + the hub secret.
+#
+# Manual-sync is NOT required (the XR spec is fully static — no ephemeral overlay),
+# but provisioning RDS is a real cloud-cost action, so it is automated-with-prune
+# like the other crossplane apps. Wave 33 — just before the XR's own wave-34
+# annotation is irrelevant here (single XR), kept low so the DB leads Keycloak.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: keycloak-db
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "33"
+spec:
+  project: k8-platform
+  source:
+    repoURL: https://github.com/lago-morph/k8-platform.git
+    targetRevision: main
+    path: platform-services/keycloak/database
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: keycloak
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m
