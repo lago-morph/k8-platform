@@ -1,0 +1,25 @@
+# Version-independence fixture (v1beta2). Paired with comp-v1beta1.yaml: the two
+# differ ONLY in the apiVersion version segment (v1beta1 -> v1beta2). The
+# extractor must yield byte-identical group/kind keys for both. Synthetic.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: fixture-version-bump
+spec:
+  mode: Pipeline
+  pipeline:
+    - step: render
+      functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+          - name: role
+            base:
+              apiVersion: iam.aws.m.upbound.io/v1beta2
+              kind: Role
+          - name: secret
+            base:
+              apiVersion: secretsmanager.aws.m.upbound.io/v1beta2
+              kind: Secret
