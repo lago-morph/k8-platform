@@ -4,7 +4,7 @@
 #
 # This is the BEHAVIORAL oracle for the kube-relay-ingress MR, per ADR-0006: it
 # proves the thing WORKS, not that a manifest says so. A static yq/grep that the
-# Composition *contains* a SecurityGroupIngressRule is a lint; THIS opens the real
+# Composition *contains* a SecurityGroupRule is a lint; THIS opens the real
 # SSM tunnel to the cluster-under-test and runs a real `kubectl get nodes`. It
 # passes only if the API answers — which requires the cluster's SG to actually
 # admit the relay on 443 (the kube-relay-ingress MR) AND the sandbox identity's
@@ -52,5 +52,5 @@ READY=$(printf '%s\n' "$OUT" | grep -c ' Ready ' || true)
 
 ok "sandbox kubectl reached $CLUSTER via the relay — $READY Ready node(s)"
 # Reaching the private API through the relay proves the SG ingress rule admits it.
-covers ec2.aws.m.upbound.io/SecurityGroupIngressRule
+covers ec2.aws.m.upbound.io/SecurityGroupRule
 exit "$LIVE_RC_PASS"

@@ -360,7 +360,7 @@ spec:
     kind: ClusterProviderConfig
     name: default
 apiVersion: ec2.aws.m.upbound.io/v1beta1
-kind: SecurityGroupIngressRule
+kind: SecurityGroupRule
 metadata:
   annotations: {}
   generateName: render-probe-cluster-
@@ -373,13 +373,11 @@ spec:
   forProvider:
     description: SSM kube-API relay to cluster API server
     fromPort: 443
-    ipProtocol: tcp
-    referencedSecurityGroupId: sg-00000000000000000
+    protocol: tcp
     region: us-east-1
-    tags:
-      ManagedBy: crossplane
-      PlatformAbstraction: PlatformCluster
+    sourceSecurityGroupId: sg-00000000000000000
     toPort: 443
+    type: ingress
   managementPolicies:
     - Observe
     - Create
@@ -404,7 +402,7 @@ spec:
         kind: Certificate
         name: render-probe-cluster-132e67b41d9b
       - apiVersion: ec2.aws.m.upbound.io/v1beta1
-        kind: SecurityGroupIngressRule
+        kind: SecurityGroupRule
         name: render-probe-cluster-81ea7144944e
       - apiVersion: eks.aws.m.upbound.io/v1beta1
         kind: AccessEntry

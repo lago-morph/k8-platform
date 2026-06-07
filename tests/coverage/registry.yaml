@@ -33,7 +33,7 @@ kinds:
     lane: aws
     cost: slow
     defended_by: pending:P2
-  ec2.aws.m.upbound.io/SecurityGroupIngressRule:
+  ec2.aws.m.upbound.io/SecurityGroupRule:
     lane: aws
     cost: singleton-coupled   # admits the shared SSM relay to the cluster API; created with the cluster (docs/decisions/0008)
     defended_by: tests/live/checks/after/sandbox-kubectl-relay.sh   # behavioral: real kubectl through the relay (ADR-0006)

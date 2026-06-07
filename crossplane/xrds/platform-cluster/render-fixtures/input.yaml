@@ -10,7 +10,7 @@
 #
 # Renders 14 managed resources: 2 IAM roles + 4 RolePolicyAttachments +
 # EKS Cluster + NodeGroup + ACM Certificate + route53 Record +
-# ACM CertificateValidation + SecurityGroupIngressRule + AccessEntry +
+# ACM CertificateValidation + SecurityGroupRule + AccessEntry +
 # AccessPolicyAssociation, all under *.aws.m.upbound.io API groups.
 #
 # metadata.uid is pinned for deterministic render output (see SPEC-S9

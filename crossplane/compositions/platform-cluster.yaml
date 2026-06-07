@@ -615,23 +615,29 @@ spec:
           # status from the eks-cluster MR) from the shared relay SG (from the
           # cluster-network EnvironmentConfig relaySecurityGroupId). This is what
           # lets the one relay tunnel kubectl to THIS cluster's private endpoint.
+          #
+          # Uses the classic SecurityGroupRule (aws_security_group_rule), NOT
+          # SecurityGroupIngressRule: provider-aws-ec2 v2.5.0 wraps a
+          # terraform-provider-aws v6 that fails to observe
+          # aws_vpc_security_group_ingress_rule ("Missing Resource Identity After
+          # Read", hashicorp/terraform-provider-aws#45303) so that MR never
+          # syncs. The classic resource is unaffected. Found by the ADR-0006
+          # behavioral test (the relay couldn't reach the 2nd cluster), not a lint.
           - name: kube-relay-ingress
             base:
               apiVersion: ec2.aws.m.upbound.io/v1beta1
-              kind: SecurityGroupIngressRule
+              kind: SecurityGroupRule
               metadata:
                 labels:
                   platform.k8-platform.io/role: kube-relay-ingress
               spec:
                 forProvider:
                   region: us-east-1
-                  ipProtocol: tcp
+                  type: ingress
+                  protocol: tcp
                   fromPort: 443
                   toPort: 443
                   description: "SSM kube-API relay to cluster API server"
-                  tags:
-                    ManagedBy: crossplane
-                    PlatformAbstraction: PlatformCluster
                 managementPolicies: [Observe, Create, Update, Delete]
                 providerConfigRef:
                   kind: ClusterProviderConfig
@@ -645,7 +651,7 @@ spec:
                 toFieldPath: spec.forProvider.securityGroupId
               - type: FromEnvironmentFieldPath
                 fromFieldPath: relaySecurityGroupId
-                toFieldPath: spec.forProvider.referencedSecurityGroupId
+                toFieldPath: spec.forProvider.sourceSecurityGroupId
             readinessChecks:
               - type: NonEmpty
                 fieldPath: status.atProvider.id

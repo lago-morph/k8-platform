@@ -150,6 +150,22 @@ Key properties of the chosen design:
   clusters are provisioned. This is an ordering constraint, not a runtime
   dependency.
 
+## Implementation notes (found by the ADR-0006 behavioral test, not by lints)
+
+Driving the real Composition on a second live cluster surfaced two defects that
+static render/`yq` checks cannot see:
+
+- **`SecurityGroupIngressRule` MR never syncs** under `provider-aws-ec2 v2.5.0`:
+  `observe failed: Missing Resource Identity After Read` (the terraform-provider-aws
+  v6 resource-identity regression, hashicorp/terraform-provider-aws#45303, surfaced
+  through upjet). The Composition therefore uses the **classic `SecurityGroupRule`**
+  (`aws_security_group_rule`), which is unaffected. (The hub's rule is *direct*
+  Terraform `aws_vpc_security_group_ingress_rule` and is unaffected by the upjet bug.)
+- **The crossplane IRSA role lacked `ec2:AuthorizeSecurityGroupIngress` /
+  `ec2:RevokeSecurityGroupIngress`** — the SG-rule MR failed create with
+  `UnauthorizedOperation`. Added to `terraform/management/irsa.tf` (the
+  "unknown-missing-permission" class ADR-0006 exists to catch).
+
 ## References
 
 - `terraform/management/kube-access.tf` — relay instance, relay SG, mgmt-cluster

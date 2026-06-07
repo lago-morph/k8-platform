@@ -72,12 +72,12 @@ grep -qE 'relaySecurityGroupId *= *aws_security_group.kube_relay.id' "$P3" \
 
 grep -qE 'name: provider-aws-ec2' "$P3" \
   && pass "provider-aws-ec2 is in the child-provider set (for the relay-ingress MR)" \
-  || fail "crossplane-phase3.tf must install provider-aws-ec2 (SecurityGroupIngressRule)"
+  || fail "crossplane-phase3.tf must install provider-aws-ec2 (SecurityGroupRule)"
 
 # ── Composition wiring ──────────────────────────────────────────────────────
-grep -qE 'kind: SecurityGroupIngressRule' "$COMP" \
-  && pass "Composition admits the shared relay via a SecurityGroupIngressRule MR" \
-  || fail "Composition must add a SecurityGroupIngressRule admitting the relay"
+grep -qE 'kind: SecurityGroupRule' "$COMP" \
+  && pass "Composition admits the shared relay via a SecurityGroupRule MR" \
+  || fail "Composition must add a SecurityGroupRule admitting the relay"
 grep -qE 'fromFieldPath: relaySecurityGroupId' "$COMP" \
   && pass "Composition ingress rule sources the relay SG from the env" \
   || fail "Composition ingress rule must read relaySecurityGroupId from the env"
