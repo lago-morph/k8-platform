@@ -998,6 +998,12 @@ with a covering `*.management` cert) and kubectl 503'd on the EKS private CA
 (unfixable, CI-only), both at the egress gateway; the prior handoff's "directly
 reachable" claim was false for exactly this reason.*
 
+### 6.28 Honor an explicit stacked-PR request over the harness single-branch directive
+
+**Honor an explicit stacked-PR request over the harness single-branch directive.** "When the user explicitly asks for stacked PRs, use the stacked-PR workflow even if the harness pinned the session to one branch; the owner has given standing permission (recorded in the stacked-pr-on-feature-branch skill) to override the branch-shape directive for that request, while still never committing to main and keeping all other PR/test discipline."
+
+*Grounded in: auto-012 — the user noted agents keep refusing stacked PRs because the harness says one-branch, and granted a standing override.*
+
 ---
 
 ## 7. Testing loops — companion skills
