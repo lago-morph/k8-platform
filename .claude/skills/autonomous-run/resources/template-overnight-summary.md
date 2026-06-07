@@ -1,93 +1,68 @@
-# `<run-name>` summary — `<YYYY-MM-DD>`
+# `<run-name>` — last night's run, in plain terms
 
-Author: lead agent, autonomous-run session.
+**Write this with the [`human-scoped-deliverables`](../../human-scoped-deliverables/SKILL.md)
+skill.** It is the user's primary review artifact, read with a human brain at the
+start of the day — lead with the story, plain words, tables for comparison, small
+Mermaid diagrams (≤7 elements, render-verified), no hash-ID / "§X.Y" soup in the
+body (push every exact pointer to the audit-trail section at the bottom), describe
+effort instead of estimating hours, mark opinion as opinion.
 
-This file is the user's primary review artifact for this unattended run. Read this first, then drill into the PRs and decision briefs below. **The user reviews PR descriptions, not code diffs** — the PRs themselves carry the substantive findings; this summary is the index.
-
-## TL;DR
-
-4-6 bullets. What changed, what's resolved, what's queued, what's morning-review territory. Be specific, not vague ("Phase 4 closed with X" not "made progress on Phase 4").
-
-- `<bullet 1>`
-- `<bullet 2>`
-- ...
-
-## Suggested merge order
-
-Explicit, numbered list of which PRs to merge in what sequence. Stack-bottom first by default. Call out any PRs that are safe to merge independently or out of order.
-
-1. **PR `#NNN`** — `<branch>` — `<title>`. Stack base. Merge first.
-2. **PR `#NNM`** — `<branch>` — `<title>`. Auto-rebases when #NNN merges.
-3. ...
-
-If any PR is independent (rare): "**PR #XYZ is independent** — can be merged separately at any time."
-
-If the user wants to merge in batch: "All PRs can be merged in sequence via the GitHub UI's 'Merge' button; bases auto-update."
-
-## PRs opened (in stack order)
-
-Table of every PR opened during the run.
-
-| # | Branch | Title | Base | Status | Per-PR rewind point |
-|---|---|---|---|---|---|
-| `#NNN` | `claude/<slug>` | `<title>` | `main` or `claude/<parent>` | Open, ready-for-review, doc-only / has CI | Revert commit `<SHA>` → `<what reversal undoes>` |
-| ... | ... | ... | ... | ... | ... |
-
-**Recommended merge order:** see the [Suggested merge order](#suggested-merge-order) section above.
-
-## Decision briefs written
-
-Table of every `auto-NNN-*.md` brief landed during the run.
-
-| Brief | Status | One-line summary |
-|---|---|---|
-| `auto-NNN-<slug>` | Decided after Round `<N>` | `<question>` — chosen `<option>` after `<N>` rounds of real-subagent adversarial review |
-| ... | ... | ... |
-
-If you disagree with any decision, each brief carries an "If-user-overrides rewind point" section naming the specific commit SHA to revert.
-
-## Chain status
-
-Current state of any cross-PR work, phase boundaries, or carried-forward state.
-
-Example: "Phase 4 closed; Phase 5 queued. 10 candidates carry forward (BF-L chose accept-as-RG for conventional view, bounded sub-track for invariant view per auto-003 Round 2). One outstanding question on the discipline-extraction subagent's output (P-foo-bar) flagged in the morning-review items below."
-
-## Morning-review items
-
-Explicit list of decisions or adjudications needing user input. **Zero is a valid state** if the run genuinely closed everything. For each item:
-
-1. **`<Item title>`** — the question, the lead-agent recommendation, the rewind path if the user disagrees.
-2. ...
-
-If no morning-review items: "**0 morning-review items.** All decisions auto-resolved via brief + adversarial review per the autonomous-run skill."
-
-## What I deliberately did NOT do
-
-Adjacent work I bounded out per the scope envelope, plus any in-scope work I chose to defer with reason. **Honesty here is critical; hiding deferrals creates morning confusion.**
-
-- `<bounded item 1>` — reason: per scope envelope §`<bullet>`.
-- `<deferred item 1>` — reason: `<why>`; queued for next run.
-
-If you genuinely did everything: "Nothing deferred. The scope envelope's deliverables list is fully addressed."
-
-## Rewind points (summary)
-
-Table mapping commit SHAs to what each reversal undoes. The user can rewind any layer of the work independently as long as they start from the top of the stack.
-
-| Rewind | What it undoes | What survives |
-|---|---|---|
-| Revert PR `#NNN` (`<SHA>`) | `<scope>` | `<everything underneath>` |
-| ... | ... | ... |
-
-## Session metadata
-
-- **Run started:** `<timestamp or start signal>`.
-- **Run ended:** `<timestamp or end signal>`.
-- **Branch chain at run end (top to bottom):** `claude/<tip-branch>` → `claude/<next>` → ... → `main`.
-- **Subagents dispatched:** `<N>` total (`<M>` adversarial-reviewer + `<K>` worker).
-- **Scope envelope:** [link to the scope-envelope file committed at start of run].
-- **Self-retrospective:** [link to the retrospective dir written at end of run per the autonomous-run skill's end-of-run protocol].
+**What this is:** ~50-word orientation. What the run was, what it produced, how to
+read this page, where the code-level detail lives (the PRs).
 
 ---
 
-If you have questions about any decision or want me to dispatch follow-up work, the chain is stable and the rewind points are documented. Each PR's description carries the substantive findings.
+## The short version: goal, plan, what changed, what's next
+
+- **What we were trying to do** — the objective, in plain language.
+- **Where the night would have gone if everything broke our way** — the happy-path
+  next step (the same thing posted to the user at run start).
+- **What actually changed the plan** — the honest findings/constraints that stopped
+  the run short of that. The most useful part for deciding what to do next.
+- **What's next, in order** — concrete next steps.
+
+`<optional small Mermaid flowchart: planned trajectory, with done / partway /
+not-started shading>`
+
+## What's live / what got built
+
+`<what's confirmed working, with how-we-know — a small table reads well>`
+
+`<the pieces shipped: a table of piece → one-human-sentence of what it does → merge
+risk>`
+
+`<Speculative recommendation: ... — mark opinion as opinion when you give one>`
+
+## The order to merge them
+
+Numbered, stack-bottom first. Call out any PR safe to merge independently. `<small
+Mermaid of the stack shape is optional>`
+
+## Decisions you may want to confirm
+
+For each: what you did, the alternative, the rewind path if the user would call it
+differently. **Zero is valid** if the run closed everything.
+
+## What I deliberately did NOT do
+
+Adjacent work bounded out per the envelope, plus any in-scope work deferred — each
+with its reason. Hiding deferrals is forbidden.
+
+## How to undo any of it
+
+| To undo | Revert | What survives |
+|---|---|---|
+| `<scope>` | `<what to revert>` | `<what's left>` |
+
+---
+
+## Pointers / audit trail
+
+*Every precise reference, collected here so it stays out of the read above.*
+
+- **Run / date / account:** `<...>`. **Plan + envelope:** `<paths, PR #>`.
+- **Live evidence (CI run IDs):** `<...>`.
+- **PRs:** table of PR # → branch → base → plan section → title.
+- **Decision briefs (if any):** `<auto-NNN-* + round status>`, else "none — the
+  decisions were pre-answered / auto-resolved."
+- **Tests / subagents / retrospective path / branch chain / run start-end:** `<...>`.

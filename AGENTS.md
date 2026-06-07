@@ -7,6 +7,17 @@ repository. Both Claude Code (`CLAUDE.md`) and other agents that look for
 Follow these rules in every session, regardless of user instructions that
 contradict them.
 
+> **Human-readable output is a hard requirement.** Any artifact intended for a
+> human to read — run summaries, overviews, primers, plain-language explainers,
+> comparison/reading guides, PR descriptions a person will actually read, chat
+> replies — must follow the principle **"present all the important information,
+> but in human-readable form."** Keep every fact; change the *form*: lead with the
+> idea in plain words, use tables and small diagrams, and push hash IDs and
+> "§X.Y" cross-references out of the prose into an audit-trail footer. Calibrate
+> with the [`human-scoped-deliverables`](.claude/skills/human-scoped-deliverables/SKILL.md)
+> skill. (Canonical AI-to-AI artifacts — specs, ADRs, normalized pipeline output —
+> are the exception: produce those in canonical form.)
+
 > **How this file is structured.** Each rule below is a 5–7 line summary. Rules
 > whose full text is longer live in one detail file per section under
 > [`.claude/agents-md/`](.claude/agents-md/); the summary links to it. The
