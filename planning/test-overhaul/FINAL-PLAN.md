@@ -703,11 +703,14 @@ ArgoCD reconciliation of an XR, **not** an imperative apply (an imperative step
 would be reverted by GitOps; there is no `terraform/spoke` to hang an end-of-bring-
 up hook on).
 
-- **Hub-side watch, not imperative apply:** the trigger is a CI/controller step
-  (in the jentic-landed `live-verify` workflow, §4.1) that watches `XPlatformCluster`
-  / `XSpokeAccess` on the **hub** (a hub object — observable from the hub kube-API)
-  for `Ready=True` transitions and, on transition, fires the spoke AFTER-THE-FACT +
-  (if CI-reachable) the e2e.
+- **Hub-side watch, not imperative apply:** the spoke trigger is part of the
+  **bring-up/reconciliation path, not a CI job** (correction #2). The spoke
+  reconciliation flow watches `XPlatformCluster` / `XSpokeAccess` on the **hub** (a
+  hub object — observable from the hub kube-API) for `Ready=True` transitions and,
+  on transition, **invokes `tests/live/run.sh`** for the spoke AFTER-THE-FACT + (if
+  reachable) the e2e — the same build-coupled invocation as §4.1 context 2, not a
+  push/PR Actions trigger. The committable half is the hub-side watch/invoke script
+  + self-test; an ad-hoc rerun is available via the `workflow_dispatch`-only lane.
 - **`expect-full` for the spoke derives from git desired-state** (§4.3): a spoke XR
   committed under `clusters/` makes the spoke's resources `expect-full` even when
   ArgoCD (not a human `apply-and-verify`) synced them — so an ArgoCD-synced spoke
@@ -761,9 +764,10 @@ the committable half vs the operator/jentic half:
 
 | Change | Committable half | Other half | Now deliverable? |
 |---|---|---|---|
-| `apply-and-verify` → `tests/live/run.sh` trigger | `tests/live/run.sh` + its self-test | the `live-verify` workflow | **YES — via jentic** (constraint correction) |
-| Spoke reconcile-completion hook | the hub-side watch script + self-test | the workflow step | **YES — via jentic** |
-| PR-gating live check | the gate logic | the workflow | **YES — via jentic** |
+| `apply-and-verify` → `tests/live/run.sh` trigger (build-coupled, NOT CI) | `tests/live/run.sh` + its self-test | the bring-up/build-flow wiring that invokes it (committed build flow; jentic for any helper workflow) | **YES — via build-flow wiring + jentic** (corrections #1 & #2) |
+| Spoke reconcile-completion hook | the hub-side watch/invoke script + self-test | wiring the script into the reconciliation/bring-up path | **YES — build-flow wiring** |
+| `workflow_dispatch`-only ad-hoc live + kind render/admit lane | the gate/check logic | the `workflow_dispatch`-only workflow (never push/PR-triggered) | **YES — via jentic** |
+| Push/PR static gate (lints + coverage parse + ceiling + wired-and-on-by-default invariant + HEAD-SHA static-evidence backstop) | the `test_*.sh` static checks | the per-step add in the no-cluster push workflow | **YES — normal push** |
 | Spoke kube-API read from CI (the curl e2e / behavioral #1/#6) | the check logic | CI reaching the **private-CA spoke API** | **UNCONFIRMED — operator dependency** (§14) |
 | `unit-tests.yml` step list for new gate files | the `test_*.sh` + `run.sh` wiring | the per-step add | **YES — normal push** (light workflow) |
 
@@ -844,8 +848,11 @@ Each line maps to the `phase=test` unit test that proves *the mechanism itself*:
 - [ ] Every `negative`/`precondition` test references a committed red-first
   artifact (gate, not guideline); Enforce promotions scoped + HA-gated + firing-
   tested, never blanket `failurePolicy:Fail`.
-- [ ] The `live-verify` workflow (jentic-landed) invokes `tests/live/run.sh` on
-  `apply-and-verify`; `verify ⇒ readonly`; HEAD-SHA live-evidence marker gates.
+- [ ] The **bring-up/build flow** (not a push/PR CI job) invokes `tests/live/run.sh`
+  on `apply-and-verify` (build-coupled, on by default); push/PR runs static-only; any
+  cluster/kind/ad-hoc lane is `workflow_dispatch`-only; a static push lint asserts the
+  suite is wired into the bring-up and on-by-default; `verify ⇒ readonly`; the
+  HEAD-SHA live-evidence marker is a static push backstop, never a PR-time cluster run.
 - [ ] Verifier/reaper identity has an explicit ceiling-linted allowlist.
 - [ ] False-fail SLO measured into committed `FLAKE_LOG`; breach auto-quarantines;
   per-check red ≠ bundle red; wall-clock **budget** gate distinct from the ceiling.
@@ -867,8 +874,11 @@ built on it.**
   narrowing + capped annotations; simulate floor; `tests/live/run.sh` skeleton
   (inverted skip, executed-floor, `expect-full`-from-git, default-as-tested-
   invariant, master-switch guard, exit-code contract, `LIVE_MODE`); SKIP_REGISTER +
-  set-based gate; the push-time gate in `tests/unit/run.sh`; the **jentic-landed
-  `live-verify` workflow** wiring the trigger + HEAD-SHA evidence marker.
+  set-based gate; the push-time **static** gate in `tests/unit/run.sh` (incl. the
+  wired-into-bring-up + on-by-default invariant lints and the HEAD-SHA static-evidence
+  backstop); the **build-flow wiring** that makes the bring-up invoke
+  `tests/live/run.sh` (build-coupled, not CI); and the `workflow_dispatch`-only
+  ad-hoc/kind lane landed via jentic.
 - **P2 — Deepen AFTER-THE-FACT (high ROI, no new resource cost).** Behavioral
   EKS/RDS/IAM/cert/DNS verifiers (effect not just config); RGT-diff side-effect
   oracle; promote integration probes into `tests/live/` (shared lib); make the
@@ -897,10 +907,11 @@ built on it.**
    the synthesized plan's "degrade to Synced+exists, drop the ARN" fallback is
    forbidden — the sub-second in-band gate (`source: IRSA` + no-static-creds +
    Healthy) replaces it. (round-2 #1; k8s-expert C4, qa-guru m4)
-3. **"Can't edit workflows" premise removed.** Enforcement is now both layers
-   (run.sh gate + jentic-landed `live-verify` workflow); the on-by-default trigger
-   is deliverable; requirement #1 de-stranded. (constraint correction; sre C3,
-   qa-guru C1)
+3. **"Can't edit workflows" premise removed.** Enforcement is now layered (the
+   push-time static `run.sh` gate + a `workflow_dispatch`-only `live-verify`
+   ad-hoc/kind lane landed via jentic); the on-by-default trigger is deliverable as
+   **build-flow wiring** (not CI — see §18, correction #2); requirement #1
+   de-stranded. (constraint corrections #1 & #2; sre C3, qa-guru C1)
 4. **simulate demoted to a FLOOR;** drive-the-controller is the real completeness
    signal; per-action `--resource-arns` mandated; ceiling **narrows** wildcards
    (caps annotations); un-exercised-grant tier **non-deferred** with explicit
@@ -938,6 +949,49 @@ built on it.**
     (hardcoded, not admission — k8s-expert M2); exact LB subnet tag keys pinned
     (m3); ASM `k8-platform/` prefix requirement called out (m5); xdatabase has only
     `Instance` (no SubnetGroup) in the composition base set.
+
+## 18. Changes from the finalizer draft (correction #2)
+
+The earlier finalizer draft relied on GitHub Actions (push/PR + a `live-verify`
+workflow) as the verification trigger. Correction #2 decouples this: GitHub Actions
+fires at PR/commit time, which is independent of the actual build/bring-up, and
+standing up any cluster (even kind) in push/PR CI is forbidden. **Only the
+trigger/where-it-runs changed; every round-2 resolution and every other property is
+intact.** What moved:
+
+1. **Trigger moved from CI to the BUILD.** The every-bring-up guarantee is now the
+   bring-up procedure (`apply-and-verify` / cluster-creation flow + the spoke
+   reconciliation path) **invoking `tests/live/run.sh` as its final phase** — not a
+   push/PR check waiting on a commit. "Coupled to the change" = coupled to the build
+   that applies it. (§4.1, §4.2, §10)
+2. **Three strictly-separate execution contexts made explicit** (§2, §4.1):
+   *push/PR CI = static, no-cluster only*; *build-time = the full live behavioral +
+   negative + precondition suite, on by default, where `all-skipped ⇒ RED` and the
+   `expect-full` floor live*; *`workflow_dispatch` = kind render/admit + ad-hoc live
+   runs, never auto-triggered*.
+3. **Static-only push set named** (§4.1): lints, kubeconform/schema, helm-template
+   render asserts, coverage-manifest PARSE, no-wildcard IAM ceiling lint,
+   `irsa_trust_validator.py` static sweeps, AND a static invariant that the live
+   suite is wired into the bring-up and on-by-default.
+4. **Kind render/admit reclassified to `workflow_dispatch`-only** (§2) — no-cluster
+   `helm template`/`kubeconform` render asserts stay on push as lints; anything that
+   stands up a kind cluster is manual-dispatch only (matches chainsaw.yml /
+   terraform-test.yml; AGENTS §6.7).
+5. **Anti-silent-regression de-coupled from PR-time cluster work** (§4.3): the
+   primary guarantee is the build coupling; the push check at most verifies *static
+   evidence* of a recorded green build-suite result for the deployed SHA/cluster.
+6. **Artifact-name disambiguation** (§4.2 note, §12 ledger, §15, §16): "`live-verify`
+   workflow" now denotes the `workflow_dispatch`-only ad-hoc lane; the trigger half
+   in the ledger is build-flow wiring, not an Actions trigger.
+
+**The four invariants re-confirmed under the build-coupled model:** *on by default*
+(the bring-up invokes the suite by default; a static push lint asserts the wiring +
+the on-by-default config value), *disable-able but not disabled* (only via
+`LIVE_VERIFY=0` / `LIVE_SKIP` / SKIP_REGISTER with reason/owner/expires; master
+kill-switch is RED-and-non-zero unless registered), *all-skipped ⇒ RED* (enforced
+at build-time when the suite runs), and *coupled-to-the-change* (coupled to the
+build that applies the change). No security/correctness property was weakened; no
+probe pod or new AssumeRole principal was introduced.
 
 ---
 
