@@ -8,6 +8,65 @@ last, the current state, and the next concrete steps. Keep it factual
 
 ## NEW SESSION QUICKSTART (read this first)
 
+> **[auto-011 — 2026-06-06/07 — SUPERSEDES auto-010 below.]** Full detail:
+> `run-summary-auto-011.md` + `decisions/auto-011-*` + `retrospective/2026-06-…`.
+>
+> **⚠️ SAME INHERITED LIVE ACCOUNT `596430611165` (us-east-1). Phases 0/1 up.**
+> Tools are NOT preinstalled in a fresh sandbox — install `aws` v2 + `argocd` (and
+> `kubectl` is useless: kube-API is private-CA blocked; use the **`kube-diagnose`
+> workflow** (`workflow_dispatch`, read-only script input) + the **ArgoCD REST API**
+> (`/api/v1/applications/{app}/resource…` with the login token) for live kube reads).
+>
+> **What auto-011 did (all on branch `claude/k8-pods-phase-validation-7oqVK-k5sS4`):**
+> - **#160 MERGED** — AppProject `k8-platform` now permits ClusterRole/Binding
+>   (the ESO-RBAC manifest was blocking the whole `crossplane-resources` app).
+> - **#161 MERGED** — added the shared **`ClusterProviderConfig/default` (IRSA)**
+>   via GitOps (`crossplane/providerconfig/`); it was a manual bootstrap step
+>   (SEG-1 §0c) never automated, absent on the rebuilt cluster, blocking ALL AWS MRs.
+> - **#162 (MERGED 2026-06-07)** — XSpokeAccess XRD+Composition+spoke-access wiring
+>   (phase-3 spoke AWS trust plane) + EnvironmentConfig `accountId`/`argocdRoleArn`
+>   extension + provider-kubernetes (**v1.2.1**) install + the child-provider IRSA
+>   fix + the SessionStart tools hook + run docs/retro. Its terraform was applied
+>   live (`management apply-and-verify`, green) BEFORE merge.
+>
+> **✅ PHASE-3 CLUSTER IS LIVE.** The three blockers are all fixed and the platform
+> cluster provisioned:
+> - #160 AppProject RBAC; #161 ClusterProviderConfig/default (IRSA); **blocker #3
+>   (child-provider IRSA) FIXED via Option A** — `runtimeConfigRef: aws-provider-config`
+>   on all 6 child providers so their pods run under `upbound-provider-family-aws`
+>   (the only subject the crossplane role trusts). Confirmed live: the eks provider
+>   pod has `AWS_WEB_IDENTITY_TOKEN_FILE`; XR `Synced=True`.
+> - **`provider-kubernetes` was failing** because the subagent guessed tag `v0.16.0`
+>   which is NOT published to xpkg (404 MANIFEST_UNKNOWN) and predates Crossplane v2.
+>   Bumped to **v1.2.1** (the v1.x line is the Crossplane-v2 series); now Healthy,
+>   `providerconfig.kubernetes.crossplane.io/hub` created.
+> - **Live now:** EKS `k8-platform-services` **ACTIVE**, node group **ACTIVE**,
+>   `*.platform.596430611165.realhandsonlabs.net` ACM cert **ISSUED**, mgmt e2e-verify
+>   all green (ArgoCD HTTP 200). The XR `Ready` may still show `Creating` briefly while
+>   it aggregates the last MR condition — verify it flips to `Ready=True`.
+>
+> **IMMEDIATE NEXT STEPS — spoke registration (resume `decisions/auto-009-phase3-live-completion-runbook.md`):**
+> 1. Confirm `crossplane-resources` synced the **XSpokeAccess XRD + Composition**
+>    (now on main) and the **`spoke-access` Application** exists (manual-sync).
+> 2. Read the cluster's live `oidcIssuer`:
+>    `argocd`/ArgoCD-API → `XPlatformCluster.status.oidcIssuer` (or kube-diagnose).
+>    Overlay it onto the XSpokeAccess XR (`clusters/platform/spoke-access/spoke-access.yaml`
+>    spec.oidcIssuer is a placeholder), then `argocd app sync spoke-access` → creates
+>    the OIDC provider + external-dns IRSA Role/RolePolicy + EKS AccessEntry on the spoke.
+> 3. Build the **`platform-spoke` ArgoCD cluster Secret** from the EKS Cluster MR's
+>    connection secret (endpoint+CA, aws/exec auth via the argocd role) — provider-kubernetes
+>    + the `hub` ProviderConfig are installed for this. NOTE: provider-kubernetes Object
+>    MRs need RBAC to write the Secret (same class as the ESO ClusterRole) — grant it.
+> 4. Overlay spoke values (certArn/domain/region) → spoke apps converge (ingress-nginx →
+>    external-dns → hello) → verify `https://hello.platform.596430611165.realhandsonlabs.net`
+>    (200, valid ACM chain).
+> 5. **Phase 5:** sync `keycloak-db` XDatabase XR; verify RDS + connection secret +
+>    Keycloak. (xdatabase XRD now syncs — include-glob widened to `xrds/*`.)
+>
+> Open issues: `OI-2026-06-06-5` (child-provider IRSA — FIXED via Option A, keep the
+> note as the rationale record), `OI-2026-06-06-3` (xdatabase `-master` secret orphan),
+> `OI-2026-05-28-1` (claim-creates-secret flake).
+
 > **[auto-010 — 2026-06-06 — SUPERSEDES the auto-009 block below.]** Full detail:
 > `run-summary-auto-010.md` + `retrospective/2026-06-06-159/`.
 >

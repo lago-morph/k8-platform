@@ -1,0 +1,66 @@
+{
+  "type": "object",
+  "properties": {
+    "spec": {
+      "type": "object",
+      "properties": {
+        "clusterName": {
+          "type": "string",
+          "description": "The SPOKE EKS cluster name (e.g. k8-platform-services). Targets the AccessEntry/AccessPolicyAssociation at the spoke cluster. Matches XPlatformCluster.spec.name.",
+          "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$"
+        },
+        "subdomain": {
+          "type": "string",
+          "description": "DNS label for this spoke under the root domain (e.g. \"platform\" \u2192 platform.<domain>). external-dns on the spoke is scoped to this subdomain; the inline Route53 policy is zone-scoped (the whole hosted zone, shared by hub + spokes \u2014 record-level scoping is via external-dns --domain-filter, auto-008 \u00a76).",
+          "pattern": "^[a-z][a-z0-9-]{0,30}[a-z0-9]$"
+        },
+        "oidcIssuer": {
+          "type": "string",
+          "description": "The spoke cluster's OIDC issuer URL (XPlatformCluster.status.oidcIssuer). Account-ephemeral (AGENTS \u00a78.1) \u2014 only known once the cluster is live, so it is overlaid at sync time by the operator from the cluster XR's published status, NOT committed as a literal. The OpenIDConnectProvider's url and the external-dns trust policy's sub/aud conditions are built from it.",
+          "pattern": "^https://.+"
+        },
+        "region": {
+          "type": "string",
+          "description": "AWS region for the EKS AccessEntry/AccessPolicyAssociation MRs. Defaults to us-east-1 \u2014 match the spoke cluster's region.",
+          "pattern": "^[a-z]{2}-[a-z]+-[0-9]$",
+          "default": "us-east-1"
+        }
+      },
+      "required": [
+        "clusterName",
+        "subdomain",
+        "oidcIssuer"
+      ],
+      "additionalProperties": false
+    },
+    "status": {
+      "type": "object",
+      "properties": {
+        "oidcProviderArn": {
+          "type": "string",
+          "description": "ARN of the created OpenIDConnectProvider, echoed for observability."
+        },
+        "externalDnsRoleArn": {
+          "type": "string",
+          "description": "ARN of the external-dns IRSA Role, echoed for observability (referenced by the spoke external-dns ServiceAccount annotation at registration time)."
+        },
+        "accessEntryArn": {
+          "type": "string",
+          "description": "ARN of the EKS AccessEntry mapping the argocd role to the spoke, echoed for observability."
+        }
+      },
+      "additionalProperties": false
+    },
+    "apiVersion": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "metadata": {
+      "type": "object"
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false
+}

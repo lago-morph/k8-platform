@@ -25,6 +25,12 @@ resource "terraform_data" "crossplane_provider_aws_cluster_services" {
     var.crossplane_provider_aws_iam_version,
     var.crossplane_provider_aws_acm_version,
     var.crossplane_provider_aws_route53_version,
+    # Bump when the embedded manifest body changes (the version vars above
+    # don't cover a manifest-shape edit, so a body-only change would no-op
+    # the apply — same trap as helm.tf:crossplane_aws_provider). 2026-06-06:
+    # added runtimeConfigRef=aws-provider-config to each child provider for
+    # IRSA (auto-011 blocker #3, Option A).
+    "runtimeconfigref-irsa-2026-06-06",
   ]
 
   provisioner "local-exec" {
@@ -40,6 +46,17 @@ resource "terraform_data" "crossplane_provider_aws_cluster_services" {
         name: provider-aws-eks
       spec:
         package: "xpkg.upbound.io/upbound/provider-aws-eks:${var.crossplane_provider_aws_eks_version}"
+        # IRSA: run this child provider's pod under the family SA
+        # (upbound-provider-family-aws) which carries the
+        # eks.amazonaws.com/role-arn annotation and is the ONLY subject the
+        # crossplane IRSA role trusts (StringEquals, irsa.tf). Without this
+        # the child pod gets a default un-annotated SA → no web-identity token
+        # → every MR fails "token file name cannot be empty"
+        # (auto-011 blocker #3; decisions/auto-011-child-provider-irsa.md, Option A).
+        runtimeConfigRef:
+          apiVersion: pkg.crossplane.io/v1beta1
+          kind: DeploymentRuntimeConfig
+          name: aws-provider-config
       ---
       apiVersion: pkg.crossplane.io/v1
       kind: Provider
@@ -47,6 +64,10 @@ resource "terraform_data" "crossplane_provider_aws_cluster_services" {
         name: provider-aws-iam
       spec:
         package: "xpkg.upbound.io/upbound/provider-aws-iam:${var.crossplane_provider_aws_iam_version}"
+        runtimeConfigRef:
+          apiVersion: pkg.crossplane.io/v1beta1
+          kind: DeploymentRuntimeConfig
+          name: aws-provider-config
       ---
       apiVersion: pkg.crossplane.io/v1
       kind: Provider
@@ -54,6 +75,10 @@ resource "terraform_data" "crossplane_provider_aws_cluster_services" {
         name: provider-aws-acm
       spec:
         package: "xpkg.upbound.io/upbound/provider-aws-acm:${var.crossplane_provider_aws_acm_version}"
+        runtimeConfigRef:
+          apiVersion: pkg.crossplane.io/v1beta1
+          kind: DeploymentRuntimeConfig
+          name: aws-provider-config
       ---
       apiVersion: pkg.crossplane.io/v1
       kind: Provider
@@ -61,6 +86,10 @@ resource "terraform_data" "crossplane_provider_aws_cluster_services" {
         name: provider-aws-route53
       spec:
         package: "xpkg.upbound.io/upbound/provider-aws-route53:${var.crossplane_provider_aws_route53_version}"
+        runtimeConfigRef:
+          apiVersion: pkg.crossplane.io/v1beta1
+          kind: DeploymentRuntimeConfig
+          name: aws-provider-config
       MANIFEST
     EOT
   }
@@ -123,6 +152,16 @@ locals {
       privateSubnetIds = try(data.terraform_remote_state.base.outputs.private_subnet_ids, [])
       route53ZoneId    = try(data.terraform_remote_state.base.outputs.route53_zone_id, "")
       domain           = var.domain
+      # auto-008 C3 — the XSpokeAccess Composition reads accountId +
+      # argocdRoleArn from this same EnvironmentConfig (FromEnvironment
+      # FieldPath / CombineFromEnvironment) to build the external-dns IRSA
+      # trust policy's OIDC-provider ARN and the EKS AccessEntry/
+      # AccessPolicyAssociation principalArn. Both are sourced from live
+      # data/outputs so the XR carries no account-ephemeral literals
+      # (AGENTS §8.1). argocdRoleArn is the FULL ARN of the
+      # ${cluster_name}-argocd role created in irsa.tf.
+      accountId     = data.aws_caller_identity.current.account_id
+      argocdRoleArn = module.irsa_argocd.iam_role_arn
     }
   })
 }
@@ -141,6 +180,66 @@ resource "terraform_data" "crossplane_cluster_network_envconfig" {
       KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl apply -f - <<'MANIFEST'
 ${local.cluster_network_envconfig}
 MANIFEST
+    EOT
+  }
+
+  depends_on = [helm_release.crossplane]
+}
+
+# ---- provider-kubernetes + hub ProviderConfig (auto-008 C5) -------------
+# The XSpokeAccess delivery path needs to write the ArgoCD spoke cluster
+# Secret (hub-local) so the ArgoCD application-controller can register the
+# spoke. That is a Kubernetes-object write, which needs provider-kubernetes
+# (currently NOT installed). Install it as a pkg.crossplane.io/v1 Provider
+# PLUS a hub ProviderConfig that targets the management cluster itself via
+# the in-cluster ServiceAccount (source: InjectedIdentity) — no spoke
+# ProviderConfig (which would be the rejected Option C surface; auto-008
+# §8). The cert ARN reaches the spoke via the ArgoCD values path
+# (cluster-Secret annotation → Application values), not a Crossplane-written
+# spoke ConfigMap (auto-008 C5).
+#
+# Same idiom as the AWS child providers above: terraform_data + local-exec
+# kubectl apply. Ordered AFTER helm_release.crossplane so the
+# pkg.crossplane.io CRDs exist; the ProviderConfig (kubernetes.crossplane.io
+# group) is applied after a Healthy-wait so provider-kubernetes has
+# registered its CRD.
+resource "terraform_data" "crossplane_provider_kubernetes" {
+  triggers_replace = [
+    var.crossplane_provider_kubernetes_version,
+  ]
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      aws eks update-kubeconfig \
+        --name ${module.eks.cluster_name} \
+        --region ${var.aws_region} \
+        --kubeconfig /tmp/k8-platform-kubeconfig
+      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl apply -f - <<'MANIFEST'
+      apiVersion: pkg.crossplane.io/v1
+      kind: Provider
+      metadata:
+        name: provider-kubernetes
+      spec:
+        package: "xpkg.upbound.io/crossplane-contrib/provider-kubernetes:${var.crossplane_provider_kubernetes_version}"
+      MANIFEST
+      # Wait for the provider to become Healthy so its CRDs
+      # (kubernetes.crossplane.io) are registered before we apply the
+      # ProviderConfig below.
+      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl wait \
+        --for=condition=Healthy --timeout=300s \
+        provider.pkg.crossplane.io/provider-kubernetes
+      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl apply -f - <<'MANIFEST'
+      apiVersion: kubernetes.crossplane.io/v1alpha1
+      kind: ProviderConfig
+      metadata:
+        # Hub-local config: provider-kubernetes writes objects (the ArgoCD
+        # spoke cluster Secret) into THIS management cluster using the
+        # in-cluster SA. The XSpokeAccess add-on apps reference this config.
+        name: hub
+      spec:
+        credentials:
+          source: InjectedIdentity
+      MANIFEST
     EOT
   }
 

@@ -1,0 +1,208 @@
+apiVersion: eks.aws.m.upbound.io/v1beta1
+kind: AccessEntry
+metadata:
+  annotations: {}
+  generateName: render-probe-spoke-
+  labels:
+    crossplane.io/composite: render-probe-spoke
+    platform.k8-platform.io/role: spoke-access-entry
+  name: render-probe-spoke-7d17744bee01
+  namespace: default
+spec:
+  forProvider:
+    clusterName: render-probe
+    principalArn: arn:aws:iam::000000000000:role/k8-platform-services-argocd
+    region: us-east-1
+    tags:
+      ManagedBy: crossplane
+      PlatformAbstraction: XSpokeAccess
+    type: STANDARD
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
+apiVersion: eks.aws.m.upbound.io/v1beta1
+kind: AccessPolicyAssociation
+metadata:
+  annotations: {}
+  generateName: render-probe-spoke-
+  labels:
+    crossplane.io/composite: render-probe-spoke
+    platform.k8-platform.io/role: spoke-access-policy-association
+  name: render-probe-spoke-70d3d00aea7b
+  namespace: default
+spec:
+  forProvider:
+    accessScope:
+      type: cluster
+    clusterName: render-probe
+    policyArn: arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy
+    principalArn: arn:aws:iam::000000000000:role/k8-platform-services-argocd
+    region: us-east-1
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
+apiVersion: iam.aws.m.upbound.io/v1beta1
+kind: OpenIDConnectProvider
+metadata:
+  annotations: {}
+  generateName: render-probe-spoke-
+  labels:
+    crossplane.io/composite: render-probe-spoke
+    platform.k8-platform.io/role: spoke-oidc-provider
+  name: render-probe-spoke-efe31fdd4c2f
+  namespace: default
+spec:
+  forProvider:
+    clientIdList:
+      - sts.amazonaws.com
+    tags:
+      ClusterName: render-probe
+      ManagedBy: crossplane
+      PlatformAbstraction: XSpokeAccess
+    thumbprintList:
+      - 9e99a48a9960b14926bb7f3b02e22da2b0ab7280
+    url: https://oidc.eks.us-east-1.amazonaws.com/id/RENDERPROBE00000000000000000000
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
+apiVersion: iam.aws.m.upbound.io/v1beta1
+kind: Role
+metadata:
+  annotations:
+    crossplane.io/external-name: k8-platform-render-probe-external-dns
+  generateName: render-probe-spoke-
+  labels:
+    crossplane.io/composite: render-probe-spoke
+    platform.k8-platform.io/role: spoke-external-dns-role
+  name: render-probe-spoke-c4644f95ee5c
+  namespace: default
+spec:
+  forProvider:
+    assumeRolePolicy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [{
+          "Effect": "Allow",
+          "Principal": {"Federated": "arn:aws:iam::000000000000:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/RENDERPROBE00000000000000000000"},
+          "Action": "sts:AssumeRoleWithWebIdentity",
+          "Condition": {"StringEquals": {
+            "oidc.eks.us-east-1.amazonaws.com/id/RENDERPROBE00000000000000000000:sub": "system:serviceaccount:external-dns:external-dns",
+            "oidc.eks.us-east-1.amazonaws.com/id/RENDERPROBE00000000000000000000:aud": "sts.amazonaws.com"
+          }}
+        }]
+      }
+    tags:
+      ClusterName: render-probe
+      ManagedBy: crossplane
+      PlatformAbstraction: XSpokeAccess
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
+apiVersion: iam.aws.m.upbound.io/v1beta1
+kind: RolePolicy
+metadata:
+  annotations:
+    crossplane.io/external-name: render-probe-external-dns
+  generateName: render-probe-spoke-
+  labels:
+    crossplane.io/composite: render-probe-spoke
+    platform.k8-platform.io/role: spoke-external-dns-policy
+  name: render-probe-spoke-61df5a3e7b5f
+  namespace: default
+spec:
+  forProvider:
+    policy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Action": ["route53:ChangeResourceRecordSets"],
+            "Resource": "arn:aws:route53:::hostedzone/Z00000000000000000000Q"
+          },
+          {
+            "Effect": "Allow",
+            "Action": [
+              "route53:ListResourceRecordSets",
+              "route53:ListHostedZones",
+              "route53:ListHostedZonesByName",
+              "route53:ListTagsForResource"
+            ],
+            "Resource": "*"
+          },
+          {
+            "Effect": "Allow",
+            "Action": ["route53:GetChange"],
+            "Resource": "arn:aws:route53:::change/*"
+          }
+        ]
+      }
+    role: k8-platform-render-probe-external-dns
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
+---
+apiVersion: platform.k8-platform.io/v1alpha1
+kind: XSpokeAccess
+metadata:
+  name: render-probe-spoke
+  namespace: default
+spec:
+  clusterName: render-probe
+  crossplane:
+    resourceRefs:
+      - apiVersion: eks.aws.m.upbound.io/v1beta1
+        kind: AccessEntry
+        name: render-probe-spoke-7d17744bee01
+      - apiVersion: eks.aws.m.upbound.io/v1beta1
+        kind: AccessPolicyAssociation
+        name: render-probe-spoke-70d3d00aea7b
+      - apiVersion: iam.aws.m.upbound.io/v1beta1
+        kind: OpenIDConnectProvider
+        name: render-probe-spoke-efe31fdd4c2f
+      - apiVersion: iam.aws.m.upbound.io/v1beta1
+        kind: RolePolicy
+        name: render-probe-spoke-61df5a3e7b5f
+      - apiVersion: iam.aws.m.upbound.io/v1beta1
+        kind: Role
+        name: render-probe-spoke-c4644f95ee5c
+  oidcIssuer: https://oidc.eks.us-east-1.amazonaws.com/id/RENDERPROBE00000000000000000000
+  region: us-east-1
+  subdomain: platform
+status:
+  conditions:
+    - reason: WatchCircuitClosed
+      status: "True"
+      type: Responsive
+    - reason: ReconcileSuccess
+      status: "True"
+      type: Synced
+    - message: 'Unready resources: access-entry, access-policy-association, external-dns-policy, and 2 more'
+      reason: Creating
+      status: "False"
+      type: Ready

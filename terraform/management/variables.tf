@@ -179,6 +179,26 @@ variable "crossplane_provider_aws_rds_version" {
   default     = "v2.5.0"
 }
 
+variable "crossplane_provider_kubernetes_version" {
+  description = <<-EOT
+    Crossplane provider-kubernetes package version (auto-008 C5). Needed
+    on the management cluster so the XSpokeAccess delivery path can write
+    the ArgoCD spoke cluster Secret (hub-local) via a hub ProviderConfig
+    using the in-cluster SA (InjectedIdentity) — see
+    crossplane-phase3.tf. provider-kubernetes is published by
+    crossplane-contrib, not Upbound, so it is NOT pinned to the
+    provider-family-aws version. MUST be a tag published to
+    xpkg.upbound.io/crossplane-contrib/provider-kubernetes AND be
+    Crossplane-v2 compatible: the v1.x line (v1.0.0+) is the first to
+    support Crossplane v2 (the SafeStart capability + kubernetes.m.crossplane.io
+    APIs); the old v0.x tags (e.g. v0.16.0) are NOT published to xpkg
+    (install fails MANIFEST_UNKNOWN 404) and predate v2. v1.2.1 is the
+    latest published stable (2026-02-25).
+  EOT
+  type        = string
+  default     = "v1.2.1"
+}
+
 variable "eso_version" {
   description = "External Secrets Operator Helm chart version"
   type        = string

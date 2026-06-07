@@ -1,0 +1,357 @@
+# XSpokeAccess → spoke hub-access Composition (auto-008 Round 2 §3 + C1–C6).
+#
+# Crossplane v2 Pipeline mode (function-environment-configs THEN
+# function-patch-and-transform), matching the platform-cluster
+# Composition shape. Renders, on the HUB Crossplane, the AWS trust + IRSA
+# + EKS-access resources a spoke needs to receive its add-on stack via
+# ArgoCD from the hub:
+#
+#   1. OpenIDConnectProvider — the spoke's IRSA anchor (the cluster
+#      Composition deliberately omits it; platform-cluster XRD header).
+#      url = spec.oidcIssuer; thumbprintList is the well-known Amazon root
+#      thumbprint (auto-008 C1 — a published constant, NOT account-
+#      ephemeral, so it is safe committed); clientIdList = sts.amazonaws.com.
+#   2. external-dns IAM Role + INLINE RolePolicy (auto-008 C4 — the
+#      crossplane IRSA has iam:PutRolePolicy, NOT iam:CreatePolicy, so an
+#      inline RolePolicy MR rather than a managed Policy MR). The trust
+#      policy uses StringEquals on BOTH <oidc>:sub = system:serviceaccount:
+#      external-dns:external-dns AND <oidc>:aud = sts.amazonaws.com
+#      (auto-008 S2 — never StringLike). The Route53-zone-scoped inline
+#      policy + the OIDC provider ARN in the trust policy are built from
+#      the cluster-network EnvironmentConfig (accountId, route53ZoneId) +
+#      spec.oidcIssuer via patches, NOT literals (AGENTS §8.1).
+#   3. EKS AccessEntry + AccessPolicyAssociation (auto-008 C3) mapping the
+#      management cluster's ${clusterName}-argocd IAM role (the FULL ARN
+#      from the EnvironmentConfig) to AmazonEKSClusterAdminPolicy on the
+#      SPOKE cluster, so the ArgoCD application-controller can sync to it.
+#      accessScope.type: cluster.
+#
+# All three ARNs are published to the XR status for observability.
+#
+# The OIDC host-path (issuer URL minus the https:// scheme) is needed in
+# three places: the OIDC provider ARN in the trust policy's Federated
+# principal, and the two condition keys (<host>:sub, <host>:aud). It is
+# derived once into the pipeline environment via a top-level environment
+# patch with a TrimPrefix string transform, then assembled into the
+# policy JSON with CombineFromEnvironment (per-resource ToEnvironment
+# writes are NOT visible to a combine in the same pass; top-level
+# environment patches are — same idiom the platform-cluster Composition
+# uses for `subdomain`).
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xspokeaccess-aws
+  labels:
+    platform.k8-platform.io/abstraction: XSpokeAccess
+    platform.k8-platform.io/backend: aws
+  annotations:
+    # Wave 0 — lands AFTER the v2 XRD (wave -1) so the compositeTypeRef
+    # binds against the Established XRD. Mirrors platform-cluster.
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  compositeTypeRef:
+    apiVersion: platform.k8-platform.io/v1alpha1
+    kind: XSpokeAccess
+  mode: Pipeline
+  pipeline:
+    # ---------- step 0: load account-ephemeral env values ----------------
+    # function-environment-configs merges the `cluster-network`
+    # EnvironmentConfig into the pipeline environment. That config is
+    # materialized by terraform/management (crossplane-phase3.tf, extended
+    # for auto-008 C3) and carries accountId, argocdRoleArn, route53ZoneId
+    # and domain — read below via FromEnvironmentFieldPath /
+    # CombineFromEnvironment so the XR in git carries no account-ephemeral
+    # identifiers (AGENTS §8.1).
+    - step: load-environment
+      functionRef:
+        name: function-environment-configs
+      input:
+        apiVersion: environmentconfigs.fn.crossplane.io/v1beta1
+        kind: Input
+        spec:
+          environmentConfigs:
+            - type: Reference
+              ref:
+                name: cluster-network
+    - step: patch-and-transform
+      functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        # Top-level environment patches run BEFORE resource patches, so the
+        # OIDC issuer (raw) and the OIDC host-path (issuer minus https://)
+        # land in the pipeline environment in time for the
+        # CombineFromEnvironment policy-document assembly below.
+        environment:
+          patches:
+            - type: FromCompositeFieldPath
+              fromFieldPath: spec.oidcIssuer
+              toFieldPath: oidcIssuer
+            - type: FromCompositeFieldPath
+              fromFieldPath: spec.oidcIssuer
+              toFieldPath: oidcHost
+              transforms:
+                - type: string
+                  string:
+                    type: TrimPrefix
+                    trim: "https://"
+        resources:
+
+          # ---------- 1. OpenIDConnectProvider ----------------------
+          # The spoke's IRSA anchor. thumbprintList is the well-known
+          # Amazon root CA thumbprint (auto-008 C1) — a published
+          # constant, not account-ephemeral, so committing it is fine.
+          - name: oidc-provider
+            base:
+              apiVersion: iam.aws.m.upbound.io/v1beta1
+              kind: OpenIDConnectProvider
+              metadata:
+                labels:
+                  platform.k8-platform.io/role: spoke-oidc-provider
+              spec:
+                forProvider:
+                  clientIdList:
+                    - sts.amazonaws.com
+                  thumbprintList:
+                    - 9e99a48a9960b14926bb7f3b02e22da2b0ab7280
+                  tags:
+                    ManagedBy: crossplane
+                    PlatformAbstraction: XSpokeAccess
+                managementPolicies: [Observe, Create, Update, Delete]
+                providerConfigRef:
+                  kind: ClusterProviderConfig
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.oidcIssuer
+                toFieldPath: spec.forProvider.url
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.clusterName
+                toFieldPath: spec.forProvider.tags.ClusterName
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.arn
+                toFieldPath: status.oidcProviderArn
+            readinessChecks:
+              - type: NonEmpty
+                fieldPath: status.atProvider.arn
+
+          # ---------- 2. external-dns IRSA Role ---------------------
+          # Trust policy: StringEquals on BOTH <oidc>:sub and <oidc>:aud
+          # (auto-008 S2 — never StringLike). The Federated principal ARN
+          # and the condition keys are assembled from the environment
+          # (accountId + oidcHost) via CombineFromEnvironment.
+          - name: external-dns-role
+            base:
+              apiVersion: iam.aws.m.upbound.io/v1beta1
+              kind: Role
+              metadata:
+                labels:
+                  platform.k8-platform.io/role: spoke-external-dns-role
+              spec:
+                forProvider:
+                  tags:
+                    ManagedBy: crossplane
+                    PlatformAbstraction: XSpokeAccess
+                managementPolicies: [Observe, Create, Update, Delete]
+                providerConfigRef:
+                  kind: ClusterProviderConfig
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.clusterName
+                toFieldPath: metadata.annotations[crossplane.io/external-name]
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "k8-platform-%s-external-dns"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.clusterName
+                toFieldPath: spec.forProvider.tags.ClusterName
+              # Build the IRSA trust policy from the environment. Variables:
+              #   [accountId, oidcHost, oidcHost, oidcHost]
+              #   → arn:aws:iam::<accountId>:oidc-provider/<oidcHost>
+              #     + StringEquals { "<oidcHost>:sub": ".../external-dns",
+              #                      "<oidcHost>:aud": "sts.amazonaws.com" }
+              - type: CombineFromEnvironment
+                combine:
+                  variables:
+                    - fromFieldPath: accountId
+                    - fromFieldPath: oidcHost
+                    - fromFieldPath: oidcHost
+                    - fromFieldPath: oidcHost
+                  strategy: string
+                  string:
+                    fmt: |
+                      {
+                        "Version": "2012-10-17",
+                        "Statement": [{
+                          "Effect": "Allow",
+                          "Principal": {"Federated": "arn:aws:iam::%s:oidc-provider/%s"},
+                          "Action": "sts:AssumeRoleWithWebIdentity",
+                          "Condition": {"StringEquals": {
+                            "%s:sub": "system:serviceaccount:external-dns:external-dns",
+                            "%s:aud": "sts.amazonaws.com"
+                          }}
+                        }]
+                      }
+                toFieldPath: spec.forProvider.assumeRolePolicy
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.arn
+                toFieldPath: status.externalDnsRoleArn
+            readinessChecks:
+              - type: NonEmpty
+                fieldPath: status.atProvider.arn
+
+          # ---------- 3. external-dns inline RolePolicy -------------
+          # Inline (auto-008 C4): the crossplane IRSA has iam:PutRolePolicy
+          # but NOT iam:CreatePolicy. role references the Role (2) by its
+          # deterministic external-name (same Format as above). The policy
+          # is scoped to the cluster's Route53 hosted zone (from the
+          # cluster-network EnvironmentConfig route53ZoneId).
+          - name: external-dns-policy
+            base:
+              apiVersion: iam.aws.m.upbound.io/v1beta1
+              kind: RolePolicy
+              metadata:
+                labels:
+                  platform.k8-platform.io/role: spoke-external-dns-policy
+              spec:
+                forProvider: {}
+                managementPolicies: [Observe, Create, Update, Delete]
+                providerConfigRef:
+                  kind: ClusterProviderConfig
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.clusterName
+                toFieldPath: metadata.annotations[crossplane.io/external-name]
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-external-dns"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.clusterName
+                toFieldPath: spec.forProvider.role
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "k8-platform-%s-external-dns"
+              # Route53 record-write scoped to the hosted zone; list/get is
+              # global by API shape (mirrors the hub route53_editor policy
+              # in terraform/management/irsa.tf).
+              - type: CombineFromEnvironment
+                combine:
+                  variables:
+                    - fromFieldPath: route53ZoneId
+                  strategy: string
+                  string:
+                    fmt: |
+                      {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                          {
+                            "Effect": "Allow",
+                            "Action": ["route53:ChangeResourceRecordSets"],
+                            "Resource": "arn:aws:route53:::hostedzone/%s"
+                          },
+                          {
+                            "Effect": "Allow",
+                            "Action": [
+                              "route53:ListResourceRecordSets",
+                              "route53:ListHostedZones",
+                              "route53:ListHostedZonesByName",
+                              "route53:ListTagsForResource"
+                            ],
+                            "Resource": "*"
+                          },
+                          {
+                            "Effect": "Allow",
+                            "Action": ["route53:GetChange"],
+                            "Resource": "arn:aws:route53:::change/*"
+                          }
+                        ]
+                      }
+                toFieldPath: spec.forProvider.policy
+
+          # ---------- 4. EKS AccessEntry ----------------------------
+          # Maps the management cluster's ${clusterName}-argocd IAM role
+          # (FULL ARN from the EnvironmentConfig argocdRoleArn) onto the
+          # SPOKE cluster (spec.clusterName), so the ArgoCD application-
+          # controller can authenticate to it (auto-008 §3 / reviewer F5).
+          - name: access-entry
+            base:
+              apiVersion: eks.aws.m.upbound.io/v1beta1
+              kind: AccessEntry
+              metadata:
+                labels:
+                  platform.k8-platform.io/role: spoke-access-entry
+              spec:
+                forProvider:
+                  region: us-east-1
+                  type: STANDARD
+                  tags:
+                    ManagedBy: crossplane
+                    PlatformAbstraction: XSpokeAccess
+                managementPolicies: [Observe, Create, Update, Delete]
+                providerConfigRef:
+                  kind: ClusterProviderConfig
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.clusterName
+                toFieldPath: spec.forProvider.clusterName
+              - type: FromEnvironmentFieldPath
+                fromFieldPath: argocdRoleArn
+                toFieldPath: spec.forProvider.principalArn
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.accessEntryArn
+                toFieldPath: status.accessEntryArn
+            readinessChecks:
+              - type: MatchCondition
+                matchCondition:
+                  type: Ready
+                  status: "True"
+
+          # ---------- 5. EKS AccessPolicyAssociation ----------------
+          # Associates AmazonEKSClusterAdminPolicy (cluster-scoped) with
+          # the argocd principal on the spoke. Defensible only paired with
+          # the platform-spoke AppProject lockdown (auto-008 S1).
+          - name: access-policy-association
+            base:
+              apiVersion: eks.aws.m.upbound.io/v1beta1
+              kind: AccessPolicyAssociation
+              metadata:
+                labels:
+                  platform.k8-platform.io/role: spoke-access-policy-association
+              spec:
+                forProvider:
+                  region: us-east-1
+                  policyArn: arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy
+                  accessScope:
+                    type: cluster
+                managementPolicies: [Observe, Create, Update, Delete]
+                providerConfigRef:
+                  kind: ClusterProviderConfig
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.clusterName
+                toFieldPath: spec.forProvider.clusterName
+              - type: FromEnvironmentFieldPath
+                fromFieldPath: argocdRoleArn
+                toFieldPath: spec.forProvider.principalArn
+            readinessChecks:
+              - type: MatchCondition
+                matchCondition:
+                  type: Ready
+                  status: "True"

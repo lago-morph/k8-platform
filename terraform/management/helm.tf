@@ -458,6 +458,9 @@ resource "terraform_data" "crossplane_function_patch_and_transform" {
 resource "terraform_data" "crossplane_provider_aws_secretsmanager" {
   triggers_replace = [
     var.crossplane_provider_aws_secretsmanager_version,
+    # Bump on a manifest-body change (the version var doesn't cover it).
+    # 2026-06-06: added runtimeConfigRef for IRSA (auto-011 blocker #3, Option A).
+    "runtimeconfigref-irsa-2026-06-06",
   ]
 
   provisioner "local-exec" {
@@ -473,6 +476,13 @@ resource "terraform_data" "crossplane_provider_aws_secretsmanager" {
         name: provider-aws-secretsmanager
       spec:
         package: "xpkg.upbound.io/upbound/provider-aws-secretsmanager:${var.crossplane_provider_aws_secretsmanager_version}"
+        # IRSA: run under the family SA (the only subject the crossplane role
+        # trusts) — see crossplane-phase3.tf and
+        # decisions/auto-011-child-provider-irsa.md (Option A).
+        runtimeConfigRef:
+          apiVersion: pkg.crossplane.io/v1beta1
+          kind: DeploymentRuntimeConfig
+          name: aws-provider-config
       MANIFEST
     EOT
   }
@@ -489,6 +499,9 @@ resource "terraform_data" "crossplane_provider_aws_secretsmanager" {
 resource "terraform_data" "crossplane_provider_aws_rds" {
   triggers_replace = [
     var.crossplane_provider_aws_rds_version,
+    # Bump on a manifest-body change (the version var doesn't cover it).
+    # 2026-06-06: added runtimeConfigRef for IRSA (auto-011 blocker #3, Option A).
+    "runtimeconfigref-irsa-2026-06-06",
   ]
 
   provisioner "local-exec" {
@@ -504,6 +517,13 @@ resource "terraform_data" "crossplane_provider_aws_rds" {
         name: provider-aws-rds
       spec:
         package: "xpkg.upbound.io/upbound/provider-aws-rds:${var.crossplane_provider_aws_rds_version}"
+        # IRSA: run under the family SA (the only subject the crossplane role
+        # trusts) — see crossplane-phase3.tf and
+        # decisions/auto-011-child-provider-irsa.md (Option A).
+        runtimeConfigRef:
+          apiVersion: pkg.crossplane.io/v1beta1
+          kind: DeploymentRuntimeConfig
+          name: aws-provider-config
       MANIFEST
       # Wait for the provider to install its CRDs before anything references the
       # rds.aws.m.upbound.io/Instance kind. policies/audit/12 is a Kyverno
