@@ -1,0 +1,33 @@
+# Durable disable register for the LIVE behavioral suite (FINAL-PLAN §4.2/§4.6).
+#
+# This is the ONLY durable way to disable any live check, AND the place a
+# non-`full` profile choice is recorded (correction #3 — choosing
+# verify-only/off writes a register entry so the tier reduction is attributable,
+# never silent).
+#
+# Schema:
+#   profile_choice:   # records a non-full profile choice (verify-only)
+#     profile: verify-only
+#     reason: "<why this component is mature enough to run cheap>"
+#     owner: "<who>"
+#     expires: "YYYY-MM-DD"
+#   disable_all:      # the `off` door — a thin alias writing a register entry
+#     reason: "<why everything is off>"
+#     owner: "<who>"
+#     expires: "YYYY-MM-DD"
+#   skips:            # per-check / per-kind skips
+#     - check: "<path or id>"
+#       kind: "<group/Kind>"            # optional
+#       reason: "<why>"
+#       owner: "<who>"
+#       expires: "YYYY-MM-DD"
+#       oi: "OI-YYYY-MM-DD-N"           # REQUIRED if the skip disables a security check
+#
+# Invariants (enforced by tests/unit/test_skip_register.sh, landing with the
+# register-lint): every entry has reason/owner/expires; no expires is past;
+# the register holds at most N=12 entries; a disabled SECURITY check needs an
+# `oi:` cross-link; `expires` warns then fails after a 14-day grace.
+
+profile_choice: {}
+disable_all: {}
+skips: []
