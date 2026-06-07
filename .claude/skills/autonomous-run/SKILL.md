@@ -38,10 +38,30 @@ authorization to act.
 
 ---
 
-## First action: scope-envelope alignment (REQUIRED before any work)
+## First action: tell the user what this run is (REQUIRED, before the envelope)
 
-Before any non-Read tool call, write a one-page scope-envelope document and
-post it to the user. **Wait briefly for their reply** (a minute or two for
+Before any non-Read tool call — and before the scope envelope below — post a
+**short plain-language orientation** to the user, two paragraphs, no jargon:
+
+1. **What this run is trying to do** — the objective, in terms a human glancing
+   at the first few minutes can grasp. Not "execute FINAL-PLAN §16 P1"; instead
+   "stand up a real cluster and ship the first layer of the new test machinery."
+2. **Where the night goes if everything breaks our way** — the happy-path
+   trajectory, the next step you'd take if nothing went wrong. So the user can
+   tell, at a glance, whether you've understood the assignment.
+
+**This is context, not a question.** Do not ask the user to confirm — they may be
+asleep or away. It exists so a user who *is* watching the opening minutes can
+catch a misunderstanding before you've built on it. Then proceed to the envelope.
+
+Write this orientation following the
+[`human-scoped-deliverables`](../human-scoped-deliverables/SKILL.md) skill — plain
+words, lead with the idea, no hash IDs or "§X.Y" cross-references in the prose.
+
+## Second action: scope-envelope alignment (REQUIRED before any work)
+
+After the orientation, write a one-page scope-envelope document and post it to
+the user. **Wait briefly for their reply** (a minute or two for
 acknowledgement; if no reply, proceed with the envelope as written — the user
 is unreachable by definition under this skill, and the envelope is the
 fallback contract).
@@ -280,41 +300,69 @@ you don't reinvent them per brief.
 
 ## Morning-summary artifact (REQUIRED — every run, no exceptions)
 
-Write a top-level `overnight-summary.md` (or `run-summary.md` if the run
-isn't overnight) at the repo root, in its own final PR at the top of the
-stack. Template at
+Write a top-level `overnight-summary.md` (or `run-summary.md` / `run-summary-<run>.md`
+if the run isn't overnight, matching the repo's existing naming) at the repo
+root, in its own final PR at the top of the stack. Template at
 [`resources/template-overnight-summary.md`](resources/template-overnight-summary.md).
 
-**Required sections:**
+**This is a HUMAN-FACING deliverable — write it with the
+[`human-scoped-deliverables`](../human-scoped-deliverables/SKILL.md) skill, not as
+an AI-to-AI report.** The summary is the user's primary review artifact and the
+thing they read with a human brain at the start of their day. That means:
 
-1. **TL;DR** — 4-6 bullets. What changed, what's resolved, what's queued,
-   what's morning-review territory.
-2. **Suggested merge order** — explicit, numbered list of which PRs to merge
-   in what sequence. Stack-bottom first by default; call out any PRs that
-   are safe to merge independently. The user reads this list and merges in
-   order without re-deriving the chain shape.
-3. **PRs opened (in stack order)** — table with: PR #, branch, title, base,
-   status, per-PR rewind point. The PR descriptions are the primary review
-   artifact; this table is the index.
-4. **Decision briefs written** — table with one-line summary of each brief
-   + its Round-1 / Round-2 status.
-5. **Chain status** — current state of any cross-PR work (e.g., "Phase 3.5
-   closed; Phase 4 queued"). Include carried-forward state.
-6. **Morning-review items** — explicit list of decisions or adjudications
-   needing user input. For each: the question, the lead-agent recommendation,
-   the rewind path if user disagrees. The 2026-05-25 run had 1 such item;
-   the next run may have more or fewer. Zero is a valid state if the run
-   genuinely closed everything.
-7. **What I deliberately did NOT do** — adjacent work I bounded out (per
-   the scope envelope) and any in-scope work I chose to defer with reason.
-   Honesty here is critical; hiding deferrals is forbidden.
-8. **Rewind points** — table mapping commit SHAs to what each reversal
-   undoes (full chain summary).
-9. **Session metadata** — branch chain at run end, subagent count, run
-   start / end timestamps.
+- **Lead with the story, not the index.** Plain words. Lead with the idea; attach
+  the precise name second.
+- **No hash-ID or "§X.Y" cross-reference soup in the body.** If a section/rule/run
+  is load-bearing, say what it *means* inline. Push every exact pointer — plan
+  section numbers, CI run IDs, `AGENTS-MD-`/`ADR-` hashes, branch slugs — into a
+  single **"Pointers / audit trail"** section at the very bottom. Nothing is
+  removed; it just stops getting in the way of the read.
+- **Tables for comparison; small Mermaid diagrams (≤7 elements each) for shape.**
+  Render-verify every diagram (`awk '/^```mermaid/,/^```$/' FILE | grep -nE
+  '\[[^][]*\|[^][]*\]'` must return nothing — a literal `|` inside a node label
+  breaks rendering).
+- **Describe effort, don't put a number on it.** No "≈2 engineer-weeks" / dollar
+  estimates; say "small scripts-and-tests piece" or "major build on the live
+  pipeline." Reporting an *observed* fact ("CI run was green") is fine; predicting
+  wall-clock is not.
+- **Mark opinion as opinion** ("Speculative recommendation:") and disclose what's
+  unknown.
 
-The summary is the user's primary review artifact. Treat it as the
-deliverable, not an afterthought.
+**Open with the four-part orientation (this is the headline a human reads first):**
+
+1. **What the run set out to do** — the objective, in plain language.
+2. **Where the night would have gone if everything broke our way** — the
+   happy-path next step you'd have taken if nothing went wrong. (This is the same
+   thing you posted to the user at run start, now in past tense.)
+3. **What changed the plan** — the significant findings/constraints that stopped
+   the run short of that happy path. Be honest; this is the most useful part for a
+   human deciding what to do next.
+4. **What's next, in order** — the concrete next steps.
+
+**Then carry ALL of the following (human-readable, same level of detail as before
+— reformatted, not reduced):**
+
+- **What's live / what got built** — what's confirmed working (with how-we-know),
+  and the pieces shipped, each described in one human sentence + its merge risk.
+- **Suggested merge order** — numbered, stack-bottom first; call out any PR safe
+  to merge independently, so the user merges without re-deriving the chain shape.
+- **PRs opened** — table (PR #, what it does in plain words, merge risk). The exact
+  branch/base/plan-ref belongs in the pointers section.
+- **Decisions you may want to confirm** — for each: what you did, the alternative,
+  the rewind path. (Replaces the old "decision briefs" + "morning-review items"
+  framing; if briefs were written, name them in the pointers section.) Zero items
+  is valid if the run closed everything.
+- **What I deliberately did NOT do** — adjacent work bounded out per the envelope,
+  plus any in-scope work deferred, each with its reason. Hiding deferrals is
+  forbidden.
+- **How to undo any of it** — rewind table mapping each reversal to what it undoes
+  and what survives.
+- **Pointers / audit trail** — the precise references collected in one place:
+  run IDs, plan sections, commit SHAs, branch chain, subagent count, the
+  retrospective path, run start/end.
+
+Treat it as the deliverable, not an afterthought. If it reads like a database
+dump, it has failed its only job.
 
 ---
 
