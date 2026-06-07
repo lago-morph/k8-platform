@@ -25,12 +25,14 @@ resource "terraform_data" "crossplane_provider_aws_cluster_services" {
     var.crossplane_provider_aws_iam_version,
     var.crossplane_provider_aws_acm_version,
     var.crossplane_provider_aws_route53_version,
+    var.crossplane_provider_aws_ec2_version,
     # Bump when the embedded manifest body changes (the version vars above
     # don't cover a manifest-shape edit, so a body-only change would no-op
     # the apply — same trap as helm.tf:crossplane_aws_provider). 2026-06-06:
     # added runtimeConfigRef=aws-provider-config to each child provider for
-    # IRSA (auto-011 blocker #3, Option A).
-    "runtimeconfigref-irsa-2026-06-06",
+    # IRSA (auto-011 blocker #3, Option A). 2026-06-07: added provider-aws-ec2
+    # for the kube-relay-ingress MR (docs/decisions/0006).
+    "kube-relay-ec2-2026-06-07",
   ]
 
   provisioner "local-exec" {
@@ -86,6 +88,20 @@ resource "terraform_data" "crossplane_provider_aws_cluster_services" {
         name: provider-aws-route53
       spec:
         package: "xpkg.upbound.io/upbound/provider-aws-route53:${var.crossplane_provider_aws_route53_version}"
+        runtimeConfigRef:
+          apiVersion: pkg.crossplane.io/v1beta1
+          kind: DeploymentRuntimeConfig
+          name: aws-provider-config
+      ---
+      apiVersion: pkg.crossplane.io/v1
+      kind: Provider
+      metadata:
+        name: provider-aws-ec2
+      spec:
+        # Needed by the XPlatformCluster Composition's kube-relay-ingress MR
+        # (ec2 SecurityGroupIngressRule) that admits the shared SSM relay to the
+        # cluster API (docs/decisions/0006).
+        package: "xpkg.upbound.io/upbound/provider-aws-ec2:${var.crossplane_provider_aws_ec2_version}"
         runtimeConfigRef:
           apiVersion: pkg.crossplane.io/v1beta1
           kind: DeploymentRuntimeConfig

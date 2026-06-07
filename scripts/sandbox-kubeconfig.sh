@@ -52,7 +52,13 @@ stop_tunnel() {
   local sd; sd="$(state_dir)"
   if [ -f "${sd}/pid" ]; then
     local pid; pid="$(cat "${sd}/pid")"
-    if kill "${pid}" 2>/dev/null; then echo "stopped tunnel (pid ${pid}) for ${CLUSTER}" >&2; fi
+    # The tunnel is started with setsid, so ${pid} is its process-group leader.
+    # Kill the whole group — `aws ssm` spawns session-manager-plugin as a child
+    # that actually holds the local port; killing only the parent orphans it and
+    # the next run can't bind the port.
+    if kill -TERM -- "-${pid}" 2>/dev/null; then
+      echo "stopped tunnel (pgid ${pid}) for ${CLUSTER}" >&2
+    fi
     rm -f "${sd}/pid"
   else
     echo "no tracked tunnel for ${CLUSTER}" >&2
@@ -88,11 +94,13 @@ CA=$(aws eks describe-cluster --region "${REGION}" --name "${CLUSTER}" \
 EP_HOST="${EP#https://}"; EP_HOST="${EP_HOST%%/*}"
 
 # 3. Open the SSM port-forward to the EKS endpoint (raw TCP; kubectl TLS rides inside).
-nohup aws ssm start-session --region "${REGION}" \
+# setsid puts it in a new process group so stop_tunnel can kill the group (the
+# session-manager-plugin child holds the port, not the `aws` parent).
+setsid aws ssm start-session --region "${REGION}" \
   --target "${RELAY_ID}" \
   --document-name AWS-StartPortForwardingSessionToRemoteHost \
   --parameters "{\"host\":[\"${EP_HOST}\"],\"portNumber\":[\"443\"],\"localPortNumber\":[\"${LOCAL_PORT}\"]}" \
-  > "${SD}/tunnel.log" 2>&1 &
+  > "${SD}/tunnel.log" 2>&1 < /dev/null &
 echo "$!" > "${SD}/pid"
 
 # Wait for the tunnel to report the port open.
