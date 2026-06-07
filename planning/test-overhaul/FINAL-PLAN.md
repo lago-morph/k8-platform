@@ -521,16 +521,19 @@ could be pointed anywhere):
 
 The master kill-switch is guarded: `LIVE_VERIFY=0` makes the banner **RED and exits
 non-zero** unless a top-level `disable_all` register entry (reason/owner/expires)
-exists. **All-skipped is RED by construction** — enforced at build-time when the
-suite runs. (Must-not-weaken, every reviewer.)
+exists. To collapse the parallel "off" doors (round-3 devx M2), `LIVE_VERIFY=0` /
+`disable_all` is a thin alias that **writes a SKIP_REGISTER-shaped entry** — one
+durable disable path, not two with different teeth. **All-skipped is RED inside the
+suite when it runs; and "the suite never ran" is RED outside the suite via the §4.3
+live-evidence gate** — both halves, every reviewer (must-not-weaken).
 
 A note on the `live-verify` artifact name: where this plan says "`live-verify`
 workflow," it means a **`workflow_dispatch`-only** GitHub Actions workflow for
-**manual/ad-hoc** live runs (context 3) — NOT a push/PR-triggered job and NOT the
-thing that delivers the every-bring-up guarantee. The every-bring-up trigger is the
-**build invoking `tests/live/run.sh`** (context 2), wired into the committed
-bring-up flow, never an Actions trigger. Cluster-requiring workflows are landed via
-jentic but stay `workflow_dispatch`-only (correction #2).
+**manual/ad-hoc** live runs (Surface B's ad-hoc lane) — NOT a push/PR-triggered job.
+The every-bring-up guarantee is the FAIL-closed live-evidence gate on Surface A
+(§4.3) plus the `mgmt_apply`-gated step inside the apply-and-verify job of
+`terraform-test.yml` on Surface B — both are landed via jentic; cluster-requiring
+workflows stay `workflow_dispatch`-only (correction #2).
 
 ### 4.3 `expect-full` is derived from GIT, not the system under test (resolves round-2 #5; qa-guru C2; sre M1)
 The synthesized plan set `expect-full` off "what the bring-up *declared* it
@@ -825,7 +828,8 @@ the **named reason**). Concrete contracts:
 - **Kyverno is NOT the catcher for AWS-side facts** (it cannot see EKS authnMode or
   VPC subnet tags). Any matrix row crediting Kyverno for those is dropped.
 - **Do NOT blanket-mandate Kyverno Enforce + `failurePolicy:Fail` (resolves
-  round-2 #9; k8s-expert M1).** All 12 repo policies are Audit today (verified). An
+  round-2 #9; k8s-expert M1).** All 11 repo ClusterPolicies are Audit today (verified;
+  the 12th file under `policies/audit/` is a README — round-3 k8s-expert Minor-1). An
   Enforce promotion is **not** "P1 cheap/no-behavior-risk"; it is a cluster-wide
   admission change with an outage surface. Any Enforce promotion: (a) is
   namespace/label-scoped, never cluster-wide `match` with `Fail`; (b) ships its own
