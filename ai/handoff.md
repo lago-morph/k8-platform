@@ -60,6 +60,15 @@ last, the current state, and the next concrete steps. Keep it factual
 
 ### ⏭ NEXT PHASE (proposed, assessed-feasible, NOT yet implemented) — give the sandbox direct `kubectl`
 
+**Sequence.** This is the **immediate next focused session** — full build spec in
+[`planning/sandbox-kubectl-access-task.md`](../planning/sandbox-kubectl-access-task.md).
+Do it **first**: direct `kubectl` makes finishing the P0 spike and building the
+behavioural test layers much easier. **As soon as it is done, kick off the
+test-strategy continuation** — the auto-013 "CARRIED FORWARD" items above (finish
+the P0 spike: `spec.crossplane.resourceRefs` on a live XR + drive-a-claim ⇒ real
+`AccessDenied`; the jentic workflow-integration capstone; then P2–P6). The two are
+sequential, not parallel.
+
 **Goal.** Let this sandbox run `kubectl` against the cluster API directly, instead of
 going through the `kube-diagnose` CI workflow + the ArgoCD REST API for every live
 read. Tighter inner loop. Wanted **for every cluster we create** (hub + spokes), so
