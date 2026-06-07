@@ -86,6 +86,26 @@ resource "aws_iam_policy" "crossplane_aws" {
         Resource = "*"
       },
       {
+        # RDS — the XDatabase Composition (phase 5) provisions an RDS
+        # Postgres Instance for Keycloak via the AWS provider. The crossplane
+        # policy carried no rds:* actions at all, so the Instance MR failed
+        # closed at create (auto-012, same class as the OIDC-provider perms).
+        # DB instance/subnet-group identifiers are not known ahead of create,
+        # so management actions are account-wide; these are control-plane
+        # operations, not in-database data access.
+        Sid    = "RDS"
+        Effect = "Allow"
+        Action = [
+          "rds:CreateDBInstance", "rds:DeleteDBInstance", "rds:ModifyDBInstance",
+          "rds:RebootDBInstance", "rds:DescribeDBInstances",
+          "rds:CreateDBSubnetGroup", "rds:DeleteDBSubnetGroup",
+          "rds:ModifyDBSubnetGroup", "rds:DescribeDBSubnetGroups",
+          "rds:AddTagsToResource", "rds:RemoveTagsFromResource",
+          "rds:ListTagsForResource",
+        ]
+        Resource = "*"
+      },
+      {
         Sid    = "SecretsManager"
         Effect = "Allow"
         Action = [
