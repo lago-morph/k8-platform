@@ -58,7 +58,7 @@ assert_eq "composition_function_ref" "function-patch-and-transform" "$FN_REF"
 # 2 roles, 4 attachments, cluster, node group, + 3 cert resources
 # (acm Certificate, route53 validation Record, acm CertificateValidation),
 # + 3 sandbox kubectl access resources (SecurityGroupIngressRule,
-# AccessEntry, AccessPolicyAssociation — docs/decisions/0006).
+# AccessEntry, AccessPolicyAssociation — docs/decisions/0008).
 RES_COUNT=$(yq -r "${PT}.resources | length" "$COMP")
 assert_eq "composition_resource_count" "14" "$RES_COUNT"
 

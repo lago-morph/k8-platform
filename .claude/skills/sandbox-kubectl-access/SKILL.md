@@ -18,7 +18,7 @@ servers present a cluster-private-CA certificate that the gateway cannot verify
 against public roots. The fix is an AWS SSM Session Manager port-forward tunnel:
 the gateway accepts the public `ssmmessages.amazonaws.com` WebSocket, kubectl
 sends genuine TLS through the transparent TCP relay, and the real cluster CA is
-verified end-to-end. See `docs/decisions/0006-sandbox-kubectl-via-ssm-tunnel.md`
+verified end-to-end. See `docs/decisions/0008-sandbox-kubectl-via-ssm-tunnel.md`
 for the full decision record.
 
 ## Usage
@@ -99,7 +99,7 @@ committed.
 
 ## References
 
-- `docs/decisions/0006-sandbox-kubectl-via-ssm-tunnel.md` — full ADR
+- `docs/decisions/0008-sandbox-kubectl-via-ssm-tunnel.md` — full ADR
 - `terraform/management/kube-access.tf` — relay instance, relay SG, hub access entry
 - `crossplane/compositions/platform-cluster.yaml` — `kube-relay-ingress`,
   `sandbox-access-entry`, `sandbox-access-policy` per platform cluster

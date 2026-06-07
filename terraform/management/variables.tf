@@ -171,7 +171,7 @@ variable "crossplane_provider_aws_ec2_version" {
     Upbound provider-aws-ec2 package version. Child of provider-family-aws
     needed by the XPlatformCluster Composition's kube-relay-ingress MR
     (ec2 SecurityGroupIngressRule that admits the shared SSM relay to the
-    cluster API; docs/decisions/0006). Pin to the family version.
+    cluster API; docs/decisions/0008). Pin to the family version.
   EOT
   type        = string
   default     = "v2.5.0"

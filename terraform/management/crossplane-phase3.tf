@@ -31,7 +31,7 @@ resource "terraform_data" "crossplane_provider_aws_cluster_services" {
     # the apply — same trap as helm.tf:crossplane_aws_provider). 2026-06-06:
     # added runtimeConfigRef=aws-provider-config to each child provider for
     # IRSA (auto-011 blocker #3, Option A). 2026-06-07: added provider-aws-ec2
-    # for the kube-relay-ingress MR (docs/decisions/0006).
+    # for the kube-relay-ingress MR (docs/decisions/0008).
     "kube-relay-ec2-2026-06-07",
   ]
 
@@ -100,7 +100,7 @@ resource "terraform_data" "crossplane_provider_aws_cluster_services" {
       spec:
         # Needed by the XPlatformCluster Composition's kube-relay-ingress MR
         # (ec2 SecurityGroupIngressRule) that admits the shared SSM relay to the
-        # cluster API (docs/decisions/0006).
+        # cluster API (docs/decisions/0008).
         package: "xpkg.upbound.io/upbound/provider-aws-ec2:${var.crossplane_provider_aws_ec2_version}"
         runtimeConfigRef:
           apiVersion: pkg.crossplane.io/v1beta1
@@ -182,7 +182,7 @@ locals {
       # kube-access.tf on the hub). The platform-cluster Composition adds an
       # ingress rule on each cluster's SG admitting this relay on 443, so the
       # single relay can tunnel kubectl to every cluster — no per-cluster relay
-      # instance (the account is capped at 9 EC2 instances). See docs/decisions/0006.
+      # instance (the account is capped at 9 EC2 instances). See docs/decisions/0008.
       relaySecurityGroupId = aws_security_group.kube_relay.id
     }
   })

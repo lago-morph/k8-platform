@@ -229,7 +229,7 @@ spec:
                 certValidationRecordFqdn:
                   type: string
                   description: FQDN of the created validation record, fed to CertificateValidation.
-                # ---- sandbox kubectl access plumbing (docs/decisions/0006) ----
+                # ---- sandbox kubectl access plumbing (docs/decisions/0008) ----
                 clusterSecurityGroupId:
                   type: string
                   description: >-

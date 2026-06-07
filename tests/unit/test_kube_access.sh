@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Static guards for the sandbox-kubectl-via-SSM-tunnel mechanism
-# (docs/decisions/0006): the hub terraform (kube-access.tf), the platform-cluster
+# (docs/decisions/0008): the hub terraform (kube-access.tf), the platform-cluster
 # Composition wiring, and the kubeconfig helper. Several checks are regression
 # guards for bugs found during live bring-up (2026-06-07):
 #   - EKS access entry 409 (cloud_user is already the hub cluster creator)

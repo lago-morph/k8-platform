@@ -365,7 +365,7 @@ spec:
                 toFieldPath: status.oidcIssuer
               # Route the EKS-managed cluster security group id through the XR
               # so the kube-relay Instance (resource 15) can join it for private
-              # API reach — see docs/decisions/0006.
+              # API reach — see docs/decisions/0008.
               - type: ToCompositeFieldPath
                 fromFieldPath: status.atProvider.vpcConfig.clusterSecurityGroupId
                 toFieldPath: status.clusterSecurityGroupId
@@ -597,7 +597,7 @@ spec:
                   status: "True"
 
           # ============================================================
-          # SANDBOX KUBECTL ACCESS (docs/decisions/0006).
+          # SANDBOX KUBECTL ACCESS (docs/decisions/0008).
           # Lets `kubectl` work directly from the Anthropic sandbox via an SSM
           # port-forward tunnel (the gateway accepts the public ssmmessages cert;
           # kubectl verifies the REAL cluster CA end-to-end). NO public listener

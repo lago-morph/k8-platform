@@ -1,7 +1,18 @@
-# 0006 — Sandbox kubectl access via SSM Session Manager port-forward tunnel
+# 0008 — Sandbox kubectl access via SSM Session Manager port-forward tunnel
 
 - **Status**: Accepted
 - **Date**: 2026-06-07
+
+> **Scope — implementation-time only, not a runtime feature.** This ADR governs
+> how engineers and agents *build, operate, and debug* the platform from the
+> Anthropic sandbox. The SSM kube-tunnel is a development/diagnostic capability
+> for people working **on** the platform; it is **not** part of the platform's
+> runtime and plays no role in normal operation. No workload's data path, no
+> cluster service, and nothing the platform delivers to its users depends on it —
+> removing it would not affect any running cluster or application. It exists only
+> to give a sandbox session a tighter inner loop than the `kube-diagnose`
+> workflow + ArgoCD REST API. It is read-only, gated by IAM + a read-only access
+> entry, and never sits on a production data path.
 
 ## Context
 
@@ -118,6 +129,10 @@ Key properties of the chosen design:
 
 ## Consequences
 
+- **Implementation-time tool, not a runtime dependency** — this path is used only
+  by sandbox sessions building/operating the platform. Normal platform operation
+  (workloads, ingress, GitOps reconciliation) neither uses nor requires it; it can
+  be removed or left unprovisioned without affecting any running cluster.
 - **One standing `t3.nano` relay** (~$4/mo) counts against the 9-instance
   account cap. Budget for it; treat the cap as a hard constraint when planning
   any future EC2 resources.

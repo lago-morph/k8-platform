@@ -23,7 +23,7 @@ declare -a TRIPWIRES=(
   "enable_cluster_creator_admin_permissions|true"
   "enable_irsa|true"
   "cluster_endpoint_public_access|true"
-  # Access entries (the sandbox-kubectl mechanism, docs/decisions/0006) require
+  # Access entries (the sandbox-kubectl mechanism, docs/decisions/0008) require
   # API or API_AND_CONFIG_MAP. Pin it so a future module default can't drop the
   # cluster into CONFIG_MAP-only and silently break access-entry auth.
   "authentication_mode|\"API_AND_CONFIG_MAP\""

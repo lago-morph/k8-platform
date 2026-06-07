@@ -26,7 +26,7 @@
 #     gets a read-only EKS access entry (AmazonEKSAdminViewPolicy) below.
 #   * The relay reaches the cluster's PRIVATE endpoint via cluster-SG membership,
 #     so this path does not depend on public endpoint access at all.
-# See docs/decisions/0006-sandbox-kubectl-via-ssm-tunnel.md.
+# See docs/decisions/0008-sandbox-kubectl-via-ssm-tunnel.md.
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Auth: the sandbox IAM identity already has an EKS access entry on THIS cluster.
