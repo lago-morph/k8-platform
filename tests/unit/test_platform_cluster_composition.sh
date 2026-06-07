@@ -54,16 +54,19 @@ assert_eq "composition_env_config_ref_cluster_network" "cluster-network" "$ENV_R
 FN_REF=$(yq -r '.spec.pipeline[] | select(.functionRef.name == "function-patch-and-transform") | .functionRef.name' "$COMP")
 assert_eq "composition_function_ref" "function-patch-and-transform" "$FN_REF"
 
-# ---- 3. Eleven resources rendered --------------------------------------
+# ---- 3. Fourteen resources rendered -----------------------------------
 # 2 roles, 4 attachments, cluster, node group, + 3 cert resources
-# (acm Certificate, route53 validation Record, acm CertificateValidation).
+# (acm Certificate, route53 validation Record, acm CertificateValidation),
+# + 3 sandbox kubectl access resources (SecurityGroupIngressRule,
+# AccessEntry, AccessPolicyAssociation — docs/decisions/0006).
 RES_COUNT=$(yq -r "${PT}.resources | length" "$COMP")
-assert_eq "composition_resource_count" "11" "$RES_COUNT"
+assert_eq "composition_resource_count" "14" "$RES_COUNT"
 
 # Names — fixed set gives readable test failures.
 for n in cluster-role cluster-role-policy node-role node-worker-policy \
          node-cni-policy node-ecr-policy eks-cluster eks-nodegroup \
-         cluster-certificate cluster-cert-validation-record cluster-cert-validation; do
+         cluster-certificate cluster-cert-validation-record cluster-cert-validation \
+         kube-relay-ingress sandbox-access-entry sandbox-access-policy; do
   c=$(yq -r "${PT}.resources[] | select(.name == \"$n\") | .name" "$COMP")
   assert_eq "composition_has_resource_${n//-/_}" "$n" "$c"
 done

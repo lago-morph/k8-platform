@@ -15,3 +15,5 @@ data:
     - subnet-00000000000000002
   route53ZoneId: Z00000000000000000000Q
   domain: render-probe.example.test
+  accountId: "000000000000"
+  relaySecurityGroupId: sg-00000000000000000
