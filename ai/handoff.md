@@ -13,20 +13,28 @@ last, the current state, and the next concrete steps. Keep it factual
 > (branch `claude/sandbox-kubectl-access-cmUMQ`). Full rationale:
 > `docs/decisions/0008-sandbox-kubectl-via-ssm-tunnel.md` (ADR-0008, scoped
 > implementation-only). Skill: `.claude/skills/sandbox-kubectl-access`; rule:
-> AGENTS §6.34 (points at ADR-0006 test discipline).
+> AGENTS §6.34 (points at ADR-0006 test discipline), §6.35 (clean-build rule).
 >
-> **DONE — the sandbox can run kubectl directly against any cluster** via an SSM
-> Session Manager port-forward tunnel (gateway accepts the public `ssmmessages`
-> cert; kubectl verifies the REAL cluster CA; no public listener). Use it:
+> **BUILT — clean-build verification STILL PENDING (AGENTS §6.35).** The sandbox
+> can run kubectl directly against a cluster via an SSM Session Manager
+> port-forward tunnel (gateway accepts the public `ssmmessages` cert; kubectl
+> verifies the REAL cluster CA; no public listener). Use it:
 > `scripts/sandbox-kubeconfig.sh -c <cluster> --exec kubectl get nodes`
 > (read-only: AmazonEKSAdminViewPolicy). ONE shared `t3.nano` relay serves every
 > cluster (9-EC2 cap) from the base VPC; each cluster's SG admits it on 443.
 >
-> **Live evidence (account `040769423303`, this session):**
-> - Hub `k8-platform-mgmt`: `kubectl get nodes` via relay → 3 Ready nodes.
+> **Evidence so far — MECHANISM proven, NOT yet a clean build (account now gone):**
+> - Hub `k8-platform-mgmt`: `kubectl get nodes` via relay → 3 Ready nodes — on a
+>   Terraform/CI-applied (incremental, not from-zero-teardown) build.
 > - Spoke `k8-platform-services`: `kubectl get nodes` via the SAME relay → 2 Ready
->   nodes (proves one relay reaches a 2nd cluster).
-> Both verified behaviorally per ADR-0006 (drive the real controller, not a lint).
+>   nodes — **on a MANUALLY-MODIFIED build** (ArgoCD auto-sync paused + branch
+>   Composition/XRD hand-applied, then reverted). This proves the mechanism, NOT
+>   the GitOps-delivered artifact.
+> **REQUIRED before this is "done" (next session, §6.35):** on a CLEAN build from
+> merged source — phases 0→1, then a platform cluster synced by ArgoCD from main
+> with NO paused-sync and NO manual apply — confirm `kubectl get nodes` works
+> against that cluster through the relay (the committed live check
+> `tests/live/checks/after/sandbox-kubectl-relay.sh` does exactly this).
 >
 > **Two defects ADR-0006 behavioral testing caught (invisible to render/yq):**
 > 1. upjet `provider-aws-ec2 v2.5.0` can't observe `SecurityGroupIngressRule`

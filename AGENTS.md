@@ -491,6 +491,18 @@ down to a green lint. Binding architecture: **ADR-0006**.
 
 → Full detail: [`docs/decisions/0006-test-architecture-build-coupled-behavioral-verification.md`](docs/decisions/0006-test-architecture-build-coupled-behavioral-verification.md)
 
+### 6.35 Never mark work done on a manually-modified build — verify on a clean build
+
+Do not call a feature complete (or "works"/"proven") if the only verification ran
+against a build you hand-modified to make it pass: a paused GitOps auto-sync, a
+manual `kubectl apply` of branch manifests, an out-of-band cloud change, a
+mid-session policy patch. Those prove the *mechanism*, not the *delivered
+artifact*. Completion requires verifying behavior on a build with **no manual
+changes** — a clean bring-up from the committed source (GitOps/CI/Terraform),
+after a teardown to the relevant phase where feasible. If a clean build cannot be
+run yet (e.g. the account is gone), say exactly that and mark the work **"pending
+clean-build verification"** — never "done".
+
 ---
 
 ## 7. Testing loops — companion skills
