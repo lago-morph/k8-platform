@@ -50,7 +50,14 @@ skips and reads green*.
 (`source: IRSA`), with create-and-verify **coupled to the change**, **on by
 default**, where **all-skipped ⇒ RED**. "On by default" and "coupled to the
 change" are now made **MECHANICAL by a fail-closed live-evidence gate** (see
-below), not by a UI dropdown default. Cost split: **after-the-fact** read-only
+below), not by a UI dropdown default. **"On by default" is an anti-forgetting
+DEVELOPMENT safety net** (correction #3): while a component is under active
+development we must not be able to forget to verify what we built — so the
+default is the `full` PROFILE. **"Disable" is a PROFILE selector, not a binary
+switch** (`full` / `verify-only` / `off`, §4.2): a proven, working component can
+be moved to `verify-only` to keep its routine bring-up cheap (the cheap
+after-the-fact checks only), without forfeiting on-by-default — `full` re-arms
+automatically when the component changes. Cost split: **after-the-fact** read-only
 checks for the expensive standing things (EKS ~20 min, RDS), **instantiate-and-
 verify** for the cheap hermetic things. A hard **security NON-GOAL**: no new
 AssumeRole principal, no trust-policy widening, no provider-SA token mount, no
@@ -426,7 +433,7 @@ just name it. Required:
   `source: IRSA` (§3.1/§3.2). The harness role observes/reaps *around* that test; it
   never stands in for the controller's identity.
 
-## 4. Build-coupled trigger + disable switch + anti-silent-regression (resolves round-2 #2, #5; constraint corrections #1 & #2)
+## 4. Build-coupled trigger + profile selector + anti-silent-regression (resolves round-2 #2, #5; constraint corrections #1, #2 & #3)
 
 ### 4.1 The execution model — TWO real Actions surfaces, made on-by-default by a push gate (corrections #1 & #2; resolves round-3 sre/security/devx/k8s-expert/qa-guru C1)
 **The "build ≠ CI" framing is deleted — it had no referent.** Grounded against the
@@ -495,17 +502,50 @@ calls never provision NLBs/IAM/secrets). The §4.4 `phase=test` suite asserts th
 orchestrator's internal default. The mutating instantiate-path of
 `crossplane-claim-verify` runs only under `mutating`.
 
-### 4.2 Default-ON, and the default is a *tested invariant* (round-3 security C2, devx m5, qa-guru R3-C1)
-Default = ON, where "on" means the **apply-and-verify job invokes the live suite and
-the build's pass/fail is gated on its exit code** (§4.1), backed by the push
-live-evidence gate (§4.3). Any `workflow_dispatch` UI default is **advisory only**
-(k8s-expert m4) and never the guarantee. Disable only via `LIVE_VERIFY=0` / per-check
-`LIVE_SKIP=...` / SKIP_REGISTER. Static invariants, all checkable **on push, no
-cluster**, asserted against the **actual dispatched workflow** (`terraform-test.yml`,
-the file AGENTS §5 / testing-guidelines §6 name — not "a flow definition" the lint
-could be pointed anywhere):
-- The on-by-default value (in the orchestrator's **own committed config** — the
-  single source the test reads) is literally `enabled`, so flipping it is a red diff.
+### 4.2 The PROFILE selector — `full` (default) / `verify-only` / `off`, and the default is a *tested invariant* (round-3 security C2, devx m5, qa-guru R3-C1; constraint correction #3)
+**"Disable" is a PROFILE selector, not a binary on/off** (correction #3). The owner's
+intent: **on-by-default is an anti-forgetting DEVELOPMENT safety net** — while we are
+actively implementing, we must not be able to forget to verify what we built; the
+FAIL-closed live-evidence gate (§4.3) gives that teeth. *When* a component is proven
+working, the operator must be able to "turn off everything but the verification
+steps" so a routine bring-up does not take ~3 hours — which is a **reduction in
+TIERS, not an off switch.** The selector (env `LIVE_PROFILE`, default `full`):
+
+| Profile | Tiers run | When | Cost |
+|---|---|---|---|
+| **`full` (DEFAULT, development)** | AFTER-THE-FACT (read-only verify) **+** BRING-UP instantiate-on-purpose **+** negative/precondition [+ e2e] | a component (or cluster) **under active development** — nothing forgotten | full (the ~3-hr work) |
+| **`verify-only` (mature/working)** | **ONLY** the fast AFTER-THE-FACT verification of what THIS bring-up actually created + its health | a **proven** component on a routine bring-up | cheap (read-only `Describe*`/health) |
+| **`off`** | nothing (guarded, audited) | **NOT used now** | — |
+
+**The cost the operator is removing is the instantiate-on-purpose + negative tiers**
+(they create throwaway resources and exercise failure paths — the slow part). The
+expensive EKS/RDS resources were **already after-the-fact** (§5) and therefore
+**remain in `verify-only`**; `verify-only` does not skip them. **Tier → profile map**
+(this is the §2-taxonomy ↔ profile binding):
+- **AFTER-THE-FACT (read-only existence/convergence/health)** runs in **BOTH `full`
+  and `verify-only`** (never in `off`).
+- **BRING-UP instantiate-on-purpose** (the cheap-hermetic create-and-verify, §5) and
+  **negative/precondition** (§7) run in **`full` only**.
+- **PRE-FLIGHT lints** are push-time and profile-independent (always run on Surface A;
+  they stand up no cluster).
+
+**`LIVE_PROFILE` is distinct from `LIVE_MODE`.** The PROFILE chooses **WHICH TIERS
+run**; `LIVE_MODE` (§4.1) chooses **read-only vs mutating WITHIN the live tiers that
+do run**. They compose: `verify-only` runs only read-only tiers, so **`verify-only`
+implies `LIVE_MODE=readonly`** (it has no instantiate tier to mutate); `full` uses
+`LIVE_MODE=mutating` on the `apply-and-verify` path and `readonly` on the `verify`
+path. A unit test asserts `verify-only ⇒ readonly` and rejects `verify-only` paired
+with `mutating` (an instantiate request under a profile that drops instantiate).
+
+Default = `full`, and **the default profile is a tested invariant** (the existing
+"default value is a tested invariant" rule now asserts **the default profile ==
+`full`**). Any `workflow_dispatch` UI default is **advisory only** (k8s-expert m4) and
+never the guarantee. Static invariants, all checkable **on push, no cluster**,
+asserted against the **actual dispatched workflow** (`terraform-test.yml`, the file
+AGENTS §5 / testing-guidelines §6 name — not "a flow definition" the lint could be
+pointed anywhere):
+- The default-profile value (in the orchestrator's **own committed config** — the
+  single source the test reads) is literally `full`, so changing it is a red diff.
 - **The live suite is wired AND gating, not merely invoked** (security C2 — "wired ≠
   gating"). The static lint asserts the apply-and-verify path of `terraform-test.yml`
   invokes `tests/live/run.sh` AND that the build's success is a function of the
@@ -519,13 +559,23 @@ could be pointed anywhere):
 - **The live suite runs under the scoped identity, not admin** (§3.4): the step does
   not reference `secrets.AWS_ACCESS_KEY_ID`.
 
-The master kill-switch is guarded: `LIVE_VERIFY=0` makes the banner **RED and exits
+**Per-profile anti-silent-regression (correction #3).** The `all-skipped ⇒ RED`
+invariant holds **PER PROFILE**, applied to the tier set that profile runs: in
+`verify-only` the AFTER-THE-FACT set **must still actually run**, and `all-skipped ⇒
+RED` applies to **THAT** set — so `verify-only` cannot read green having verified
+nothing. **Selecting `verify-only` is an explicit, recorded reduction** — the dropped
+instantiate + negative tiers are a **deliberate, audited choice, never a silent
+skip**; the chosen profile is written to a register entry (reason/owner/expires, like
+SKIP_REGISTER) so "we ran cheap" is always attributable.
+
+`off` is guarded: selecting `LIVE_PROFILE=off` makes the banner **RED and exits
 non-zero** unless a top-level `disable_all` register entry (reason/owner/expires)
-exists. To collapse the parallel "off" doors (round-3 devx M2), `LIVE_VERIFY=0` /
-`disable_all` is a thin alias that **writes a SKIP_REGISTER-shaped entry** — one
-durable disable path, not two with different teeth. **All-skipped is RED inside the
-suite when it runs; and "the suite never ran" is RED outside the suite via the §4.3
-live-evidence gate** — both halves, every reviewer (must-not-weaken).
+exists. To collapse the parallel "off" doors (round-3 devx M2), `off` / `disable_all`
+is a thin alias that **writes a SKIP_REGISTER-shaped entry** — one durable disable
+path, not two with different teeth. **All-skipped is RED inside the suite per profile
+when it runs; and "the suite never ran" (or "ran a weaker profile than the change
+requires") is RED outside the suite via the §4.3 live-evidence gate** — both halves,
+every reviewer (must-not-weaken).
 
 A note on the `live-verify` artifact name: where this plan says "`live-verify`
 workflow," it means a **`workflow_dispatch`-only** GitHub Actions workflow for
@@ -569,14 +619,23 @@ reverted.** The push/PR gate is the **PRIMARY mechanical default-on**, FAIL-clos
   devx M1, qa-guru M3). The push gate calls the **GitHub Actions API** (the repo's
   `.github/workflows/chainsaw-verify.yml` pattern) to confirm an `apply-and-verify`
   run for this SHA **exists**, has `conclusion=success`, ran against **this
-  account-id and cluster-name**, and is **newer than the account's bootstrap**. If a
-  machine-emitted committed marker is used at all, its integrity contract is: written
-  **only** on the §4.4 clean-pass exit code (never on `exit 2`/`exit 3`/all-skip),
-  keyed on the full **(SHA × account-id × cluster-name)** triple so a rotated account
-  (§8.1) invalidates it, by the same step whose exit code it records — and the push
-  lint validates that provenance against the API, not free text. A committed
-  free-text "green" marker is **forbidden** (it re-creates the self-attested oracle
-  this section exists to kill, one level up).
+  account-id and cluster-name**, **records WHICH `LIVE_PROFILE` produced it**, and is
+  **newer than the account's bootstrap**. If a machine-emitted committed marker is
+  used at all, its integrity contract is: written **only** on the §4.4 clean-pass exit
+  code (never on `exit 2`/`exit 3`/all-skip), keyed on the full **(SHA × account-id ×
+  cluster-name × profile)** so a rotated account (§8.1) invalidates it and **a
+  `verify-only` result cannot masquerade as a `full` result**, by the same step whose
+  exit code it records — and the push lint validates that provenance against the API,
+  not free text. A committed free-text "green" marker is **forbidden** (it re-creates
+  the self-attested oracle this section exists to kill, one level up).
+- **The gate requires the profile the change demands** (correction #3, tie to
+  coupled-to-the-change). A component still under development — or **any component
+  whose config-SHA changed** in the PR (`crossplane/**`/`policies/**` for that
+  component) — **requires `full` evidence**; a `verify-only` record for it is
+  **insufficient ⇒ RED** ("re-run `full`"). This is how "we don't forget during
+  implementation" stays enforced even though mature components run cheaper: **a change
+  to a component re-arms `full` for it.** Only a proven, unchanged component is
+  satisfiable by `verify-only` evidence.
 - **Config-only GitOps changes are a first-class trigger context** (round-3 qa-guru
   R3-C2, the exact auto-012 change shape). A PR editing `crossplane/**` / `policies/**`
   — a Composition/IAM/tag edit ArgoCD will sync to the **live hub with no
@@ -707,9 +766,11 @@ irsa.tf actions) **does not exist in these compositions** and is replaced:
 gate derives the **expected skip set** from the registry+git-phase (§4.3/§4.5) and
 fails if a runtime skip is **not in that set** — "you skipped something not
 declared," not "the integer went up." The SKIP_REGISTER (`tests/live/SKIP_REGISTER.yaml`)
-is the only durable disable: each entry needs reason/owner/expires; a unit test
-fails if any field is missing, any `expires` is past, or any runtime skip is
-unregistered. **Cap the register at N** (set N=12 with headroom; the cap message
+is the only durable disable, and is **also where a non-`full` profile choice is
+recorded** (correction #3 — choosing `verify-only`/`off` writes a register entry, so
+the tier reduction is attributable, never silent): each entry needs
+reason/owner/expires; a unit test fails if any field is missing, any `expires` is
+past, or any runtime skip is unregistered. **Cap the register at N** (set N=12 with headroom; the cap message
 names which entries to retire), require an `OI-` cross-link for any disabled
 *security* check, and escalate `expires` warn→fail after a grace window (set to 14
 days) so a calendar event doesn't red unrelated PRs.
