@@ -8,6 +8,54 @@ last, the current state, and the next concrete steps. Keep it factual
 
 ## NEW SESSION QUICKSTART (read this first)
 
+> **[auto-013 — 2026-06-07 — SUPERSEDES auto-012 below.]** Full detail:
+> `overnight-summary.md` (root) + `retrospective/2026-06-07-177/` + PRs #170–#177.
+>
+> **Run goal:** EXECUTE the test overhaul per `planning/test-overhaul/FINAL-PLAN.md`.
+> This run shipped the **P1 static scaffold** as 7 stacked implementation PRs
+> (#171–#176, on trunk #170) and brought the substrate up live on the fresh
+> account `695454131301`.
+>
+> **✅ Substrate is LIVE on `695454131301`:** phase-0 base (run 27085405081) and
+> phase-1 **management apply-and-verify GREEN** (run 27085571769) — EKS
+> `k8-platform-mgmt` ACTIVE, ArgoCD + Crossplane + all providers + ESO + Kyverno +
+> IRSA up, mgmt e2e-verify passed. Phase-3 platform cluster NOT yet synced.
+>
+> **What auto-013 built (all cluster-INDEPENDENT, hermetically unit-tested):**
+> 1. **#171** `mgmt_live_verify` derived gate — any mgmt apply ⇒ live verify (§4.1).
+> 2. **#172** Pipeline-mode coverage deriver + byte-identical fixture test (§4.5);
+>    extractor reproduces the 14-kind oracle exactly; drift gate ENFORCE.
+> 3. **#173** inverted-skip live orchestrator `tests/live/run.sh` (§4.4): all-skip⇒RED,
+>    expect-full-from-git, exit-code contract, LIVE_PROFILE/LIVE_MODE.
+> 4. **#174** FAIL-closed live-evidence gate (§4.3, round-3 centerpiece) — logic +
+>    config-only-trigger; profile re-arming; 17 hermetic assertions.
+> 5. **#175** scoped zero-wildcard verifier/reaper IAM role + K=0 ceiling lint (§3.4).
+> 6. **#176** SKIP_REGISTER lint — attributable, time-boxed disables (§4.6).
+>
+> **CARRIED FORWARD (NOT done — see overnight-summary.md §Morning-review + §NOT-done):**
+> - **P0 SPIKE live confirmation** — read-only probe dispatched via `kube-diagnose`
+>   (source:IRSA, no-static-creds, provider health, v2 composed-ref field). The
+>   "drive a claim ⇒ real AccessDenied" half needs a provisioned cheap XR + a
+>   crippled-twin grant removal; carried forward. **The P1 scaffold is built to the
+>   plan's documented assumptions; confirm the spike before merging P4 behavioral code.**
+> - **The jentic workflow integration capstone** (wire `tests/live/run.sh` into
+>   `terraform-test.yml`'s apply-and-verify job gated on `mgmt_live_verify`, under
+>   the scoped role; emit the clean-pass evidence artifact; wire the live-evidence
+>   gate + the static wired/gating/scoped/on-by-default lints into a push workflow).
+>   DEFERRED deliberately: it edits the live bring-up flow and must be
+>   dispatch-validated before merge — do not land it unvalidated.
+> - **P2–P6** (deepen after-the-fact, isolation/reaper, instantiate-and-verify,
+>   negatives + spoke trigger, hardening) — not started.
+> - **Stand up the verifier/reaper role + mutex table live** on the next mgmt apply
+>   (the #175 terraform is committed but not yet applied).
+>
+> **Owner decisions (FINAL-PLAN §14, pre-answered in the run brief — resolutions in
+> overnight-summary.md):** #1 scoped verifier/reaper role = built (#175); #2 spoke
+> CIDR/AccessEntry = confirm at spike time (carried); #3 tighten `Resource:"*"` =
+> recommend, ship deny tests with it in P4 (carried); #4 ArgoCD controller
+> `role_policy_arns={}` = confirmed present at `terraform/management/irsa.tf`
+> (module.irsa_argocd) — investigate if spoke registration needs a policy (carried).
+
 > **[auto-012 — 2026-06-07 — SUPERSEDES auto-011 below.]** Full detail:
 > `run-summary-auto-012.md` + `docs/open-issues.md` (OI-2026-06-07-1..5) + PR #165.
 >
