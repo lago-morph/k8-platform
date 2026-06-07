@@ -94,6 +94,7 @@ run_suite tests/unit/test_xspokeaccess.sh
 run_suite tests/unit/test_coverage_deriver.sh
 run_suite tests/unit/test_live_orchestrator.sh
 run_suite tests/unit/test_live_evidence_gate.sh
+run_suite tests/unit/test_verifier_role_no_wildcards.sh
 
 echo ""
 if [ "$OVERALL" -eq 0 ]; then
