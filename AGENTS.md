@@ -479,6 +479,18 @@ instead of the human-readable branch above it showed committed edits as reverted
 
 → Full detail: [`.claude/agents-md/06.33-stacked-pr-base-selection.md`](.claude/agents-md/06.33-stacked-pr-base-selection.md)
 
+### 6.34 Verify behavior coupled to the build, under the real identity (ADR-0006)
+
+A test must prove the thing *works*, not that a manifest *says* it does. Static
+`yq`/`grep` checks are the push/PR floor only — never the oracle. The center of
+verification is driving the real controller under its real IRSA identity and
+checking the real cloud resource, **on by default and coupled to the build**
+(verified when you build it, not on a schedule). Live/cluster work is
+`workflow_dispatch`-only; push/PR stays static. Never weaken a behavioral check
+down to a green lint. Binding architecture: **ADR-0006**.
+
+→ Full detail: [`docs/decisions/0006-test-architecture-build-coupled-behavioral-verification.md`](docs/decisions/0006-test-architecture-build-coupled-behavioral-verification.md)
+
 ---
 
 ## 7. Testing loops — companion skills
