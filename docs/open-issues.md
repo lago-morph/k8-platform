@@ -201,12 +201,31 @@ exists and functions **against the real cloud/cluster**, not a static manifest
 assertion. The build step is not "done" until that verification passes. A static
 `yq` check is acceptable as a fast pre-flight lint; it is NOT the test.
 
-**The systemic fix (stand this up FIRST in the new session, before/with the rebuild):**
-1. **Run the real-AWS verification layer that already exists but is gated off.** The
-   `CHAINSAW_INCLUDE_REALAWS=1` ("REAL-AWS / NIGHTLY") scenarios actually provision
-   and verify cloud resources. They must RUN — as a phase-signoff gate (and/or a real
-   nightly on a stable account) — not sit excluded forever. Per-PR kind chainsaw stays
-   as the fast render/admit gate; the real-AWS gate is the one that catches this class.
+**Chainsaw is currently used WRONG (user correction, 2026-06-07).** Running chainsaw
+against **kind** only answers "is this valid Kubernetes / does the composition render
+and pass admission" — syntax + validity. It does NOT build a real EKS cluster and does
+NOT prove the product works. Even the gated `CHAINSAW_INCLUDE_REALAWS` scenarios run on
+kind with **static/admin creds**, NOT the restricted Crossplane **IRSA role**, so they
+would have MASKED the exact permission gaps that bit us (the crossplane role's missing
+`iam:Tag…`/`UpdateAssumeRolePolicy`/`GetRolePolicy`/`rds:*` only fail when the real
+Crossplane pod, under the real IRSA role, calls AWS on the real cluster). kind chainsaw
+is, at best, a fast pre-flight lint — keep it as that, but stop treating a green kind
+run as evidence the thing builds.
+
+**The rule (not a schedule — a coupling):** when you implement a step that CREATES
+something, you verify THAT thing, against the real cluster/cloud, as part of the same
+step, EVERY time. Not nightly, not a separate gate that runs later — coupled to the
+change. If the resource didn't actually build, the step is not done. "Run real
+verification nightly/gated" is wrong precisely because it decouples the test from the
+implementation; that decoupling is the bug.
+
+**The systemic fix (the create-and-verify loop, applied to every create-step):**
+1. **Verify against a REAL cluster — real Crossplane under the real IRSA role, building
+   the real AWS resources (EKS cluster, spoke, RDS) — at the moment you author the
+   create-step, every time.** This is the only faithful test of "does it build" and the
+   only thing that surfaces IRSA-permission gaps (kind uses static/admin creds and
+   masks them). kind chainsaw stays ONLY as a fast syntax/render pre-flight; a green
+   kind run is never evidence the thing builds.
 2. **Add a real hub→spoke integration test** (the flow with 6 of the 8 blockers):
    provision spoke → register → `https://hello.platform.<domain>` 200 → Keycloak boots
    against RDS. `tests/integration/` is the home (claim waits via
