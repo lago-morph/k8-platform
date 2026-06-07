@@ -11,9 +11,246 @@ is the sequence number for that date.
 
 ---
 
+## Status index (updated 2026-06-07, auto-012)
+
+**OPEN / actionable:**
+
+| ID | One-line | Note |
+|----|----------|------|
+| OI-2026-06-07-1 | ArgoCD cluster Secret durable form | decided (ADR 0005); implement new session |
+| OI-2026-06-07-2 | cluster facts + ESO into the cluster XRD | decided (ADR 0005); implement new session |
+| OI-2026-06-07-3 | shared-VPC subnet tags | decided; implement new session |
+| OI-2026-06-07-4 | hub→spoke SG rule durable form | decided; implement new session |
+| OI-2026-06-07-5 | cross-cluster Keycloak DB secret | decided (ADR 0005); implement new session |
+| OI-2026-06-07-6 | **static assertions masquerade as tests; built resources never verified live** | **HIGH PRIORITY — fix first in the new session** |
+| OI-2026-06-06-3 | XDatabase `<xr>-master` secret not GC'd on delete | open, low-severity cleanup |
+| OI-2026-06-05-6 | can't create/modify `.github/workflows` here | environmental; workaround = jentic Contents-PUT |
+| OI-2026-06-05-2 | `charts.crossplane.io` 403 on the runner | mitigated (vendored); root cause still hypothesis |
+| OI-2026-05-28-1 (Issue A) | chainsaw `composition-drift` first-scenario timeout | hypothesis-level; Issue B resolved |
+
+**RESOLVED (kept for the rationale record):**
+
+| ID | One-line | Resolved by |
+|----|----------|-------------|
+| OI-2026-06-05-5 | ArgoCD unreachable from sandbox | `*.management` ACM cert (auto-007 #149) — **re-confirmed reachable this session** (argocd login + healthz 200) |
+| OI-2026-06-05-3 | provider-family-aws install race | #156 — **re-confirmed this session** (providers healthy, XSpokeAccess MRs reconciled) |
+| OI-2026-06-05-4 | v2.5.0 family-provider Deployment label | provisioner no longer depends on the label — confirmed this session |
+| OI-2026-06-06-2 | mgmt provider bootstrap deadlock | #156 — **re-confirmed this session** (12 crossplane pods healthy, all AWS MRs reconciled) |
+| OI-2026-06-06-1 | `crossplane render` floating `:stable` | #153 (version pin) |
+| OI-2026-06-05-1 | `yq/awk \| grep -q` pipefail flake | here-string fix (auto-005) |
+| OI-2026-05-28-1 (Issue B + B-adjacent) | chainsaw cleanup-path / ASM trap | auto-004/005 |
+
+> Convention reminder: RESOLVED entries are retained here as the rationale record;
+> prune them once they've been stable across a couple of account rebuilds.
+
+---
+
+## OI-2026-06-07-1 — spoke ArgoCD cluster Secret has no durable (GitOps) form
+
+**Status:** open — DECISION MADE (2026-06-07); implement in a new session (AWS account expired). See ADR `docs/decisions/0005-*` + `ai/handoff.md` task 3.
+**Resolution:** plain ESO — enable the EKS Cluster MR connection secret → `PushSecret` → AWS Secrets Manager → `ExternalSecret` with `target.template` assembling the cluster-secret `config` (caData-in-JSON). NOT provider-kubernetes, NOT XPlatformSecret.
+**Surfaced:** 2026-06-07, auto-012, phase-3 spoke registration.
+
+**What happened:** the `platform-spoke` ArgoCD cluster Secret was created LIVE via
+the ArgoCD REST API (`POST /api/v1/clusters`, awsAuthConfig.clusterName +
+tlsClientConfig.caData from `aws eks describe-cluster`). The hub app-controller
+authenticates with its IRSA role (now annotated — see auto-012) against the EKS
+AccessEntry. Registration `connectionState: Successful`, serverVersion 1.32.
+
+**Why it is not durable:** the endpoint+CA are account-ephemeral (§8.1, uncommittable)
+and the EKS Cluster MR publishes NO connection secret (writeConnectionSecretToRef
+empty), so there is nothing for a provider-kubernetes Object to reference, and the
+ArgoCD cluster-secret `config` requires caData embedded in a JSON string (which
+provider-kubernetes references cannot assemble — only a Crossplane Composition's
+`CombineFromComposite` fmt can). The cluster Secret will not be re-created on a
+fresh account.
+
+**Recommended durable mechanism:** add a provider-kubernetes `Object` to the
+XSpokeAccess Composition that builds the cluster Secret, assembling `config` JSON
+via `CombineFromComposite` from the cluster endpoint + caData overlaid onto the XR
+(same overlay pattern as `spec.oidcIssuer`), + RBAC for the provider-kubernetes SA
+to write Secrets in `argocd` ns (same class as the ESO ClusterRole, #160). Needs
+render fixtures + chainsaw (§6.8 — new Object kind in a v2 composition).
+
+**Next step:** author the Composition Object + RBAC; delete the REST-bootstrapped
+secret at cutover so the Object owns it.
+
+---
+
+## OI-2026-06-07-2 — registration-time ephemeral overlays fought by bootstrap selfHeal
+
+**Status:** open — DECISION MADE (2026-06-07); implement in a new session. See ADR `docs/decisions/0005-*` + `ai/handoff.md` task 2.
+**Resolution:** make this part of the `XPlatformCluster` XRD: every cluster ships (a) a per-cluster ConfigMap of cluster facts (domain/region/cert-ARN/external-dns-role-ARN) the add-ons read from — NOT per-app Helm overlays — and (b) ESO + an IRSA `ClusterSecretStore` (ESO baseline in every cluster). Workloads (`hello`) stay AWS-agnostic. This removes the bootstrap-selfHeal-vs-overlay conflict (no pausing bootstrap).
+**Surfaced:** 2026-06-07, auto-012.
+
+**What happened:** the spoke apps (`spoke-hello`, `spoke-ingress-nginx`,
+`spoke-external-dns`, `spoke-keycloak`) carry committed PLACEHOLDER helm values
+(domain, cert ARN, external-dns role ARN, region) that auto-008 designed to be
+"overlaid at registration" into the Application's helm valuesObject/parameters.
+But the `bootstrap` app-of-apps has `selfHeal: true` and manages those Application
+objects from `main`, so it reverts any `argocd app set` overlay within its
+reconcile interval. The values are account-ephemeral (§8.1) so they cannot be
+committed to satisfy bootstrap. This is the auto-008 "finalize live" gap.
+
+**Workaround used this run:** paused bootstrap (`argocd app set bootstrap
+--sync-policy none`) during the finalize-live window. MUST be re-enabled.
+
+**Candidate durable mechanisms (decision needed):**
+1. **ApplicationSet cluster-generator** — store the ephemeral values as annotations
+   on the `platform-spoke` cluster Secret; generate the spoke apps from an
+   ApplicationSet that templates `{{.metadata.annotations.*}}` into valuesObject.
+   Idiomatic; survives selfHeal; refactors 3-4 apps.
+2. **bootstrap `ignoreDifferences` + `RespectIgnoreDifferences`** on the child
+   Applications' helm value fields (targeted by app name). Minimal; lets the
+   registration overlays persist as out-of-band drift bootstrap won't revert.
+3. **Composition-written ConfigMap on the spoke** consumed by the charts (poor fit
+   — charts need literals for Service/SA annotations).
+
+**Next step:** decision brief (Round 1+2 adversarial) → implement.
+
+---
+
+## OI-2026-06-07-3 — shared-VPC subnets not tagged for the spoke cluster (LB + general)
+
+**Status:** open — DECISION MADE (2026-06-07, concur with recommendation); implement in a new session. See `ai/handoff.md` task 5. (The live tag is gone with the expired account.)
+**Surfaced:** 2026-06-07, auto-012, spoke ingress-nginx NLB never provisioned.
+
+**What happened:** mgmt + spoke share VPC `vpc-…`. The ELB-role subnets are tagged
+`kubernetes.io/cluster/k8-platform-mgmt` but NOT `…/k8-platform-services`, so the
+spoke's in-tree AWS cloud provider excluded them (they "belong" to another cluster)
+and could not find subnets for the internet-facing ingress NLB. EKS only tags the
+subnets in a cluster's own vpcConfig (the spoke uses private node subnets), so the
+public ELB subnets were never tagged for the spoke.
+
+**Fix applied live:** `aws ec2 create-tags … Key=kubernetes.io/cluster/k8-platform-services,Value=shared`
+on the public (role/elb) and internal-elb subnets.
+
+**Durable form:** terraform/base should tag the shared ELB subnets `shared` for
+every EKS cluster the VPC hosts (or the platform-cluster Composition should add the
+spoke tag). Base does not currently know spoke cluster names — a small list/var.
+
+**Next step:** add the spoke cluster tag to terraform/base subnet tagging.
+
+---
+
+## OI-2026-06-07-4 — hub→spoke EKS-API security-group rule has no durable form
+
+**Status:** open — DECISION MADE (2026-06-07, concur with recommendation); implement in a new session. See `ai/handoff.md` task 6. (The live rule is gone with the expired account.)
+**Surfaced:** 2026-06-07, auto-012.
+
+**What happened:** the hub ArgoCD app-controller (mgmt node SG `sg-…`) could not
+reach the spoke EKS API (private endpoint) — the spoke EKS cluster SG had no inbound
+443 from the mgmt nodes. Added live:
+`authorize-security-group-ingress` 443 from the mgmt node SG to the spoke cluster SG.
+
+**Durable form:** a `SecurityGroupIngressRule` MR in the platform-cluster
+Composition (groupId from the Cluster MR's clusterSecurityGroupId, source = mgmt SG
+from an extended `cluster-network` EnvironmentConfig).
+
+**Next step:** add the mgmt SG to the EnvironmentConfig + the ingress-rule MR.
+
+---
+
+## OI-2026-06-07-5 — phase-5 RDS connection secret is hub-local; Keycloak runs on the spoke
+
+**Status:** open — DECISION MADE (2026-06-07); implement in a new session. See ADR `docs/decisions/0005-*` + `ai/handoff.md` task 4.
+**Resolution:** plain ESO cross-cluster — hub `PushSecret` (`keycloak-db` → Secrets Manager) → spoke `ExternalSecret` → spoke `keycloak` ns. Depends on the spoke-side ESO + `ClusterSecretStore` from OI-2026-06-07-2 / ADR 0005. NOT XPlatformSecret.
+**Surfaced:** 2026-06-07, auto-012, phase-5.
+
+**What happened:** the `keycloak-db` XDatabase XR is processed by the HUB crossplane
+(crossplane runs on the hub), so the RDS connection Secret `keycloak-db` lands in
+the HUB's `keycloak` namespace (verified: keys address/host/port/username/password,
+RDS Instance Ready=True, endpoint on :5432). But Keycloak (spoke-keycloak app) runs
+on the SPOKE and reads `existingSecret: keycloak-db` there. The secret is not
+delivered cross-cluster, so Keycloak cannot yet consume it.
+
+**Also note (RDS networking):** the Instance MR sets no DB subnet group, so RDS
+landed in the default subnet group; reachability from the spoke nodes is unverified.
+
+**Candidate mechanisms:** ESO PushSecret hub→spoke; a provider-kubernetes Object
+writing the secret to the spoke; or applying the XDatabase XR on the spoke (needs
+crossplane on the spoke). Decision needed.
+
+**Next step:** decide + implement cross-cluster delivery, then verify Keycloak boots
+against RDS.
+
+---
+
+## OI-2026-06-07-6 — static assertions masquerade as "tests"; built resources are never verified against the real cloud until a dependent fails
+
+**Status:** **open — HIGH PRIORITY; fix first in the new session.** This is the
+root-cause finding behind the entire auto-012 blocker chain.
+**Surfaced:** 2026-06-07, auto-012 (user observation).
+
+**The problem.** Almost every "test" in `tests/unit/` is a STATIC file assertion
+(`yq`/`grep` over committed YAML/terraform): "the composition has field X", "the IAM
+fixture lists action Y". These are LINTS, not tests of the built artifact. They catch
+**regressions of things a human already knew to assert** — never **discovery** that a
+thing we told the platform to create was never actually created or never actually
+works. So the whole "oops, when I told it to create something it never did" class
+(missing IAM perms → MR fails closed; wrong EKS auth mode → AccessEntry rejected;
+SA-name ≠ trust subject → AssumeRole denied; missing subnet tags → no NLB) stays
+**invisible until a downstream dependent trips over it**, live, one at a time. That
+is exactly how all 8 auto-012 blockers were found.
+
+**The principle (the fix discipline).** *Verify what you built, at the moment you
+build it.* Every step that CREATES a resource — a Crossplane claim/XR, an IAM
+role/policy, a helm release, a ConfigMap/Secret, an ArgoCD cluster registration, a
+DNS record — must be IMMEDIATELY followed by a verification that the resource actually
+exists and functions **against the real cloud/cluster**, not a static manifest
+assertion. The build step is not "done" until that verification passes. A static
+`yq` check is acceptable as a fast pre-flight lint; it is NOT the test.
+
+**Chainsaw is currently used WRONG (user correction, 2026-06-07).** Running chainsaw
+against **kind** only answers "is this valid Kubernetes / does the composition render
+and pass admission" — syntax + validity. It does NOT build a real EKS cluster and does
+NOT prove the product works. Even the gated `CHAINSAW_INCLUDE_REALAWS` scenarios run on
+kind with **static/admin creds**, NOT the restricted Crossplane **IRSA role**, so they
+would have MASKED the exact permission gaps that bit us (the crossplane role's missing
+`iam:Tag…`/`UpdateAssumeRolePolicy`/`GetRolePolicy`/`rds:*` only fail when the real
+Crossplane pod, under the real IRSA role, calls AWS on the real cluster). kind chainsaw
+is, at best, a fast pre-flight lint — keep it as that, but stop treating a green kind
+run as evidence the thing builds.
+
+**The rule (not a schedule — a coupling):** when you implement a step that CREATES
+something, you verify THAT thing, against the real cluster/cloud, as part of the same
+step, EVERY time. Not nightly, not a separate gate that runs later — coupled to the
+change. If the resource didn't actually build, the step is not done. "Run real
+verification nightly/gated" is wrong precisely because it decouples the test from the
+implementation; that decoupling is the bug.
+
+**The systemic fix (the create-and-verify loop, applied to every create-step):**
+1. **Verify against a REAL cluster — real Crossplane under the real IRSA role, building
+   the real AWS resources (EKS cluster, spoke, RDS) — at the moment you author the
+   create-step, every time.** This is the only faithful test of "does it build" and the
+   only thing that surfaces IRSA-permission gaps (kind uses static/admin creds and
+   masks them). kind chainsaw stays ONLY as a fast syntax/render pre-flight; a green
+   kind run is never evidence the thing builds.
+2. **Add a real hub→spoke integration test** (the flow with 6 of the 8 blockers):
+   provision spoke → register → `https://hello.platform.<domain>` 200 → Keycloak boots
+   against RDS. `tests/integration/` is the home (claim waits via
+   `scripts/wait-for-claim.sh`; SPEC-S7).
+3. **Use the `crossplane-claim-verify` skill at EVERY claim/XR apply** (it already
+   waits for Synced/Ready AND verifies the underlying cloud resource exists/healthy) —
+   make it a required step, not optional. For non-claim creations (IAM/helm/secret/
+   registration), do the equivalent immediate AWS-API / ArgoCD-API existence check.
+4. **Close the `[mgmt] e2e-verify` gaps** so the mgmt-stack/networking class is
+   covered: check BOTH ArgoCD SAs (server AND application-controller) carry IRSA, check
+   spoke registration `connectionState`, check shared-VPC subnet tags, check hub→spoke
+   SG reachability.
+5. `crossplane-iam-policy-completeness-audit` (proposed in retro 2026-06-07-165) is a
+   STATIC stopgap for the IAM class — useful pre-flight, but it is a proxy; #1 is the
+   real answer.
+
+**Why this is HIGH PRIORITY:** every account rebuild re-pays the cost of finding this
+class live, one dependent-failure at a time. Standing up the real verification gate
+once converts "discover live, serially" into "fail in CI, all at once."
+
+---
+
 ## OI-2026-06-05-5 — live ArgoCD sync unreachable from the Claude-Code-web sandbox
 
-**Status:** **open — environmental blocker characterized, not a code bug.**
+**Status:** **RESOLVED** — fixed by the dedicated `*.management.<domain>` ACM cert (auto-007 #149) and **re-confirmed this session (2026-06-07, auto-012)**: `argocd login` + `/healthz` 200 worked from the sandbox throughout the run. (Kept for the rationale record.)
 **Surfaced:** 2026-06-05, auto-007. Needed to sync `platform-cluster-claim` to
 provision the phase-3 platform EKS cluster.
 
@@ -268,7 +505,7 @@ crossplane` exists today, so OCI was not an option.
 
 ## OI-2026-06-05-3 — provider-family-aws install races the package manager on fresh Crossplane
 
-**Status:** **RESOLVED** (fix landed; pending live re-confirmation on the re-run).
+**Status:** **RESOLVED** (fix #156) — **live re-confirmed this session (2026-06-07, auto-012)**: all AWS child providers healthy, XSpokeAccess + XDatabase MRs reconciled on the rebuilt cluster.
 **Surfaced:** 2026-06-05 auto-005 — management `apply-and-verify` run
 27023573285 (branch ref, vendored-chart fix applied) failed at
 `terraform_data.crossplane_aws_provider` (helm.tf:232):
@@ -419,7 +656,7 @@ in the sandbox (CI already does).
 
 ## OI-2026-06-06-2 — mgmt provider bootstrap: every AWS provider revision stuck `HEALTHY=False` with no runtime Deployment; two `provider-family-aws` Provider objects from one package
 
-**Status:** **fix refined (orphan cleanup), re-validating** — Option A (rename +
+**Status:** **RESOLVED** — **live re-confirmed this session (2026-06-07, auto-012)**: 12 crossplane-system pods healthy, single `provider-family-aws`, all AWS MRs reconciled. Original fix: Option A (rename +
 ordering + diagnostics) on branch `fix/auto-009-mgmt-provider-sa` passed Round-1
 adversarial review (all accept-with-amendment). Live validation 1 (run
 `27055996205`) **CONFIRMED the root cause** (see "Confirmed root cause" below)

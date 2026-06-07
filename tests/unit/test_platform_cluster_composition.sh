@@ -98,6 +98,23 @@ assert_eq "composition_eks_cluster_api" "eks.aws.m.upbound.io/v1beta1" "$CLUSTER
 NG_API=$(yq -r "${PT}.resources[] | select(.name == \"eks-nodegroup\") | .base.apiVersion" "$COMP")
 assert_eq "composition_eks_nodegroup_api" "eks.aws.m.upbound.io/v1beta1" "$NG_API"
 
+# ---- 5a. EKS Cluster enables API access entries (auto-012) --------------
+# Bug class: the EKS default authenticationMode is CONFIG_MAP, under which
+# the EKS API rejects AccessEntry create/list. The whole hub->spoke trust
+# plane (XSpokeAccess AccessEntry/AccessPolicyAssociation + the ArgoCD
+# cluster Secret's exec-auth argocd role) silently cannot provision until
+# the cluster is API or API_AND_CONFIG_MAP. Without this assertion the gap
+# is invisible at author time and only surfaces as an
+# InvalidRequestException at spoke-registration time on a live cluster.
+CLUSTER_AUTHMODE=$(yq -r "${PT}.resources[] | select(.name == \"eks-cluster\") | .base.spec.forProvider.accessConfig.authenticationMode" "$COMP")
+case "$CLUSTER_AUTHMODE" in
+  API|API_AND_CONFIG_MAP)
+    _pass "composition_eks_cluster_access_entries_enabled" ;;
+  *)
+    _fail "composition_eks_cluster_access_entries_enabled" \
+          "eks-cluster accessConfig.authenticationMode is '${CLUSTER_AUTHMODE}'; must be API or API_AND_CONFIG_MAP for EKS AccessEntries" ;;
+esac
+
 # ---- 5b. Cert resources use the modern .m.upbound.io provider groups ----
 # Phase 3 (docs/decisions/0003). Wrong group = MR never reconciles.
 CERT_API=$(yq -r "${PT}.resources[] | select(.name == \"cluster-certificate\") | .base.apiVersion" "$COMP")

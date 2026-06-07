@@ -611,11 +611,30 @@ resource "helm_release" "argocd" {
     name  = "server.extraArgs[0]"
     value = "--insecure"
   }
-  # argo-cd chart has per-component ServiceAccounts; the server SA is the one
-  # that needs the IRSA role-arn annotation for any AWS API calls argo makes.
+  # argo-cd chart has per-component ServiceAccounts. BOTH the server AND the
+  # application-controller need the IRSA role-arn annotation (auto-012): the
+  # application-controller is what authenticates to MANAGED (spoke) clusters via
+  # the cluster Secret's awsAuthConfig (it shells out to argocd-k8s-auth → EKS
+  # get-token, which needs AWS creds). irsa.tf already trusts BOTH SAs
+  # (argocd:argocd-server + argocd:argocd-application-controller), but only the
+  # server SA was annotated, so the controller fell back to IMDS and every spoke
+  # sync failed: "argocd-k8s-auth failed with exit code 20 (Client.Timeout
+  # exceeded while awaiting headers)".
   set {
     name  = "server.serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
     value = module.irsa_argocd.iam_role_arn
+  }
+  set {
+    name  = "controller.serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
+    value = module.irsa_argocd.iam_role_arn
+  }
+  # The pod-identity webhook injects the web-identity token + AWS env at pod
+  # CREATION, so annotating the SA alone does not fix a running controller — the
+  # StatefulSet pod must be recreated. Bump a podAnnotation so a helm upgrade
+  # that adds the SA annotation also rolls the controller pod.
+  set {
+    name  = "controller.podAnnotations.k8-platform\\.io/irsa-rev"
+    value = "auto-012"
   }
   # Ingress configured here so no separate kubernetes_ingress_v1 resource is
   # needed (which would require the kubernetes provider at plan time).

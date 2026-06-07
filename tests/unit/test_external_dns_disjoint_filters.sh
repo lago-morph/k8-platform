@@ -77,5 +77,26 @@ else
   echo "FAIL: spoke ExternalDNS must set --aws-zone-match-parent — platform.<domain> is a subdomain of the base zone"; FAIL=1
 fi
 
+# auto-012: the spoke external-dns SA NAME must match the subject hardcoded in the
+# XSpokeAccess Composition's IRSA trust policy
+# (system:serviceaccount:external-dns:external-dns). The external-dns chart
+# otherwise names the SA after the release (spoke-external-dns), the OIDC sub claim
+# mismatches, AssumeRoleWithWebIdentity is denied, and external-dns publishes NO
+# records (observed live this run).
+XSA_COMP="$HERE/../../crossplane/compositions/xspokeaccess.yaml"
+spoke_sa_name="$(yq -r '.serviceAccount.name' "$SPOKE_VALUES")"
+if [ "$spoke_sa_name" = "external-dns" ]; then
+  echo "ok: spoke external-dns serviceAccount.name = external-dns"
+else
+  echo "FAIL: spoke external-dns serviceAccount.name must be 'external-dns' to match the XSpokeAccess IRSA trust subject (found: $spoke_sa_name)"; FAIL=1
+fi
+if [ -f "$XSA_COMP" ]; then
+  if grep -q "system:serviceaccount:external-dns:${spoke_sa_name}" "$XSA_COMP"; then
+    echo "ok: XSpokeAccess trust subject matches spoke SA name ($spoke_sa_name)"
+  else
+    echo "FAIL: XSpokeAccess external-dns trust subject does not match spoke SA name '$spoke_sa_name'"; FAIL=1
+  fi
+fi
+
 [ "$FAIL" -eq 0 ] && echo "PASS: hub/spoke ExternalDNS filters disjoint" || echo "FAILED"
 exit "$FAIL"

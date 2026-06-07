@@ -307,6 +307,17 @@ spec:
                 forProvider:
                   region: us-east-1
                   version: "1.32"
+                  # EKS access entries are the spoke-registration trust
+                  # mechanism (XSpokeAccess AccessEntry/AccessPolicyAssociation
+                  # + the ArgoCD cluster Secret's exec-auth argocd role). The
+                  # EKS API rejects AccessEntry create/list unless the cluster's
+                  # authenticationMode is API or API_AND_CONFIG_MAP — the EKS
+                  # default is CONFIG_MAP, which silently blocks the entire
+                  # hub->spoke GitOps path (auto-012). Set API_AND_CONFIG_MAP
+                  # (a non-destructive superset of the default; the upgrade from
+                  # CONFIG_MAP is a one-way but in-place EKS operation).
+                  accessConfig:
+                    authenticationMode: API_AND_CONFIG_MAP
                   # roleArnSelector resolves the control-plane role by
                   # matching the labels we set via patches below.
                   roleArnSelector:

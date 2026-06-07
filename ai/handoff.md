@@ -8,6 +8,108 @@ last, the current state, and the next concrete steps. Keep it factual
 
 ## NEW SESSION QUICKSTART (read this first)
 
+> **[auto-012 — 2026-06-07 — SUPERSEDES auto-011 below.]** Full detail:
+> `run-summary-auto-012.md` + `docs/open-issues.md` (OI-2026-06-07-1..5) + PR #165.
+>
+> **⚠️ AWS ACCOUNT EXPIRED — the `596430611165` account auto-012 ran on is GONE.**
+> The next session gets a FRESH account (normal §8.4 rotation): all auto-012 LIVE
+> state (the spoke cluster, the ArgoCD spoke registration, the RDS instance, the
+> out-of-band IAM/SG/subnet changes) is destroyed. **What survives is the CODE in
+> PR #165** (durable fixes + tests). The next session REBUILDS 0→1→3→5 on the fresh
+> account; because PR #165's fixes are in the code path, the 8-link blocker chain
+> below will not recur. Reminders: kube-API is private-CA blocked from the sandbox —
+> `kube-diagnose` workflow (read-only) + AWS API for reads; the **in-cluster ArgoCD
+> server** (REST `/api/v1/clusters`, `argocd app sync/patch-resource`,
+> `argocd app actions run … restart`) + terraform apply for writes; NEVER sandbox
+> kubectl (AGENTS §6.26/§6.27 + retro 2026-06-07-165 AGENTS-MD-66a8a93ecf).
+>
+> **PR #165 status:** OPEN at account expiry; carries all 8 durable fixes + tests.
+> The chainsaw-verify gate was mid-dispatch when the account died — on the fresh
+> account, re-dispatch `chainsaw.yml` for HEAD, confirm green, then merge so the
+> rebuild includes the fixes.
+>
+> **What auto-012 did (PR #165, branch `claude/k8s-platform-phase3-5-m9evX`):**
+> The inherited "just finish spoke registration" was understated — phase-3 had an
+> 8-link chain of failing-closed blockers, all now fixed (durable code + live):
+> 1. spoke EKS `authenticationMode` CONFIG_MAP→**API_AND_CONFIG_MAP** (AccessEntries).
+> 2-3. crossplane IAM policy missing `iam:Tag/UntagOpenIDConnectProvider`,
+>    `iam:UpdateAssumeRolePolicy`, `iam:GetRolePolicy` (live policy v2→v3).
+> 4. hub→spoke EKS-API **security-group** ingress 443 (mgmt node SG → spoke cluster SG).
+> 5. ArgoCD **application-controller SA** was missing the IRSA role-arn annotation
+>    (only server had it) → all spoke syncs failed `argocd-k8s-auth exit 20`. Fixed
+>    in `helm.tf` + applied (mgmt apply 27078501716).
+> 6. `platform-spoke` AppProject missing cluster-scoped `IngressClass`.
+> 7. shared-VPC ELB **subnets** not tagged `kubernetes.io/cluster/k8-platform-services`
+>    → spoke cloud-provider couldn't place the ingress NLB. Tagged live.
+>
+> **(auto-012 verified end-to-end on the now-expired account before it died:**
+> spoke registered, XSpokeAccess Ready=True, `https://hello.platform.<domain>` → 200
+> with the ACM wildcard chain, RDS `available` + `keycloak-db` connection Secret
+> published. That live proof is gone with the account; the rebuild reproduces it.)
+>
+> **DECISIONS RECORDED (apply these in the rebuild):** ADR
+> `docs/decisions/0005-eso-for-lightweight-secrets-xplatformsecret-for-aws-grade.md`
+> — ESO (`PushSecret`+`ExternalSecret`, `generatorRef`) is the default for secret
+> movement/generation in EVERY cluster; `XPlatformSecret` is reserved for
+> AWS-resource-grade secret management (KMS/replica/policy/tags); **do NOT retrofit
+> working XPlatformSecret usages** (forward-looking only). OI-2026-06-07-1..5
+> resolutions are folded into the tasks below.
+>
+> **═══ EXPLICIT TASKS FOR THE NEW SESSION (run AFTER the fresh AWS account is up) ═══**
+>
+> **⚠️ TEST DISCIPLINE — READ FIRST, APPLIES THROUGHOUT (OI-2026-06-07-6).** A static
+> `yq`/`grep` assertion is a LINT, not a test — it never catches "we told the platform
+> to create X but X was never actually created / doesn't work." That blind spot caused
+> ALL 8 auto-012 blockers (found live, serially, only when a dependent tripped). So:
+> **verify what you built, at the moment you build it — every time, coupled to the
+> change, NOT on a schedule.** Every create step (claim/XR, IAM role/policy, helm
+> release, ConfigMap/Secret, ArgoCD cluster registration, DNS record) is immediately
+> followed — as part of that same step — by a real-cloud/cluster existence+function
+> check against the REAL cluster (real Crossplane under the real IRSA role), using the
+> `crossplane-claim-verify` skill at every claim and AWS-API / ArgoCD-API checks for
+> the rest. If the resource didn't actually build, the step is NOT done. A static
+> `yq`/`grep` "unit test" is a lint, not a test of behaviour; a green kind chainsaw is
+> a syntax/render pre-flight, NOT evidence the thing builds. Do NOT defer real
+> verification to a "nightly" or a gate that runs later — that decoupling is the bug
+> that caused all 8 auto-012 blockers. Also add a hub→spoke integration test
+> (provision→register→hello 200→Keycloak-on-RDS) and close the `[mgmt] e2e-verify`
+> gaps (BOTH ArgoCD SAs, spoke registration, subnet tags, SG reachability). See
+> OI-2026-06-07-6 for the full rationale.
+>
+> Do these in order; (1) gates everything else.
+> 1. **Bring up the fresh account + merge PR #165.** Rebuild phases 0→1, then the
+>    phase-3 cluster. Re-dispatch `chainsaw.yml` for PR #165 HEAD, confirm green,
+>    merge #165 (its 8 fixes are prerequisites for a clean spoke bring-up).
+> 2. **OI-2026-06-07-2 — make per-cluster facts + ESO part of the cluster XRD.**
+>    Extend the **`XPlatformCluster`** abstraction (XRD/composition + its
+>    provisioning path) so every cluster it creates ships:
+>    (a) a **per-cluster ConfigMap** carrying cluster facts (domain, region, ACM cert
+>        ARN, external-dns role ARN) that the add-ons read FROM — stop threading
+>        these through per-app Helm `valuesObject` overlays;
+>    (b) an **ESO install + IRSA-backed `ClusterSecretStore`** (AWS Secrets Manager)
+>        on the cluster. ESO is a baseline component in EVERY cluster (hub + spokes),
+>        not hub-only (ADR 0005).
+>    Then rework `spoke-*` apps to source those values from the ConfigMap; make the
+>    `hello` workload AWS-agnostic (no ARNs/region — at most a hostname from the
+>    ConfigMap). This removes the bootstrap-selfHeal-vs-overlay conflict entirely, so
+>    bootstrap stays fully auto-sync/self-heal (no pausing).
+> 3. **OI-2026-06-07-1 — `platform-spoke` ArgoCD cluster Secret via plain ESO.**
+>    Enable the EKS Cluster MR's connection secret → ESO `PushSecret` → Secrets
+>    Manager → `ExternalSecret` with `target.template` assembling the cluster-secret
+>    `config` (caData-in-JSON). NOT provider-kubernetes, NOT XPlatformSecret (ADR 0005).
+> 4. **OI-2026-06-07-5 — cross-cluster Keycloak DB secret via plain ESO.** Hub
+>    `PushSecret` (`keycloak-db` → SM) → spoke `ExternalSecret` → spoke `keycloak` ns
+>    (chart's `existingSecret`). Depends on task 2's spoke-side ESO.
+> 5. **OI-2026-06-07-3 — durable subnet tags.** In `terraform/base`, tag the
+>    `kubernetes.io/role/elb` + `internal-elb` subnets
+>    `kubernetes.io/cluster/<name>=shared` for every cluster the VPC hosts.
+> 6. **OI-2026-06-07-4 — durable hub→spoke SG rule.** Add a `SecurityGroupIngressRule`
+>    MR (443) to the platform-cluster Composition; mgmt SG from the extended
+>    `cluster-network` EnvironmentConfig.
+> 7. Verify end-to-end on the fresh account: hello 200 + Keycloak boots against RDS.
+> All five OI entries in `docs/open-issues.md` carry the same resolutions + the
+> "implement in a new session" note.
+
 > **[auto-011 — 2026-06-06/07 — SUPERSEDES auto-010 below.]** Full detail:
 > `run-summary-auto-011.md` + `decisions/auto-011-*` + `retrospective/2026-06-…`.
 >

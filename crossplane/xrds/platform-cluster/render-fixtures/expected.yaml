@@ -63,6 +63,8 @@ metadata:
   namespace: default
 spec:
   forProvider:
+    accessConfig:
+      authenticationMode: API_AND_CONFIG_MAP
     region: us-east-1
     roleArnSelector:
       matchControllerRef: true
