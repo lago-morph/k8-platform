@@ -13,6 +13,11 @@ iam:CreateOpenIDConnectProvider
 # CreateOpenIDConnectProvider-with-tags fails closed without Tag*. Observed
 # live as "AccessDenied ... iam:TagOpenIDConnectProvider" at spoke-access sync.
 iam:TagOpenIDConnectProvider
+# auto-012: XSpokeAccess external-dns Role trust policy is rebuilt from the
+# late-bound spoke OIDC issuer (UpdateAssumeRolePolicy); its inline RolePolicy
+# is observed via GetRolePolicy each reconcile. Both failed closed live.
+iam:UpdateAssumeRolePolicy
+iam:GetRolePolicy
 secretsmanager:GetSecretValue
 secretsmanager:DescribeSecret
 # Phase 3 (docs/decisions/0003): the XPlatformCluster Composition

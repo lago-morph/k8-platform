@@ -63,6 +63,14 @@ resource "aws_iam_policy" "crossplane_aws" {
           "iam:CreateRole", "iam:DeleteRole",
           "iam:AttachRolePolicy", "iam:DetachRolePolicy",
           "iam:PutRolePolicy", "iam:DeleteRolePolicy",
+          # The XSpokeAccess external-dns Role's IRSA trust policy is rebuilt
+          # from the (late-bound) spoke OIDC issuer, so Crossplane must be able
+          # to UPDATE the assume-role policy after create; and its inline
+          # RolePolicy is observed via GetRolePolicy before each reconcile.
+          # Both fail closed without these (auto-012): observed live as
+          # "AccessDenied iam:UpdateAssumeRolePolicy" (Role Synced=False) and
+          # "AccessDenied iam:GetRolePolicy" (RolePolicy never created).
+          "iam:UpdateAssumeRolePolicy", "iam:GetRolePolicy",
           "iam:GetRole", "iam:ListRolePolicies", "iam:ListAttachedRolePolicies",
           "iam:CreateOpenIDConnectProvider", "iam:DeleteOpenIDConnectProvider",
           "iam:GetOpenIDConnectProvider",
