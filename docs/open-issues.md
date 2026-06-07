@@ -11,6 +11,39 @@ is the sequence number for that date.
 
 ---
 
+## Status index (updated 2026-06-07, auto-012)
+
+**OPEN / actionable:**
+
+| ID | One-line | Note |
+|----|----------|------|
+| OI-2026-06-07-1 | ArgoCD cluster Secret durable form | decided (ADR 0005); implement new session |
+| OI-2026-06-07-2 | cluster facts + ESO into the cluster XRD | decided (ADR 0005); implement new session |
+| OI-2026-06-07-3 | shared-VPC subnet tags | decided; implement new session |
+| OI-2026-06-07-4 | hub→spoke SG rule durable form | decided; implement new session |
+| OI-2026-06-07-5 | cross-cluster Keycloak DB secret | decided (ADR 0005); implement new session |
+| OI-2026-06-06-3 | XDatabase `<xr>-master` secret not GC'd on delete | open, low-severity cleanup |
+| OI-2026-06-05-6 | can't create/modify `.github/workflows` here | environmental; workaround = jentic Contents-PUT |
+| OI-2026-06-05-2 | `charts.crossplane.io` 403 on the runner | mitigated (vendored); root cause still hypothesis |
+| OI-2026-05-28-1 (Issue A) | chainsaw `composition-drift` first-scenario timeout | hypothesis-level; Issue B resolved |
+
+**RESOLVED (kept for the rationale record):**
+
+| ID | One-line | Resolved by |
+|----|----------|-------------|
+| OI-2026-06-05-5 | ArgoCD unreachable from sandbox | `*.management` ACM cert (auto-007 #149) — **re-confirmed reachable this session** (argocd login + healthz 200) |
+| OI-2026-06-05-3 | provider-family-aws install race | #156 — **re-confirmed this session** (providers healthy, XSpokeAccess MRs reconciled) |
+| OI-2026-06-05-4 | v2.5.0 family-provider Deployment label | provisioner no longer depends on the label — confirmed this session |
+| OI-2026-06-06-2 | mgmt provider bootstrap deadlock | #156 — **re-confirmed this session** (12 crossplane pods healthy, all AWS MRs reconciled) |
+| OI-2026-06-06-1 | `crossplane render` floating `:stable` | #153 (version pin) |
+| OI-2026-06-05-1 | `yq/awk \| grep -q` pipefail flake | here-string fix (auto-005) |
+| OI-2026-05-28-1 (Issue B + B-adjacent) | chainsaw cleanup-path / ASM trap | auto-004/005 |
+
+> Convention reminder: RESOLVED entries are retained here as the rationale record;
+> prune them once they've been stable across a couple of account rebuilds.
+
+---
+
 ## OI-2026-06-07-1 — spoke ArgoCD cluster Secret has no durable (GitOps) form
 
 **Status:** open — DECISION MADE (2026-06-07); implement in a new session (AWS account expired). See ADR `docs/decisions/0005-*` + `ai/handoff.md` task 3.
@@ -144,7 +177,7 @@ against RDS.
 
 ## OI-2026-06-05-5 — live ArgoCD sync unreachable from the Claude-Code-web sandbox
 
-**Status:** **open — environmental blocker characterized, not a code bug.**
+**Status:** **RESOLVED** — fixed by the dedicated `*.management.<domain>` ACM cert (auto-007 #149) and **re-confirmed this session (2026-06-07, auto-012)**: `argocd login` + `/healthz` 200 worked from the sandbox throughout the run. (Kept for the rationale record.)
 **Surfaced:** 2026-06-05, auto-007. Needed to sync `platform-cluster-claim` to
 provision the phase-3 platform EKS cluster.
 
@@ -399,7 +432,7 @@ crossplane` exists today, so OCI was not an option.
 
 ## OI-2026-06-05-3 — provider-family-aws install races the package manager on fresh Crossplane
 
-**Status:** **RESOLVED** (fix landed; pending live re-confirmation on the re-run).
+**Status:** **RESOLVED** (fix #156) — **live re-confirmed this session (2026-06-07, auto-012)**: all AWS child providers healthy, XSpokeAccess + XDatabase MRs reconciled on the rebuilt cluster.
 **Surfaced:** 2026-06-05 auto-005 — management `apply-and-verify` run
 27023573285 (branch ref, vendored-chart fix applied) failed at
 `terraform_data.crossplane_aws_provider` (helm.tf:232):
@@ -550,7 +583,7 @@ in the sandbox (CI already does).
 
 ## OI-2026-06-06-2 — mgmt provider bootstrap: every AWS provider revision stuck `HEALTHY=False` with no runtime Deployment; two `provider-family-aws` Provider objects from one package
 
-**Status:** **fix refined (orphan cleanup), re-validating** — Option A (rename +
+**Status:** **RESOLVED** — **live re-confirmed this session (2026-06-07, auto-012)**: 12 crossplane-system pods healthy, single `provider-family-aws`, all AWS MRs reconciled. Original fix: Option A (rename +
 ordering + diagnostics) on branch `fix/auto-009-mgmt-provider-sa` passed Round-1
 adversarial review (all accept-with-amendment). Live validation 1 (run
 `27055996205`) **CONFIRMED the root cause** (see "Confirmed root cause" below)
