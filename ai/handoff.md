@@ -56,6 +56,116 @@ last, the current state, and the next concrete steps. Keep it factual
 > `role_policy_arns={}` = confirmed present at `terraform/management/irsa.tf`
 > (module.irsa_argocd) — investigate if spoke registration needs a policy (carried).
 
+---
+
+### ⏭ NEXT PHASE (proposed, assessed-feasible, NOT yet implemented) — give the sandbox direct `kubectl`
+
+**Goal.** Let this sandbox run `kubectl` against the cluster API directly, instead of
+going through the `kube-diagnose` CI workflow + the ArgoCD REST API for every live
+read. Tighter inner loop. Wanted **for every cluster we create** (hub + spokes), so
+the plumbing belongs in the `XPlatformCluster` Composition, not a one-off on the hub.
+
+**Why it's blocked today (the real constraint, confirmed against our config).** Our
+EKS endpoints are *already public* (`cluster_endpoint_public_access = true` on the
+hub in `terraform/management/eks.tf`; `endpointPublicAccess: true` in the cluster
+Composition). So network reach is **not** the problem. TLS is: the Anthropic egress
+gateway verifies the *upstream* server certificate against **public** roots, and the
+EKS API server always presents a cert signed by the cluster's **private** CA → every
+direct kube-API call 503s. (Trusting the gateway's own MITM CA fixes only the
+sandbox→gateway leg; the gateway→EKS leg still fails.) This is the exact reason
+ArgoCD needed a public ACM cert on its NLB before the sandbox could reach it.
+
+```mermaid
+flowchart LR
+    SB[Sandbox kubectl] --> GW[Egress gateway checks cert vs public roots]
+    GW -. blocked: EKS serves a private-CA cert .-> EKS[EKS API server]
+    GW --> FRONT[Public-cert front: ACM proxy or SSM tunnel]
+    FRONT --> EKS
+    classDef bad fill:#f8d7da,stroke:#cc3333;
+    classDef good fill:#cde6cd,stroke:#33aa66;
+    class EKS bad;
+    class FRONT good;
+```
+
+#### The two approaches, assessed
+
+**Approach B — give each cluster's API a publicly-trusted cert (the preferred
+option): NOT FEASIBLE on EKS.** The API-server serving certificate is part of the
+AWS-managed control plane. EKS exposes no knob to replace it with an ACM/public
+cert, and no way to attach a custom domain to the managed `*.eks.amazonaws.com`
+endpoint. Making the endpoint public (already done) does not change the cert. The
+only way to present a publicly-trusted cert for the kube API is to put something *in
+front* of it — which is Approach A. (A self-managed control plane — kops/kubeadm —
+could set the apiserver cert, but moving off managed EKS is a non-starter.)
+
+**Approach A — a non-cluster AWS resource that fronts the API with a public cert:
+FEASIBLE.** The pattern is already proven by ArgoCD, and two building blocks for
+"all clusters" already exist: the per-cluster DNS-validated **ACM cert the
+Composition already mints** (`*.platform.<domain>` + its `CertificateValidation`)
+and the Route53 zone. The catch is *which* front-end: `kubectl` is not only
+request/response — it also does long-lived watches and **bidirectional connection
+upgrades** for `exec`/`port-forward`/`attach` — so the choice decides how much of
+kubectl actually works.
+
+| Front-end (non-cluster AWS resource) | Public-cert source | kubectl coverage | Compute footprint | Main risk |
+|---|---|---|---|---|
+| **Lambda function URL** (the example given) | auto AWS public cert | plain CRUD only (`get`/`apply`/`delete`); **`exec`/`port-forward` break**; 15-min + payload caps | serverless | streaming/upgrade limits make it a partial kubectl |
+| **NLB with a TLS listener** (ACM public cert) → EKS endpoint | our ACM cert | **full kubectl** (L4 passthrough forwards the raw stream, so HTTP/2 + websockets + SPDY all work) | none (pure AWS resource) | the EKS endpoint is AWS-managed IPs behind a DNS name; NLB targets are IPs → needs an IP-refresh mechanism |
+| **Small reverse proxy** (nginx/haproxy on Fargate) behind NLB+ACM | our ACM cert | full kubectl, proxies by DNS (no IP problem) | a small standing service (still non-cluster) | one always-on component to run/patch |
+| **SSM Session Manager port-forward tunnel** (not named, strong) | the AWS `ssmmessages` endpoint's public cert | **full kubectl** — raw TCP tunnel; kubectl does real end-to-end TLS to the apiserver and **verifies the real cluster CA, no cert substitution** | a tiny SSM-registered instance per VPC | does the egress gateway permit the SSM data-channel **websocket**? (short `aws` calls already pass; a long-lived websocket is untested) |
+
+#### Recommendation (this is opinion, not a settled decision)
+
+Two finalists. If you want **zero standing compute** and only need CRUD-ish kubectl,
+the **NLB TLS-passthrough** is the cleanest pure-AWS-resource path — but solve the
+IP-target refresh. If you want **full kubectl** (`exec`/`port-forward`/`logs -f`)
+with the least cert fuss, the **SSM port-forward tunnel** is the most elegant
+(kubectl verifies the real cluster CA; nothing internet-facing is added) — but it
+must pass a one-time gateway-websocket test first. Lambda is the weakest finalist
+(no `exec`/`port-forward`).
+
+#### Validate before building it "for all clusters"
+
+First step is a **throwaway proof on the existing hub** that the chosen mechanism's
+TLS/handshake passes the egress gateway and that `kubectl get nodes` returns —
+*before* wiring it into the Composition. For SSM: stand up one SSM-managed instance,
+try `aws ssm start-session ... AWS-StartPortForwardingSessionToRemoteHost
+host=<eks-endpoint> portNumber=443 localPortNumber=8443` from the sandbox, point
+kubeconfig at `https://localhost:8443`. For NLB: one NLB + the ACM cert + a target
+group at the hub endpoint. The gateway-websocket question is the single thing that
+decides SSM-vs-NLB, so test it first.
+
+#### Needed regardless of mechanism
+
+- **Auth.** kubectl still needs a valid token: the sandbox has AWS creds, runs
+  `aws eks get-token`, and the cluster needs an **EKS access entry** for the
+  sandbox's IAM identity (`user/cloud_user`) with read RBAC — the same access-entry
+  work already tracked for the CI identity (FINAL-PLAN §14.2 / owner-decision #2).
+- **Security tradeoff.** A public-cert proxy adds an internet-facing kube-API
+  surface — restrict it with the EKS public-access CIDR allowlist (to the gateway
+  egress IPs, if they're stable) on top of IAM/access-entry auth. The **SSM tunnel
+  adds no public listener** (IAM-gated, nothing inbound) — strictly better on this
+  axis, another point in its favour.
+- **"For all clusters."** Fold the chosen resource into the `XPlatformCluster`
+  Composition next to the ACM `Certificate` it already provisions, so every hub and
+  spoke gets it automatically.
+
+#### Effort (descriptive, not hours)
+
+Approach B is ruled out, so no work there. Approach A is a small, self-contained
+build on top of existing AWS primitives plus the ACM cert the Composition already
+mints: the **SSM-tunnel** variant is mostly configure-existing (one SSM instance +
+IAM + a kubeconfig helper); the **NLB** variant is mostly AWS wiring plus the
+IP-refresh wrinkle. The gateway-websocket spike that picks between them is a single
+short throwaway test.
+
+**If A's validation fails** (gateway blocks the SSM websocket *and* the NLB
+IP-target proves too fragile): keep today's working path — `kube-diagnose` workflow
+for kube reads + the ArgoCD REST API — and treat direct sandbox kubectl as
+not-worth-the-cost.
+
+---
+
 > **[auto-012 — 2026-06-07 — SUPERSEDES auto-011 below.]** Full detail:
 > `run-summary-auto-012.md` + `docs/open-issues.md` (OI-2026-06-07-1..5) + PR #165.
 >
