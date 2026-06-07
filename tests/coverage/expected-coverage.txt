@@ -1,0 +1,14 @@
+acm.aws.m.upbound.io/Certificate
+acm.aws.m.upbound.io/CertificateValidation
+eks.aws.m.upbound.io/AccessEntry
+eks.aws.m.upbound.io/AccessPolicyAssociation
+eks.aws.m.upbound.io/Cluster
+eks.aws.m.upbound.io/NodeGroup
+external-secrets.io/ExternalSecret
+iam.aws.m.upbound.io/OpenIDConnectProvider
+iam.aws.m.upbound.io/Role
+iam.aws.m.upbound.io/RolePolicy
+iam.aws.m.upbound.io/RolePolicyAttachment
+rds.aws.m.upbound.io/Instance
+route53.aws.m.upbound.io/Record
+secretsmanager.aws.m.upbound.io/Secret

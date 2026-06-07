@@ -1,0 +1,26 @@
+# Version-independence fixture (v1beta1). Paired with comp-v1beta2.yaml: the two
+# differ ONLY in the apiVersion version segment. derive-coverage.sh must yield
+# byte-identical group/kind keys for both (FINAL-PLAN §4.5: a v1beta1->v1beta2
+# provider bump must NOT change the key). Minimal, synthetic — not a real comp.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: fixture-version-bump
+spec:
+  mode: Pipeline
+  pipeline:
+    - step: render
+      functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+          - name: role
+            base:
+              apiVersion: iam.aws.m.upbound.io/v1beta1
+              kind: Role
+          - name: secret
+            base:
+              apiVersion: secretsmanager.aws.m.upbound.io/v1beta1
+              kind: Secret
