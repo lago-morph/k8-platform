@@ -18,6 +18,12 @@ contradict them.
 > skill. (Canonical AI-to-AI artifacts — specs, ADRs, normalized pipeline output —
 > are the exception: produce those in canonical form.)
 
+> **Use subagents to preserve context and to optimize speed** — delegate delegable
+> subtasks and pick each subagent's model for the task (fast models for mechanical
+> work, stronger models for hard reasoning), per the
+> [`model-aware-dispatch`](.claude/skills/model-aware-dispatch/SKILL.md) skill.
+> Optimize via model choice, not fast mode.
+
 > **How this file is structured.** Each rule below is a 5–7 line summary. Rules
 > whose full text is longer live in one detail file per section under
 > [`.claude/agents-md/`](.claude/agents-md/); the summary links to it. The
