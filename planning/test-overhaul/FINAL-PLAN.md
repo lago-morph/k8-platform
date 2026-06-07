@@ -3,15 +3,33 @@
 > **Status: PLAN ONLY.** This document creates and edits no code, tests,
 > fixtures, or workflows. It is the authoritative finalization of a multi-round
 > process: 3 source plans → 9 round-1 reviews → `synthesis/SYNTHESIZED-PLAN.md`
-> → 5 round-2 adversarial reviews (`reviews-round2/r2-{sre,security,devx,k8s-expert,qa-guru}.md`)
-> → two constraint corrections (`CONSTRAINT-CORRECTION.md` = workflows are editable;
-> `CONSTRAINT-CORRECTION-2.md` = the verification trigger is the BUILD, not CI, and
-> cluster tests are `workflow_dispatch`-only). It folds every round-2 CRITICAL and
-> both constraint corrections into one spec. Where reviewers disagreed, this document
-> picks and justifies.
+> → 5 round-2 adversarial reviews → two constraint corrections
+> (`CONSTRAINT-CORRECTION.md` = workflows are editable;
+> `CONSTRAINT-CORRECTION-2.md` = cluster work is `workflow_dispatch`-only, never
+> push/PR) → 5 round-3 adversarial reviews
+> (`reviews-round3/r3-{sre,security,devx,k8s-expert,qa-guru}.md` — authoritative).
+> It folds every round-3 CRITICAL into one spec. Where reviewers disagreed, this
+> document picks and justifies.
+>
+> **Round-3 reframed the execution model and it is now correct against the tree.**
+> All five round-3 reviewers independently grounded the same decisive fact: there
+> is **no build executor separate from CI.** The bring-up IS
+> `terraform-test.yml action=apply-and-verify` — a `workflow_dispatch` (manual)
+> GitHub Actions run that reaches the kube-API via `aws eks update-kubeconfig` on
+> the runner (terraform-test.yml:90,329) under the admin AWS keys (:41-43). The
+> earlier "build ≠ CI" framing (correction #2 as prose) **had no referent and is
+> deleted.** The two — and only two — real Actions surfaces are: **(a) push/PR
+> (automatic) = STATIC, no-cluster checks only; (b) `workflow_dispatch` (manual) =
+> the apply-and-verify job + ad-hoc runs, where the full live suite runs as a STEP
+> added to the apply-and-verify job in `terraform-test.yml`.** This still satisfies
+> correction #2 (cluster work is `workflow_dispatch`-only, never push/PR). Because
+> the live surface is therefore a *manual* dispatch, "on by default" cannot rest on
+> a UI dropdown default; it is made mechanical by a **fail-closed live-evidence
+> gate** on push/PR (below) — the round-3 spine fix.
 >
 > Every load-bearing repo claim here was re-verified against the tree this
-> session (file:fact cited inline). Author: lead test architect.
+> session (file:fact cited inline; note `compute-gates.sh` lives at
+> `.github/scripts/compute-gates.sh`). Author: lead test architect.
 
 ---
 
@@ -29,18 +47,89 @@ skips and reads green*.
 
 **The spine (non-negotiable, survives verbatim).** Behavioral verification by
 **driving the REAL Crossplane provider controller under its real IRSA identity**
-(`source: IRSA`), with create-and-verify **coupled to the change** — meaning
-coupled to the **build/bring-up that applies the change**, not to a PR/commit check
-— **on by default** (the bring-up procedure itself invokes the suite), where
-**all-skipped ⇒ RED**. Cost split: **after-the-fact** read-only
+(`source: IRSA`), with create-and-verify **coupled to the change**, **on by
+default**, where **all-skipped ⇒ RED**. "On by default" and "coupled to the
+change" are now made **MECHANICAL by a fail-closed live-evidence gate** (see
+below), not by a UI dropdown default. Cost split: **after-the-fact** read-only
 checks for the expensive standing things (EKS ~20 min, RDS), **instantiate-and-
 verify** for the cheap hermetic things. A hard **security NON-GOAL**: no new
 AssumeRole principal, no trust-policy widening, no provider-SA token mount, no
 probe pod. Reuse existing assets: `crossplane-claim-verify` (after a mandatory
-v2 port), `scripts/wait-for-claim.sh`, `scripts/irsa_trust_validator.py`,
-chainsaw per-run-ID prefix + cleanup.
+v2 port), `scripts/wait-for-claim.sh` (top-level readiness wait **only** — it
+descends nothing; the v2-ported claim-verify Phase 3 is the sole composed-MR
+enumerator), `scripts/irsa_trust_validator.py`, chainsaw per-run-ID prefix +
+cleanup.
 
-**What round-2 corrected (the ten things that change the plan).**
+**The "on by default" spine, made mechanical — the FAIL-closed live-evidence gate
+(the round-3 centerpiece).** Because the only live surface is a *manual*
+`workflow_dispatch` of `terraform-test.yml action=apply-and-verify`, a UI dropdown
+default cannot guarantee "every bring-up." The enforcement that makes "on by
+default" and "coupled to the change" mechanical is **a push/PR static gate that
+FAILS (not WARN) unless an unforgeable, fresh live-evidence record exists** for the
+`(deployed-config-SHA × account-id × cluster-name)` triple. This single mechanism
+resolves three round-3 criticals together — (i) "build≠CI is empty," (ii) "on by
+default = a UI default with no teeth," and (iii) **config-only GitOps changes get
+ArgoCD-synced to the live cluster with no apply-and-verify and thus no
+verification.** Round-2→round-3 wrongly demoted this gate to WARN; it is **restored
+to FAIL** (and §18 is corrected: that demotion *did* weaken on-by-default). Four
+interlocking parts:
+1. **The gate (push/PR, FAIL-closed).** Evidence is a GitHub Actions **run-ID
+   cross-check**: the push gate calls the Actions API (the repo's existing
+   `.github/workflows/chainsaw-verify.yml` pattern) to confirm an `apply-and-verify`
+   run for the deployed-config SHA **exists**, has `conclusion=success`, ran against
+   **this account-id and cluster-name**, and is **newer than the account's
+   bootstrap**. It is **not** a self-attested committed marker an engineer can
+   hand-write. No fresh green run for the `(SHA × account × cluster)` triple ⇒ the
+   push gate is **RED**. This is the *only* place "the suite never ran" can be turned
+   red — it lives **outside** the suite, so a non-invoked suite (a `verify`-only or
+   bare-`apply` dispatch, a crash before the final phase, a config-only ArgoCD sync)
+   is caught.
+2. **Config-only GitOps changes are first-class, not a footnote.** A PR that edits
+   `crossplane/**` / `policies/**` (the exact auto-012 change shape — a
+   Composition/IAM/tag edit ArgoCD will sync to the live hub with **no**
+   apply-and-verify dispatch) FAILS the same gate unless fresh green live-evidence
+   exists for the resulting config-SHA. This closes the hole where a config-only
+   change reconciles onto the live cluster verified by nothing. The first apply for
+   a fresh/rotated account has no prior marker by construction: that is treated as
+   `expect-full`-from-git (RED, "run the build"), never green-by-absence.
+3. **On-by-default teeth inside the job:** the live-verify step is gated on
+   `mgmt_apply` (not only `mgmt_verify`), so **any management apply triggers verify**
+   — a bare `action=apply` can no longer bring up the cluster with zero verification.
+   The build's success is gated on the suite's **exit code** (a static lint forbids
+   `tests/live/run.sh || true`, backgrounding, or an `if:` that can silently exclude
+   the step — AGENTS §6.19). A `verify`-only (readonly) dispatch still applies the
+   `expect-full` floor, so it cannot read green having verified nothing.
+4. **The marker's integrity contract (so the gate is not itself self-attested):**
+   the run-ID is machine-emitted by the apply-and-verify step **only on the §4.4
+   clean-pass exit code** (never on `exit 2` skip / `exit 3` expect-full violation /
+   all-skip), keyed on `(SHA × account-id × cluster-name)`, and validated by the
+   push gate against the live Actions API — provenance, not free text.
+
+**What round-3 corrected (the spine fixes that change the plan).** These
+supersede the round-2 framing where they conflict.
+
+- **R3-A. "Build ≠ CI" is deleted; the execution model is two real Actions
+  surfaces.** The bring-up IS `terraform-test.yml action=apply-and-verify`, a
+  `workflow_dispatch` run (verified: terraform-test.yml:24; reaches the cluster via
+  `aws eks update-kubeconfig` on the runner :329). There is no non-CI build
+  executor (`grep` finds no `apply-and-verify.sh`/`bring-up.sh`/`verify-platform.sh`
+  in `scripts/`). The live suite is a **STEP added to the apply-and-verify job**.
+  The two surfaces: **push/PR (automatic) = static, no-cluster**; **workflow_dispatch
+  (manual) = apply-and-verify + ad-hoc, the full live suite.** (§4.1)
+- **R3-B. "On by default" is made mechanical by the fail-closed live-evidence
+  gate** (§4.3) + the `mgmt_apply`-gated step + the GitOps-config trigger (exec
+  summary above). This is the spine fix and the centerpiece.
+- **R3-C. The build runs under the admin CI key — split the identity.**
+  `terraform apply` keeps admin; `tests/live/run.sh` runs under a scoped,
+  zero-wildcard, tag-conditioned verifier/reaper role; `LIVE_MODE` defaults
+  fail-closed to `readonly`. (§3.4, §4.1)
+- **R3-D. The spoke is PUBLIC** (`endpointPublicAccess: true`, platform-cluster.yaml:329);
+  CI reaches it via `aws eks update-kubeconfig` exactly as it reaches mgmt. The
+  "private-CA spoke API" residual is mis-diagnosed and removed; spoke verification
+  is a **post-reconcile step in the dispatch job**, not a standing watcher daemon.
+  (§10, §14)
+
+**What round-2 corrected (carried forward, still load-bearing).**
 
 1. **Identity is `source: IRSA`, NOT `InjectedIdentity`.** The synthesized plan
    was factually wrong. `crossplane/providerconfig/00-clusterproviderconfig.yaml:41`
@@ -51,18 +140,17 @@ chainsaw per-run-ID prefix + cleanup.
    `AWS_ACCESS_KEY_ID` in the provider pod env. The caller-ARN==expected check is
    **infeasible in-band** and is demoted to an optional out-of-band audit.
 2. **Workflows CAN be edited here** (via jentic Contents-PUT / `ext-github`), so the
-   "can't edit workflows" premise is removed. **But CI is NOT the trigger
-   (correction #2).** GitHub Actions runs at PR/commit time, which is DECOUPLED from
-   the actual build/bring-up — so verification is coupled to the **build**: the
-   bring-up procedure (`apply-and-verify` / cluster-creation flow, and the spoke
-   reconciliation path) **invokes `tests/live/run.sh` as its final phase**. That is
-   the real "every bring-up" guarantee. Three execution contexts, kept strictly
-   separate: **push/PR CI = static no-cluster checks only**; **build-time = the full
-   live suite, on by default, all-skipped ⇒ RED**; **`workflow_dispatch` = kind
-   render/admit + ad-hoc live runs, never auto-triggered**. Anything needing a
-   cluster (even kind) is `workflow_dispatch`-only (matches chainsaw.yml /
-   terraform-test.yml; AGENTS §6.7). **The on-every-bring-up trigger IS deliverable**
-   as a build-flow invocation. Requirement #1 is no longer at risk.
+   "can't edit workflows" premise is removed. **The live suite is a STEP in the
+   apply-and-verify job of `terraform-test.yml`** (a `workflow_dispatch` workflow),
+   landed via jentic. Two real execution surfaces (round-3 R3-A): **push/PR CI
+   (automatic) = static no-cluster checks only**; **`workflow_dispatch` (manual) =
+   the apply-and-verify job (full live suite, on by default, all-skipped ⇒ RED) AND
+   ad-hoc/kind runs**. Cluster work (even kind) is `workflow_dispatch`-only (matches
+   chainsaw.yml / terraform-test.yml; AGENTS §6.7) — satisfying correction #2.
+   "On by default" is enforced **mechanically** by the fail-closed live-evidence
+   gate, the `mgmt_apply`-gated step, and the GitOps-config trigger (§4) — not by
+   the dispatch UI default, which is advisory. Requirement #1 ships as a mechanism,
+   not a convention.
 3. **The coverage deriver must parse Pipeline-mode compositions** (MR kinds at
    `spec.pipeline[].input.resources[].base.kind`, keyed on group+kind) — verified
    working below. It ships **with a fixture-test and WARN-ONLY first**. IAM
@@ -93,9 +181,10 @@ chainsaw per-run-ID prefix + cleanup.
 
 **The recommended rollout** front-loads a **P0 spike** that proves the real
 v2/Pipeline/IRSA mechanism end-to-end *before* anything is built on it, then
-ships the visibility/enforcement scaffold, then deepens after-the-fact coverage,
+ships the visibility/enforcement scaffold (incl. the fail-closed live-evidence
+gate and the scoped verifier identity), then deepens after-the-fact coverage,
 then isolation/reaper, then the bring-up behavioral catch, then negatives + the
-spoke trigger, then hardening.
+spoke post-reconcile step, then hardening.
 
 **The one thing not to lose:** the spine above. Every operational pressure point
 below tempts a "just stand up a probe pod" or a "skip is green if unsure" climb-
@@ -138,7 +227,7 @@ the author; the "fails-for-the-right-reason" reasoning is guidance, not names.
 | Bucket | Runs where / when | Proves | Honest limit |
 |---|---|---|---|
 | **PRE-FLIGHT** (lints) | **static, no cluster** — local + push/PR CI, seconds | manifest schema-valid; kubeconform/schema; helm-template render asserts; the two-sided IAM floor/ceiling; `simulate-principal-policy` floor; coverage-manifest **parse**; `irsa_trust_validator.py` static sweep; the "live-suite is wired into the bring-up and on-by-default" invariant | fake/no cloud; admin or no identity; never evidence the thing built |
-| **BRING-UP** | **real cluster, invoked BY the build** — on by default as the final phase of `apply-and-verify` / cluster-creation, cheap (sec–min); NEVER push/PR-triggered | drive the real controller **under `source: IRSA`**; instantiate-and-verify cheap **hermetic** kinds; guard-fired negatives | mutating — needs hard isolation (§8) |
+| **BRING-UP** | **real cluster, a STEP in the apply-and-verify job** of `terraform-test.yml` (a `workflow_dispatch` run); on by default within that dispatch (gated on `mgmt_apply`), cheap (sec–min); NEVER push/PR-triggered | drive the real controller **under `source: IRSA`**; instantiate-and-verify cheap **hermetic** kinds; guard-fired negatives | mutating — needs hard isolation (§8); runs under the **scoped verifier role**, not admin (§3.4) |
 | **AFTER-THE-FACT** | real cloud, post-apply, read-only `Describe*` + convergence | the slow/standing things the bring-up already built (EKS, RDS) exist *and behave* | read-only; cannot exercise the create-path permission |
 
 Two **tags**, not tiers: `real-irsa` (the assertion depends on the restricted
