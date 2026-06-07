@@ -22,7 +22,9 @@ is the sequence number for that date.
 | OI-2026-06-07-3 | shared-VPC subnet tags | decided; implement new session |
 | OI-2026-06-07-4 | hub→spoke SG rule durable form | decided; implement new session |
 | OI-2026-06-07-5 | cross-cluster Keycloak DB secret | decided (ADR 0005); implement new session |
-| OI-2026-06-07-6 | **static assertions masquerade as tests; built resources never verified live** | **HIGH PRIORITY — fix first in the new session** |
+| OI-2026-06-07-6 | **static assertions masquerade as tests; built resources never verified live** | **HIGH PRIORITY — being addressed by the test overhaul (auto-013 P1 scaffold, #170–#176)** |
+| OI-2026-06-07-7 | test-overhaul P0-spike: `spec.crossplane.resourceRefs` on a *live* v2 XR + drive-a-claim⇒AccessDenied not yet confirmed | identity spine confirmed live (run 27085946167); needs a provisioned XR. See run-summary-auto-013.md |
+| OI-2026-06-07-8 | test-overhaul jentic workflow-integration capstone deferred (wire tests/live/run.sh into terraform-test.yml + evidence emission + push gates) | DEFERRED — must be dispatch-validated before merge; scripts ready (#171–#176). First task next session |
 | OI-2026-06-06-3 | XDatabase `<xr>-master` secret not GC'd on delete | open, low-severity cleanup |
 | OI-2026-06-05-6 | can't create/modify `.github/workflows` here | environmental; workaround = jentic Contents-PUT |
 | OI-2026-06-05-2 | `charts.crossplane.io` 403 on the runner | mitigated (vendored); root cause still hypothesis |
