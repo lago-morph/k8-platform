@@ -56,6 +56,22 @@ last, the current state, and the next concrete steps. Keep it factual
 > resolutions are folded into the tasks below.
 >
 > **═══ EXPLICIT TASKS FOR THE NEW SESSION (run AFTER the fresh AWS account is up) ═══**
+>
+> **⚠️ TEST DISCIPLINE — READ FIRST, APPLIES THROUGHOUT (OI-2026-06-07-6).** A static
+> `yq`/`grep` assertion is a LINT, not a test — it never catches "we told the platform
+> to create X but X was never actually created / doesn't work." That blind spot caused
+> ALL 8 auto-012 blockers (found live, serially, only when a dependent tripped). So:
+> **verify what you built, at the moment you build it.** Every create step (claim/XR,
+> IAM role/policy, helm release, ConfigMap/Secret, ArgoCD cluster registration, DNS
+> record) is immediately followed by a real-cloud/cluster existence+function check
+> (use the `crossplane-claim-verify` skill at every claim; AWS-API / ArgoCD-API checks
+> for the rest). A build step is not "done" until that check passes. And EARLY in this
+> run, stand up the real verification gate that's been missing: run the
+> `CHAINSAW_INCLUDE_REALAWS=1` scenarios as a phase-signoff gate, add a hub→spoke
+> integration test (provision→register→hello 200→Keycloak-on-RDS), and close the
+> `[mgmt] e2e-verify` gaps (BOTH ArgoCD SAs, spoke registration, subnet tags, SG
+> reachability). See OI-2026-06-07-6 for the full rationale.
+>
 > Do these in order; (1) gates everything else.
 > 1. **Bring up the fresh account + merge PR #165.** Rebuild phases 0→1, then the
 >    phase-3 cluster. Re-dispatch `chainsaw.yml` for PR #165 HEAD, confirm green,

@@ -22,6 +22,7 @@ is the sequence number for that date.
 | OI-2026-06-07-3 | shared-VPC subnet tags | decided; implement new session |
 | OI-2026-06-07-4 | hub→spoke SG rule durable form | decided; implement new session |
 | OI-2026-06-07-5 | cross-cluster Keycloak DB secret | decided (ADR 0005); implement new session |
+| OI-2026-06-07-6 | **static assertions masquerade as tests; built resources never verified live** | **HIGH PRIORITY — fix first in the new session** |
 | OI-2026-06-06-3 | XDatabase `<xr>-master` secret not GC'd on delete | open, low-severity cleanup |
 | OI-2026-06-05-6 | can't create/modify `.github/workflows` here | environmental; workaround = jentic Contents-PUT |
 | OI-2026-06-05-2 | `charts.crossplane.io` 403 on the runner | mitigated (vendored); root cause still hypothesis |
@@ -172,6 +173,59 @@ crossplane on the spoke). Decision needed.
 
 **Next step:** decide + implement cross-cluster delivery, then verify Keycloak boots
 against RDS.
+
+---
+
+## OI-2026-06-07-6 — static assertions masquerade as "tests"; built resources are never verified against the real cloud until a dependent fails
+
+**Status:** **open — HIGH PRIORITY; fix first in the new session.** This is the
+root-cause finding behind the entire auto-012 blocker chain.
+**Surfaced:** 2026-06-07, auto-012 (user observation).
+
+**The problem.** Almost every "test" in `tests/unit/` is a STATIC file assertion
+(`yq`/`grep` over committed YAML/terraform): "the composition has field X", "the IAM
+fixture lists action Y". These are LINTS, not tests of the built artifact. They catch
+**regressions of things a human already knew to assert** — never **discovery** that a
+thing we told the platform to create was never actually created or never actually
+works. So the whole "oops, when I told it to create something it never did" class
+(missing IAM perms → MR fails closed; wrong EKS auth mode → AccessEntry rejected;
+SA-name ≠ trust subject → AssumeRole denied; missing subnet tags → no NLB) stays
+**invisible until a downstream dependent trips over it**, live, one at a time. That
+is exactly how all 8 auto-012 blockers were found.
+
+**The principle (the fix discipline).** *Verify what you built, at the moment you
+build it.* Every step that CREATES a resource — a Crossplane claim/XR, an IAM
+role/policy, a helm release, a ConfigMap/Secret, an ArgoCD cluster registration, a
+DNS record — must be IMMEDIATELY followed by a verification that the resource actually
+exists and functions **against the real cloud/cluster**, not a static manifest
+assertion. The build step is not "done" until that verification passes. A static
+`yq` check is acceptable as a fast pre-flight lint; it is NOT the test.
+
+**The systemic fix (stand this up FIRST in the new session, before/with the rebuild):**
+1. **Run the real-AWS verification layer that already exists but is gated off.** The
+   `CHAINSAW_INCLUDE_REALAWS=1` ("REAL-AWS / NIGHTLY") scenarios actually provision
+   and verify cloud resources. They must RUN — as a phase-signoff gate (and/or a real
+   nightly on a stable account) — not sit excluded forever. Per-PR kind chainsaw stays
+   as the fast render/admit gate; the real-AWS gate is the one that catches this class.
+2. **Add a real hub→spoke integration test** (the flow with 6 of the 8 blockers):
+   provision spoke → register → `https://hello.platform.<domain>` 200 → Keycloak boots
+   against RDS. `tests/integration/` is the home (claim waits via
+   `scripts/wait-for-claim.sh`; SPEC-S7).
+3. **Use the `crossplane-claim-verify` skill at EVERY claim/XR apply** (it already
+   waits for Synced/Ready AND verifies the underlying cloud resource exists/healthy) —
+   make it a required step, not optional. For non-claim creations (IAM/helm/secret/
+   registration), do the equivalent immediate AWS-API / ArgoCD-API existence check.
+4. **Close the `[mgmt] e2e-verify` gaps** so the mgmt-stack/networking class is
+   covered: check BOTH ArgoCD SAs (server AND application-controller) carry IRSA, check
+   spoke registration `connectionState`, check shared-VPC subnet tags, check hub→spoke
+   SG reachability.
+5. `crossplane-iam-policy-completeness-audit` (proposed in retro 2026-06-07-165) is a
+   STATIC stopgap for the IAM class — useful pre-flight, but it is a proxy; #1 is the
+   real answer.
+
+**Why this is HIGH PRIORITY:** every account rebuild re-pays the cost of finding this
+class live, one dependent-failure at a time. Standing up the real verification gate
+once converts "discover live, serially" into "fail in CI, all at once."
 
 ---
 
