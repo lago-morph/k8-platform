@@ -13,7 +13,8 @@ is the sequence number for that date.
 
 ## OI-2026-06-07-1 — spoke ArgoCD cluster Secret has no durable (GitOps) form
 
-**Status:** open — live-bootstrapped this run; durable mechanism not yet authored.
+**Status:** open — DECISION MADE (2026-06-07); implement in a new session (AWS account expired). See ADR `docs/decisions/0005-*` + `ai/handoff.md` task 3.
+**Resolution:** plain ESO — enable the EKS Cluster MR connection secret → `PushSecret` → AWS Secrets Manager → `ExternalSecret` with `target.template` assembling the cluster-secret `config` (caData-in-JSON). NOT provider-kubernetes, NOT XPlatformSecret.
 **Surfaced:** 2026-06-07, auto-012, phase-3 spoke registration.
 
 **What happened:** the `platform-spoke` ArgoCD cluster Secret was created LIVE via
@@ -44,7 +45,8 @@ secret at cutover so the Object owns it.
 
 ## OI-2026-06-07-2 — registration-time ephemeral overlays fought by bootstrap selfHeal
 
-**Status:** open — design decision needed (decision brief pending).
+**Status:** open — DECISION MADE (2026-06-07); implement in a new session. See ADR `docs/decisions/0005-*` + `ai/handoff.md` task 2.
+**Resolution:** make this part of the `XPlatformCluster` XRD: every cluster ships (a) a per-cluster ConfigMap of cluster facts (domain/region/cert-ARN/external-dns-role-ARN) the add-ons read from — NOT per-app Helm overlays — and (b) ESO + an IRSA `ClusterSecretStore` (ESO baseline in every cluster). Workloads (`hello`) stay AWS-agnostic. This removes the bootstrap-selfHeal-vs-overlay conflict (no pausing bootstrap).
 **Surfaced:** 2026-06-07, auto-012.
 
 **What happened:** the spoke apps (`spoke-hello`, `spoke-ingress-nginx`,
@@ -76,7 +78,7 @@ committed to satisfy bootstrap. This is the auto-008 "finalize live" gap.
 
 ## OI-2026-06-07-3 — shared-VPC subnets not tagged for the spoke cluster (LB + general)
 
-**Status:** open — tagged live this run; durable terraform form pending.
+**Status:** open — DECISION MADE (2026-06-07, concur with recommendation); implement in a new session. See `ai/handoff.md` task 5. (The live tag is gone with the expired account.)
 **Surfaced:** 2026-06-07, auto-012, spoke ingress-nginx NLB never provisioned.
 
 **What happened:** mgmt + spoke share VPC `vpc-…`. The ELB-role subnets are tagged
@@ -99,7 +101,7 @@ spoke tag). Base does not currently know spoke cluster names — a small list/va
 
 ## OI-2026-06-07-4 — hub→spoke EKS-API security-group rule has no durable form
 
-**Status:** open — added live this run; durable composition/terraform form pending.
+**Status:** open — DECISION MADE (2026-06-07, concur with recommendation); implement in a new session. See `ai/handoff.md` task 6. (The live rule is gone with the expired account.)
 **Surfaced:** 2026-06-07, auto-012.
 
 **What happened:** the hub ArgoCD app-controller (mgmt node SG `sg-…`) could not
@@ -117,7 +119,8 @@ from an extended `cluster-network` EnvironmentConfig).
 
 ## OI-2026-06-07-5 — phase-5 RDS connection secret is hub-local; Keycloak runs on the spoke
 
-**Status:** open — RDS + secret verified on hub; cross-cluster delivery undesigned.
+**Status:** open — DECISION MADE (2026-06-07); implement in a new session. See ADR `docs/decisions/0005-*` + `ai/handoff.md` task 4.
+**Resolution:** plain ESO cross-cluster — hub `PushSecret` (`keycloak-db` → Secrets Manager) → spoke `ExternalSecret` → spoke `keycloak` ns. Depends on the spoke-side ESO + `ClusterSecretStore` from OI-2026-06-07-2 / ADR 0005. NOT XPlatformSecret.
 **Surfaced:** 2026-06-07, auto-012, phase-5.
 
 **What happened:** the `keycloak-db` XDatabase XR is processed by the HUB crossplane
