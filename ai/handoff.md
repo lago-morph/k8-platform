@@ -18,8 +18,8 @@ last, the current state, and the next concrete steps. Keep it factual
 > apply for writes. NEVER sandbox kubectl.
 >
 > **What auto-012 did (PR #165, branch `claude/k8s-platform-phase3-5-m9evX`):**
-> The inherited "just finish spoke registration" was understated — phase-3 had a
-> 7-link chain of failing-closed blockers, all now fixed (durable code + live):
+> The inherited "just finish spoke registration" was understated — phase-3 had an
+> 8-link chain of failing-closed blockers, all now fixed (durable code + live):
 > 1. spoke EKS `authenticationMode` CONFIG_MAP→**API_AND_CONFIG_MAP** (AccessEntries).
 > 2-3. crossplane IAM policy missing `iam:Tag/UntagOpenIDConnectProvider`,
 >    `iam:UpdateAssumeRolePolicy`, `iam:GetRolePolicy` (live policy v2→v3).
@@ -33,7 +33,7 @@ last, the current state, and the next concrete steps. Keep it factual
 >
 > **✅ SPOKE REGISTERED + ADD-ONS CONVERGED.** `platform-spoke` ArgoCD cluster
 > `connectionState: Successful`; XSpokeAccess XR Ready=True (OIDC/IRSA/AccessEntry);
-> ingress-nginx + external-dns + hello all Healthy on the spoke.
+> ingress-nginx + external-dns + hello all Healthy; **https://hello.platform.<domain> returns 200 with the valid *.platform.<domain> ACM chain (3/3)**. (8th link: external-dns chart SA was `spoke-external-dns` but the IRSA trust subject is `external-dns` — pinned serviceAccount.name.)
 >
 > **✅ PHASE-5 RDS LIVE.** crossplane policy had **zero rds:\*** (live policy v4 adds
 > them). `keycloak-db` XDatabase XR Ready=True; RDS Postgres `available`; connection

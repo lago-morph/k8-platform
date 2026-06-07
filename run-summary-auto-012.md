@@ -17,7 +17,8 @@ Branch: `claude/k8s-platform-phase3-5-m9evX` → **PR #165**.
   published (username/password/host/port/endpoint).
 - **Spoke add-ons converged**: ingress-nginx (NLB+ACM) Healthy, external-dns
   Healthy, hello Healthy. hello 200 verification: see "Live verification" below.
-- **6 durable fixes committed with regression tests**; **5 follow-ups** filed in
+- **7 durable fixes committed with regression tests** (the phase-3 chain was 8
+  links incl. the external-dns SA name); **5 follow-ups** filed in
   `docs/open-issues.md` for the items applied live-but-not-yet-durable (cluster
   Secret GitOps form, overlay-vs-selfHeal, subnet tags, SG rule, cross-cluster
   Keycloak secret).
@@ -33,6 +34,7 @@ Branch: `claude/k8s-platform-phase3-5-m9evX` → **PR #165**.
 | 5 | argocd: application-controller SA IRSA annotation + pod roll | ✅ | ✅ (mgmt apply 27078501716) | new test_argocd_controller_irsa.sh |
 | 6 | irsa: RDS permissions for phase-5 XDatabase | ✅ | ✅ (policy v4) | iam fixture |
 | 7 | argocd: permit cluster-scoped IngressClass in platform-spoke project | ✅ | ✅ (proj allow-cluster-resource) | test_platform_spoke_appproject.sh |
+| 8 | external-dns: pin spoke SA name to `external-dns` (match IRSA trust subject) | ✅ | ✅ (helm override + re-sync) | test_external_dns_disjoint_filters.sh |
 
 Plus live-only infra changes (durable forms tracked as open-issues): spoke EKS
 auth-mode update; hub→spoke SG ingress rule (`sgr-…`); shared-VPC ELB subnet tags
@@ -51,8 +53,11 @@ for `k8-platform-services`; the `platform-spoke` ArgoCD cluster Secret (REST API
    → ingress-nginx sync failed closed.
 7. Shared-VPC ELB subnets tagged only for `k8-platform-mgmt` → spoke cloud provider
    could not find subnets for the ingress NLB.
+8. external-dns chart SA named `spoke-external-dns`, but the XSpokeAccess IRSA trust
+   subject is `external-dns` → AssumeRoleWithWebIdentity denied → no Route53 records.
 
-After all 7: spoke registered (`connectionState: Successful`), add-ons converged.
+After all 8: spoke registered (`connectionState: Successful`), add-ons converged,
+hello serving 200.
 
 ## Phase-5 (RDS)
 
@@ -70,8 +75,13 @@ After all 7: spoke registered (`connectionState: Successful`), add-ons converged
   AccessEntry + AccessPolicyAssociation all live in AWS).
 - ingress-nginx Healthy + spoke NLB; external-dns Healthy; hello Healthy.
 - RDS `available`; XDatabase `Ready=True`; connection Secret published.
-- `https://hello.platform.596430611165.realhandsonlabs.net` → **see PR #165 / final
-  status message** (DNS + NLB-active gated; verified at run end).
+- `https://hello.platform.596430611165.realhandsonlabs.net` → **HTTP 200 (3/3),
+  verify=0**, body "hello from the k8-platform platform-services cluster", upstream
+  cert `CN=*.platform.596430611165.realhandsonlabs.net` (the ACM wildcard — the
+  egress gateway validated the real ACM chain upstream, §6.27). **Phase 3 verified
+  end-to-end.** (Required an 8th fix: the external-dns chart's SA was named
+  `spoke-external-dns` but the XSpokeAccess IRSA trust expects `external-dns` —
+  pinned `serviceAccount.name=external-dns`.)
 
 ## Suggested merge order
 
