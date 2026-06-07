@@ -26,7 +26,7 @@ check_gates() {
     _fail "$name" "compute-gates exited $rc unexpectedly"
     return
   fi
-  local all_gates="base_init base_plan base_apply base_verify base_destroy mgmt_init mgmt_plan mgmt_apply mgmt_verify mgmt_destroy test_unit test_e2e"
+  local all_gates="base_init base_plan base_apply base_verify base_destroy mgmt_init mgmt_plan mgmt_apply mgmt_verify mgmt_destroy mgmt_live_verify test_unit test_e2e"
   local fail=0
   local detail=""
   for gate in $all_gates; do
@@ -58,10 +58,23 @@ check_gates "base/destroy"          base destroy          base_init base_destroy
 echo ""
 echo "── compute-gates: phase=management ───────────────────────────"
 check_gates "mgmt/plan"             management plan             mgmt_init mgmt_plan
-check_gates "mgmt/apply"            management apply            mgmt_init mgmt_plan mgmt_apply
-check_gates "mgmt/verify"           management verify           mgmt_init mgmt_verify
-check_gates "mgmt/apply-and-verify" management apply-and-verify mgmt_init mgmt_plan mgmt_apply mgmt_verify
+check_gates "mgmt/apply"            management apply            mgmt_init mgmt_plan mgmt_apply mgmt_live_verify
+check_gates "mgmt/verify"           management verify           mgmt_init mgmt_verify mgmt_live_verify
+check_gates "mgmt/apply-and-verify" management apply-and-verify mgmt_init mgmt_plan mgmt_apply mgmt_verify mgmt_live_verify
 check_gates "mgmt/destroy"          management destroy          mgmt_init mgmt_destroy
+
+echo ""
+echo "── compute-gates: mgmt_live_verify invariant (FINAL-PLAN §4.1) ─"
+# The load-bearing assertion: ANY management apply must turn the live-verify
+# gate true, so a bare action=apply cannot bring the cluster up unverified.
+# These are redundant with the rows above but are stated explicitly so the
+# invariant is greppable and a regression names the right contract.
+mlv() { "$SCRIPT" management "$1" 2>/dev/null | grep '^mgmt_live_verify=' | cut -d= -f2; }
+assert_eq "apply => live-verify on"            true  "$(mlv apply)"
+assert_eq "verify => live-verify on"           true  "$(mlv verify)"
+assert_eq "apply-and-verify => live-verify on" true  "$(mlv apply-and-verify)"
+assert_eq "plan => live-verify off"            false "$(mlv plan)"
+assert_eq "destroy => live-verify off"         false "$(mlv destroy)"
 
 echo ""
 echo "── compute-gates: phase=test ─────────────────────────────────"
