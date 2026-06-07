@@ -1191,15 +1191,21 @@ built on it.**
   maximally-different kinds (ASM Secret with its force-delete window + a global IAM
   Role) through the single harness, proving the parametrization seams generalize
   before P4 bets on it. If P0 fails, the plan changes shape.
-- **P1 — Visibility + both-layer enforcement (cheap/static).** Pipeline-mode
-  coverage deriver + fixture-test (**WARN-ONLY**); two-sided IAM floor/ceiling with
-  narrowing + capped annotations; simulate floor; `tests/live/run.sh` skeleton
-  (inverted skip, executed-floor, `expect-full`-from-git, default-as-tested-
-  invariant, master-switch guard, exit-code contract, `LIVE_MODE`); SKIP_REGISTER +
-  set-based gate; the push-time **static** gate in `tests/unit/run.sh` (incl. the
-  wired-into-bring-up + on-by-default invariant lints and the HEAD-SHA static-evidence
-  backstop); the **build-flow wiring** that makes the bring-up invoke
-  `tests/live/run.sh` (build-coupled, not CI); and the `workflow_dispatch`-only
+- **P1 — Visibility + enforcement (cheap/static).** Pipeline-mode coverage deriver +
+  **byte-identical** fixture-test (**WARN-ONLY** with the mechanical WARN→enforce flip
+  lint); two-sided IAM floor/ceiling with narrowing + capped annotations; simulate
+  floor; `tests/live/run.sh` skeleton (inverted skip, executed-floor,
+  `expect-full`-from-git **on both verify and apply-and-verify paths**,
+  default-as-tested-invariant, master-switch guard, exit-code contract, `LIVE_MODE`
+  fail-closed to readonly); SKIP_REGISTER + set-based gate; the push-time **static**
+  gate in `tests/unit/run.sh` (lints + coverage parse + ceiling + the wired/gating/
+  scoped/on-by-default invariants); **the FAIL-closed live-evidence gate** (Actions-API
+  run-ID cross-check + config-only `crossplane/**`/`policies/**` trigger); the
+  **step add to `terraform-test.yml`** (the only build flow — a workflow edit via
+  jentic) that invokes `tests/live/run.sh` gated on `mgmt_apply`, plus the
+  `compute-gates.sh` `mgmt_apply⇒verify` change with its unit test; the committed
+  scoped verifier/reaper IAM policy (§3.4); the one-page **decision flowchart** +
+  `tests/live/run.sh --explain` (round-3 devx M2); and the `workflow_dispatch`-only
   ad-hoc/kind lane landed via jentic.
 - **P2 — Deepen AFTER-THE-FACT (high ROI, no new resource cost).** Behavioral
   EKS/RDS/IAM/cert/DNS verifiers (effect not just config); RGT-diff side-effect
@@ -1229,11 +1235,12 @@ built on it.**
    the synthesized plan's "degrade to Synced+exists, drop the ARN" fallback is
    forbidden — the sub-second in-band gate (`source: IRSA` + no-static-creds +
    Healthy) replaces it. (round-2 #1; k8s-expert C4, qa-guru m4)
-3. **"Can't edit workflows" premise removed.** Enforcement is now layered (the
-   push-time static `run.sh` gate + a `workflow_dispatch`-only `live-verify`
-   ad-hoc/kind lane landed via jentic); the on-by-default trigger is deliverable as
-   **build-flow wiring** (not CI — see §18, correction #2); requirement #1
-   de-stranded. (constraint corrections #1 & #2; sre C3, qa-guru C1)
+3. **"Can't edit workflows" premise removed.** Enforcement is layered (the push-time
+   static `run.sh` gate + the FAIL-closed live-evidence gate + a `workflow_dispatch`
+   live suite landed via jentic); the on-by-default trigger is a **step in
+   `terraform-test.yml`** (the only build flow — a workflow edit, NOT a non-CI
+   executor; see §18); requirement #1 de-stranded. (constraint corrections #1 & #2;
+   round-3 C1 across all five reviewers)
 4. **simulate demoted to a FLOOR;** drive-the-controller is the real completeness
    signal; per-action `--resource-arns` mandated; ceiling **narrows** wildcards
    (caps annotations); un-exercised-grant tier **non-deferred** with explicit
@@ -1272,48 +1279,75 @@ built on it.**
     (m3); ASM `k8-platform/` prefix requirement called out (m5); xdatabase has only
     `Instance` (no SubnetGroup) in the composition base set.
 
-## 18. Changes from the finalizer draft (correction #2)
+## 18. Changes from round-3 (the definitive corrections)
 
-The earlier finalizer draft relied on GitHub Actions (push/PR + a `live-verify`
-workflow) as the verification trigger. Correction #2 decouples this: GitHub Actions
-fires at PR/commit time, which is independent of the actual build/bring-up, and
-standing up any cluster (even kind) in push/PR CI is forbidden. **Only the
-trigger/where-it-runs changed; every round-2 resolution and every other property is
-intact.** What moved:
+Round-3's five reviewers converged on one decisive fact: **the "build ≠ CI" framing
+of the prior finalizer draft had no referent.** The bring-up IS
+`terraform-test.yml action=apply-and-verify` — a `workflow_dispatch` CI run; there is
+no non-CI build executor (`ls scripts/` confirms). The prior draft renamed a dispatch
+and, in doing so, **demoted the anti-regression gate to a WARN, which weakened
+on-by-default.** This section states that plainly (finding #9 — honesty) and lists the
+fixes. These supersede §17's wording where they conflict.
 
-1. **Trigger moved from CI to the BUILD.** The every-bring-up guarantee is now the
-   bring-up procedure (`apply-and-verify` / cluster-creation flow + the spoke
-   reconciliation path) **invoking `tests/live/run.sh` as its final phase** — not a
-   push/PR check waiting on a commit. "Coupled to the change" = coupled to the build
-   that applies it. (§4.1, §4.2, §10)
-2. **Three strictly-separate execution contexts made explicit** (§2, §4.1):
-   *push/PR CI = static, no-cluster only*; *build-time = the full live behavioral +
-   negative + precondition suite, on by default, where `all-skipped ⇒ RED` and the
-   `expect-full` floor live*; *`workflow_dispatch` = kind render/admit + ad-hoc live
-   runs, never auto-triggered*.
-3. **Static-only push set named** (§4.1): lints, kubeconform/schema, helm-template
-   render asserts, coverage-manifest PARSE, no-wildcard IAM ceiling lint,
-   `irsa_trust_validator.py` static sweeps, AND a static invariant that the live
-   suite is wired into the bring-up and on-by-default.
-4. **Kind render/admit reclassified to `workflow_dispatch`-only** (§2) — no-cluster
-   `helm template`/`kubeconform` render asserts stay on push as lints; anything that
-   stands up a kind cluster is manual-dispatch only (matches chainsaw.yml /
-   terraform-test.yml; AGENTS §6.7).
-5. **Anti-silent-regression de-coupled from PR-time cluster work** (§4.3): the
-   primary guarantee is the build coupling; the push check at most verifies *static
-   evidence* of a recorded green build-suite result for the deployed SHA/cluster.
-6. **Artifact-name disambiguation** (§4.2 note, §12 ledger, §15, §16): "`live-verify`
-   workflow" now denotes the `workflow_dispatch`-only ad-hoc lane; the trigger half
-   in the ledger is build-flow wiring, not an Actions trigger.
+1. **"Build ≠ CI" deleted; the model is TWO real Actions surfaces** (§2, §4.1):
+   *push/PR (automatic) = static, no-cluster only*; *`workflow_dispatch` (manual) =
+   the apply-and-verify job (full live suite as a STEP, on by default) + ad-hoc/kind
+   runs* — the same surface, two action choices. (round-3 sre/security/devx/k8s-expert/
+   qa-guru C1)
+2. **"On by default" made MECHANICAL by the FAIL-closed live-evidence gate** (§4.3) —
+   the round-3 centerpiece. A push/PR gate FAILs (not WARN) unless a fresh green
+   `apply-and-verify` run for `(SHA × account × cluster)` is confirmed via an
+   **unforgeable Actions-API run-ID cross-check**. This resolves three criticals at
+   once: build≠CI is empty; on-by-default-as-UI-default has no teeth; and **config-only
+   GitOps changes** (a Composition/IAM/tag edit ArgoCD syncs to the live hub with no
+   apply-and-verify — the auto-012 shape) FAIL the gate unless fresh evidence exists.
+   (round-3 qa-guru R3-C1/C2/C3/M1/M3)
+3. **On-by-default teeth in the job:** the live-verify step is gated on `mgmt_apply`
+   (any apply ⇒ verify; unit-tested against `compute-gates.sh`); the static lint
+   asserts the build is gated on the suite's **exit code** (forbid `|| true`/`&`/`if:
+   false`, AGENTS §6.19); a `verify`-only dispatch still applies the expect-full floor;
+   all-skip⇒RED is paired with the outside-suite no-evidence⇒RED so "the suite never
+   ran" is caught. (round-3 sre C2, security C2, qa-guru M1/M2)
+4. **Build identity split** (§3.4): `terraform apply` keeps admin; `tests/live/run.sh`
+   runs under a committed **zero-wildcard, tag-conditioned** verifier/reaper role; a
+   static lint forbids the live phase inheriting the admin env block; `LIVE_MODE`
+   defaults fail-closed to `readonly`. The NON-GOAL is preserved and distinguished:
+   this is the harness identity, **not** a principal impersonating the controller.
+   (round-3 security C1, M1, M2)
+5. **Spoke is PUBLIC** (`endpointPublicAccess: true`, §10, §14): CI reaches it via
+   `aws eks update-kubeconfig` like mgmt; the "private-CA spoke API" residual is
+   removed; the real gate is the public-endpoint CIDR allowlist + AccessEntry; spoke
+   verification is a **post-reconcile STEP** in the dispatch job, not a daemon. This
+   un-strands the 6 spoke blockers. (round-3 k8s-expert M1, sre M1)
+6. **Coverage deriver:** apiVersion VERSION stripped (key on group+kind), deduped,
+   shipped with a **byte-identical** fixture-test and an explicit WARN→enforce flip
+   condition. (round-3 k8s-expert C2, devx M4)
+7. **v2 claim-verify:** enumerate composed MRs via **`spec.crossplane.resourceRefs`**
+   (assert refs ⊇ derived kinds); `wait-for-claim.sh` cannot substitute (top-level
+   only). (round-3 k8s-expert M2, M3)
+8. **Auto-quarantine bounded** (§11): a recurring `AccessDenied`/`expect-full`-miss is
+   **not** auto-quarantinable (only ROTATION/THROTTLE/QUOTA/LEASE-CONTENTION are);
+   ambiguous ⇒ treat as REAL. (round-3 qa-guru M4)
 
-**The four invariants re-confirmed under the build-coupled model:** *on by default*
-(the bring-up invokes the suite by default; a static push lint asserts the wiring +
-the on-by-default config value), *disable-able but not disabled* (only via
-`LIVE_VERIFY=0` / `LIVE_SKIP` / SKIP_REGISTER with reason/owner/expires; master
-kill-switch is RED-and-non-zero unless registered), *all-skipped ⇒ RED* (enforced
-at build-time when the suite runs), and *coupled-to-the-change* (coupled to the
-build that applies the change). No security/correctness property was weakened; no
-probe pod or new AssumeRole principal was introduced.
+**Honesty (finding #9 — §18 of the prior draft falsely claimed "no property was
+weakened").** That was untrue: demoting the live-evidence gate to WARN **did weaken**
+on-by-default and coupled-to-the-change at PR time. Restated truthfully now that FAIL
+is restored: **PR-time enforcement was briefly traded for a renamed dispatch and is
+now stronger than the round-2 design** — the FAIL-closed Actions-API live-evidence gate
+is the mechanical default-on, and it covers cases the build coupling alone cannot
+(verify-only/bare-apply dispatch, config-only ArgoCD sync, crash-before-final-phase).
+
+**The four invariants, re-confirmed truthfully:** *on by default* = the FAIL-closed
+live-evidence gate (Surface A) + the `mgmt_apply`-gated, exit-code-gated step
+(Surface B); the dispatch UI default is advisory and is **not** the guarantee.
+*disable-able but not disabled* = only via `LIVE_VERIFY=0` / `LIVE_SKIP` /
+SKIP_REGISTER (reason/owner/expires; master kill-switch RED-and-non-zero unless
+registered). *all-skipped ⇒ RED* = inside-suite, paired with outside-suite
+no-evidence⇒RED so non-invocation is also red. *coupled-to-the-change* = the
+config-SHA-keyed live-evidence gate, including config-only GitOps changes. **The
+security NON-GOAL is intact** (no new AssumeRole principal impersonating the
+controller, no trust widening, no probe pod, no provider-SA token mount); the new
+scoped verifier/reaper role is the harness identity, explicitly outside the NON-GOAL.
 
 ---
 
