@@ -1091,7 +1091,8 @@ data store. Corrected to a real control:
 - **Per-check red ≠ bundle red (sre M2):** one flaky DNS check must not red the
   whole bring-up; only an `expect-full` miss or a real `AccessDenied` reds the
   bundle. This separation is what stops the social disable ("I saw red on my
-  unrelated change → `LIVE_VERIFY=0`").
+  unrelated change → drop to `LIVE_PROFILE=verify-only`/`off`" — which, per §4.2,
+  is a registered, attributable profile choice, not a silent binary kill).
 - **No blind retries:** eventual-consistency gets a bounded poll-until-true with a
   per-check `consistency_budget` justified against the AWS propagation SLA, one
   shared bounded-poll helper per service class (DNS/IAM/STS). "Passed on retry N"
@@ -1209,7 +1210,9 @@ Each line maps to the `phase=test` unit test that proves *the mechanism itself*:
   on a v2 XR (spike-validated).
 - [ ] Coverage deriver reproduces the exact §4.5 group/kind set from the four comps
   (fixture-tested); ships WARN-ONLY until that test is green.
-- [ ] `all-skip ⇒ RED`; master-switch RED unless registered; `expect-full` (from
+- [ ] `all-skip ⇒ RED` **per profile**; `LIVE_PROFILE` selector (`full` default /
+  `verify-only` / `off`), default-profile-as-tested-invariant, `off`/non-`full`
+  choice register-recorded (RED unless registered); `expect-full` (from
   git) skip→FAIL; floor=zero; reserved exit code for `expect-full` violation.
 - [ ] simulate is a floor (correct per-action `--resource-arns`); narrowing ceiling
   caps annotated wildcards; un-exercised-grant tier non-deferred (async lane).
@@ -1261,8 +1264,10 @@ built on it.**
   lint); two-sided IAM floor/ceiling with narrowing + capped annotations; simulate
   floor; `tests/live/run.sh` skeleton (inverted skip, executed-floor,
   `expect-full`-from-git **on both verify and apply-and-verify paths**,
-  default-as-tested-invariant, master-switch guard, exit-code contract, `LIVE_MODE`
-  fail-closed to readonly); SKIP_REGISTER + set-based gate; the push-time **static**
+  default-profile-as-tested-invariant (default == `full`), the `LIVE_PROFILE`
+  selector (`full`/`verify-only`/`off`) with per-profile `all-skipped ⇒ RED` and the
+  `off`/non-`full` register guard, exit-code contract, `LIVE_MODE` fail-closed to
+  readonly with `verify-only ⇒ readonly`); SKIP_REGISTER + set-based gate; the push-time **static**
   gate in `tests/unit/run.sh` (lints + coverage parse + ceiling + the wired/gating/
   scoped/on-by-default invariants); **the FAIL-closed live-evidence gate** (Actions-API
   run-ID cross-check + config-only `crossplane/**`/`policies/**` trigger); the
@@ -1404,15 +1409,58 @@ is the mechanical default-on, and it covers cases the build coupling alone canno
 
 **The four invariants, re-confirmed truthfully:** *on by default* = the FAIL-closed
 live-evidence gate (Surface A) + the `mgmt_apply`-gated, exit-code-gated step
-(Surface B); the dispatch UI default is advisory and is **not** the guarantee.
-*disable-able but not disabled* = only via `LIVE_VERIFY=0` / `LIVE_SKIP` /
-SKIP_REGISTER (reason/owner/expires; master kill-switch RED-and-non-zero unless
-registered). *all-skipped ⇒ RED* = inside-suite, paired with outside-suite
-no-evidence⇒RED so non-invocation is also red. *coupled-to-the-change* = the
-config-SHA-keyed live-evidence gate, including config-only GitOps changes. **The
+(Surface B); the dispatch UI default is advisory and is **not** the guarantee; and
+on-by-default = the `full` PROFILE (the anti-forgetting DEVELOPMENT safety net,
+correction #3). *disable-able but not disabled* = the **`LIVE_PROFILE` selector**
+(`full` default / `verify-only` / `off`, §4.2), **not** a binary kill: a non-`full`
+choice is a registered, attributable TIER reduction (SKIP_REGISTER reason/owner/
+expires; `off` RED-and-non-zero unless registered), and the live-evidence gate is
+**profile-stamped** so a `verify-only` result cannot masquerade as `full`.
+*all-skipped ⇒ RED* = inside-suite **per profile** (it holds on whatever tier set
+the chosen profile runs), paired with outside-suite no-evidence⇒RED so
+non-invocation — or a weaker profile than the change requires — is also red.
+*coupled-to-the-change* = the config-SHA-keyed live-evidence gate (including
+config-only GitOps changes), which **re-arms `full`** for any component whose
+config-SHA changed. **The
 security NON-GOAL is intact** (no new AssumeRole principal impersonating the
 controller, no trust widening, no probe pod, no provider-SA token mount); the new
 scoped verifier/reaper role is the harness identity, explicitly outside the NON-GOAL.
+
+### 18.1 Changes from correction #3 (disable semantics: a PROFILE, not a switch)
+
+Owner clarification of requirement #2: *"On by default is so that we don't 'forget'
+to do it during implementation. When it works, I want to be able to turn off
+everything but the verification steps, because I want it to not take ~3 hours to come
+up."* This is a **narrow change to the enablement model only** — no security or
+correctness property changed; the spine (drive-the-real-controller under `source:
+IRSA`, the FAIL-closed live-evidence gate, all-skipped⇒RED, the NON-GOAL, the
+identity split) is intact.
+
+1. **On-by-default is reframed as an anti-forgetting DEVELOPMENT safety net** (§I,
+   §4.2): the default exists so we cannot forget to verify what we built *while
+   implementing*.
+2. **The binary enable/disable becomes a `LIVE_PROFILE` selector** — `full`
+   (DEFAULT, development) / `verify-only` (mature/working) / `off` (guarded, unused
+   now) (§4.2). The "default value is a tested invariant" rule now asserts **default
+   profile == `full`**. Every prior binary-disable reference (the social-disable
+   example §11, the closing "four invariants", the P1 rollout guard) is rewritten to
+   the selector; `off` survives as one profile value.
+3. **Tier → profile map** (§4.2): AFTER-THE-FACT (cheap read-only) runs in **both
+   `full` and `verify-only`**; BRING-UP instantiate-on-purpose + negative/precondition
+   run in **`full` only**; nothing in `off`. The ~3-hour cost removed by `verify-only`
+   is the **instantiate + negative** tiers — the expensive EKS/RDS resources were
+   already after-the-fact (§5) and **remain in `verify-only`**.
+4. **Anti-silent-regression holds PER PROFILE** (§4.2): in `verify-only` the
+   after-the-fact set must still actually run and `all-skipped ⇒ RED` applies to THAT
+   set; choosing `verify-only` is an explicit register-recorded reduction, never a
+   silent skip. The **FAIL-closed live-evidence gate is profile-stamped** (§4.3): it
+   records WHICH profile produced the evidence, and **requires `full` evidence for any
+   component whose config-SHA changed** (or is still under development) — a
+   `verify-only` record for such a component is RED, so a change **re-arms `full`** and
+   a `verify-only` result can never masquerade as `full`.
+5. **`LIVE_PROFILE` stays distinct from `LIVE_MODE`** (§4.2): the profile chooses
+   WHICH TIERS run, `LIVE_MODE` chooses read-only vs mutating within them; `verify-only`
+   implies `LIVE_MODE=readonly`.
 
 ---
 
