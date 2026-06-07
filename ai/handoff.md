@@ -8,6 +8,51 @@ last, the current state, and the next concrete steps. Keep it factual
 
 ## NEW SESSION QUICKSTART (read this first)
 
+> **[auto-012 — 2026-06-07 — SUPERSEDES auto-011 below.]** Full detail:
+> `run-summary-auto-012.md` + `docs/open-issues.md` (OI-2026-06-07-1..5) + PR #165.
+>
+> **⚠️ SAME INHERITED LIVE ACCOUNT `596430611165` (us-east-1).** Phases 0/1 up,
+> phase-3 cluster up. kube-API still private-CA blocked from the sandbox — use the
+> `kube-diagnose` workflow (read-only) + AWS API for reads; the **in-cluster ArgoCD
+> server** (REST `/api/v1/clusters`, `argocd app sync/patch-resource`) + terraform
+> apply for writes. NEVER sandbox kubectl.
+>
+> **What auto-012 did (PR #165, branch `claude/k8s-platform-phase3-5-m9evX`):**
+> The inherited "just finish spoke registration" was understated — phase-3 had a
+> 7-link chain of failing-closed blockers, all now fixed (durable code + live):
+> 1. spoke EKS `authenticationMode` CONFIG_MAP→**API_AND_CONFIG_MAP** (AccessEntries).
+> 2-3. crossplane IAM policy missing `iam:Tag/UntagOpenIDConnectProvider`,
+>    `iam:UpdateAssumeRolePolicy`, `iam:GetRolePolicy` (live policy v2→v3).
+> 4. hub→spoke EKS-API **security-group** ingress 443 (mgmt node SG → spoke cluster SG).
+> 5. ArgoCD **application-controller SA** was missing the IRSA role-arn annotation
+>    (only server had it) → all spoke syncs failed `argocd-k8s-auth exit 20`. Fixed
+>    in `helm.tf` + applied (mgmt apply 27078501716).
+> 6. `platform-spoke` AppProject missing cluster-scoped `IngressClass`.
+> 7. shared-VPC ELB **subnets** not tagged `kubernetes.io/cluster/k8-platform-services`
+>    → spoke cloud-provider couldn't place the ingress NLB. Tagged live.
+>
+> **✅ SPOKE REGISTERED + ADD-ONS CONVERGED.** `platform-spoke` ArgoCD cluster
+> `connectionState: Successful`; XSpokeAccess XR Ready=True (OIDC/IRSA/AccessEntry);
+> ingress-nginx + external-dns + hello all Healthy on the spoke.
+>
+> **✅ PHASE-5 RDS LIVE.** crossplane policy had **zero rds:\*** (live policy v4 adds
+> them). `keycloak-db` XDatabase XR Ready=True; RDS Postgres `available`; connection
+> Secret `keycloak-db` published (hub `keycloak` ns). Synced by new
+> `argocd/apps/keycloak-db.yaml`.
+>
+> **⚠️ STATE LEFT LIVE — ACTION REQUIRED:** the `bootstrap` app-of-apps auto-sync is
+> **PAUSED** (`argocd app set bootstrap --sync-policy none`) so the registration-time
+> helm overlays (cert ARN/domain/external-dns role) on the spoke apps persist.
+> Re-enabling bootstrap reverts them until a durable overlay mechanism lands
+> (OI-2026-06-07-2). Re-enable with `argocd app set bootstrap --sync-policy automated
+> --auto-prune --self-heal` AFTER deciding that mechanism.
+>
+> **IMMEDIATE NEXT STEPS:** (a) merge PR #165 once chainsaw-verify is green;
+> (b) decide + implement the 3 deferred architectural mechanisms (OI-2026-06-07-1
+> cluster-Secret GitOps form; -2 overlay-vs-selfHeal; -5 cross-cluster Keycloak
+> secret) — each has candidate options; (c) land durable forms of the live-only infra
+> (OI-2026-06-07-3 subnet tags, -4 SG rule); (d) verify Keycloak boots against RDS.
+
 > **[auto-011 — 2026-06-06/07 — SUPERSEDES auto-010 below.]** Full detail:
 > `run-summary-auto-011.md` + `decisions/auto-011-*` + `retrospective/2026-06-…`.
 >
