@@ -503,6 +503,20 @@ after a teardown to the relevant phase where feasible. If a clean build cannot b
 run yet (e.g. the account is gone), say exactly that and mark the work **"pending
 clean-build verification"** — never "done".
 
+### 6.36 A red gate is real — fix the code or fix the test; never re-kick or rationalize
+
+A gating check that is red is a real signal every time. Do **not** "re-kick until
+green", do not merge around it, do not narrate why it "doesn't really matter" — an
+agent that ignores red half the time has made the gate worthless. Two cases, two
+fixes: if the code is wrong, fix the code; if the check is **non-deterministic**
+(it flakes red for reasons unrelated to the change — eventual consistency,
+ordering, timing), the check itself is the **defect** — make it deterministic (a
+bounded poll on the real condition that accepts every valid terminal state) or
+move it out of the gating set into a clearly-labeled non-gating tier. Same
+coverage, correct tier. A test you'd re-kick rather than trust does not belong in
+the gate. (Re-running is legitimate only for a genuinely external infra blip, and
+even then the flaky check gets filed and fixed, not normalized.)
+
 ---
 
 ## 7. Testing loops — companion skills

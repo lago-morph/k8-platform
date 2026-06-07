@@ -8,9 +8,16 @@ last, the current state, and the next concrete steps. Keep it factual
 
 ## NEW SESSION QUICKSTART (read this first)
 
-> **[sandbox-kubectl — 2026-06-07 — SUPERSEDES the "NEXT PHASE — give the sandbox
-> direct kubectl" proposal further below, which is now BUILT.]** PR **#184**
-> (branch `claude/sandbox-kubectl-access-cmUMQ`). Full rationale:
+> **[sandbox-kubectl — 2026-06-07]** PR **#184** (branch
+> `claude/sandbox-kubectl-access-cmUMQ`).
+>
+> # ⛔ NOT DONE — code is built, but NOT verified on a fresh build (AGENTS §6.35)
+> This feature is **NOT complete**. Its only live proof was on a Terraform-incremental
+> hub and a **manually-modified** spoke (paused ArgoCD + hand-applied branch
+> manifests). **It is not done until a clean from-source bring-up verifies it.** Do
+> not merge #184 or call it done until the fresh-build check below passes.
+>
+> Full rationale:
 > `docs/decisions/0008-sandbox-kubectl-via-ssm-tunnel.md` (ADR-0008, scoped
 > implementation-only). Skill: `.claude/skills/sandbox-kubectl-access`; rule:
 > AGENTS §6.34 (points at ADR-0006 test discipline), §6.35 (clean-build rule).
@@ -69,9 +76,32 @@ last, the current state, and the next concrete steps. Keep it factual
 > accepting NotFound or `DeletedDate`). Sequence: bring up phases 0→1 on the fresh
 > account → author the flake fix on a new branch → dispatch `chainsaw.yml`, get
 > green → open + merge the flake PR → re-dispatch chainsaw for **#184** HEAD →
-> re-run `chainsaw-verify` → merge **#184**. #184 itself needs no further code.
+> re-run `chainsaw-verify` → merge **#184**. #184 itself needs no further code, but
+> it is **NOT DONE until the fresh-build check below passes** (AGENTS §6.35).
 >
-> **⏭ NEXT PHASE: the test-strategy continuation** (the auto-013 CARRIED-FORWARD
+> **✅ FRESH-BUILD ACCEPTANCE for #184 (REQUIRED before "done", AGENTS §6.35):** on a
+> clean account after merge, bring up phases 0→1 (hub relay+access via terraform) and
+> sync a platform cluster from main via ArgoCD — **no paused auto-sync, no manual
+> `kubectl apply`** — then run `scripts/sandbox-kubeconfig.sh -c <cluster> --exec
+> kubectl get nodes` against BOTH the hub and that platform cluster and confirm nodes
+> return. Only then mark #184 done. (The committed live check
+> `tests/live/checks/after/sandbox-kubectl-relay.sh` automates this.)
+>
+> **🧪 TEST RESTRUCTURE — make red mean red (owner-directed 2026-06-07, AGENTS §6.36):**
+> the recurring chainsaw red was an eventually-consistent real-AWS assert (one-shot
+> ASM describe) sitting in the per-PR gate — so it flaked and got re-kicked/ignored,
+> which is the antipattern. As part of (or alongside) the flake-fix PR, **keep the
+> same coverage but put each check in the right tier so a red gate is always real:**
+> (a) make every gating assert against an eventually-consistent system DETERMINISTIC
+> (bounded poll accepting all valid terminal states) — the claim-deletion-cleanup
+> ASM check is the first; (b) audit the rest of the gating chainsaw set for other
+> one-shot real-AWS/timing asserts (e.g. the composition-drift timeout, OI-2026-05-28-1
+> Issue A/B) and either make them deterministic or move real-AWS-timing assertions
+> into a clearly-labeled non-gating tier (the `CHAINSAW_INCLUDE_REALAWS`/nightly lane
+> already exists); (c) the gate that remains must be one you never re-kick — if it's
+> red, it's a real bug. Do NOT normalize re-kicking.
+>
+> **⏭ NEXT PHASE (after #184 is truly done): the test-strategy continuation** (the auto-013 CARRIED-FORWARD
 > items below) — finish the P0 spike (`spec.crossplane.resourceRefs` on a live XR
 > + drive-a-claim ⇒ real `AccessDenied`), the jentic workflow-integration capstone
 > (wire `tests/live/run.sh` into the dispatch suite under the scoped role), then
