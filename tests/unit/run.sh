@@ -92,6 +92,7 @@ run_suite tests/unit/test_keycloak_db_xr.sh
 run_suite tests/unit/test_xspokeaccess.sh
 # auto-013 test-overhaul P1: derived coverage manifest (FINAL-PLAN §4.5)
 run_suite tests/unit/test_coverage_deriver.sh
+run_suite tests/unit/test_live_orchestrator.sh
 
 echo ""
 if [ "$OVERALL" -eq 0 ]; then
