@@ -31,6 +31,7 @@ run_suite tests/unit/test_argocd_controller_irsa.sh
 run_suite tests/unit/test_irsa_trust_validator.sh
 run_suite tests/unit/test_iam_required_actions.sh
 run_suite tests/unit/test_eks_module_defaults.sh
+run_suite tests/unit/test_kube_access.sh
 run_suite tests/unit/test_helm_render.sh
 run_suite tests/unit/test_post_comment.sh
 run_suite tests/unit/test_kyverno_policy_lint.sh
