@@ -4,9 +4,11 @@
 > fixtures, or workflows. It is the authoritative finalization of a multi-round
 > process: 3 source plans → 9 round-1 reviews → `synthesis/SYNTHESIZED-PLAN.md`
 > → 5 round-2 adversarial reviews (`reviews-round2/r2-{sre,security,devx,k8s-expert,qa-guru}.md`)
-> → a constraint correction (`CONSTRAINT-CORRECTION.md`). It folds every round-2
-> CRITICAL and the constraint correction into one spec. Where reviewers
-> disagreed, this document picks and justifies.
+> → two constraint corrections (`CONSTRAINT-CORRECTION.md` = workflows are editable;
+> `CONSTRAINT-CORRECTION-2.md` = the verification trigger is the BUILD, not CI, and
+> cluster tests are `workflow_dispatch`-only). It folds every round-2 CRITICAL and
+> both constraint corrections into one spec. Where reviewers disagreed, this document
+> picks and justifies.
 >
 > Every load-bearing repo claim here was re-verified against the tree this
 > session (file:fact cited inline). Author: lead test architect.
@@ -27,8 +29,10 @@ skips and reads green*.
 
 **The spine (non-negotiable, survives verbatim).** Behavioral verification by
 **driving the REAL Crossplane provider controller under its real IRSA identity**
-(`source: IRSA`), with create-and-verify **coupled to the change**, **on by
-default**, where **all-skipped ⇒ RED**. Cost split: **after-the-fact** read-only
+(`source: IRSA`), with create-and-verify **coupled to the change** — meaning
+coupled to the **build/bring-up that applies the change**, not to a PR/commit check
+— **on by default** (the bring-up procedure itself invokes the suite), where
+**all-skipped ⇒ RED**. Cost split: **after-the-fact** read-only
 checks for the expensive standing things (EKS ~20 min, RDS), **instantiate-and-
 verify** for the cheap hermetic things. A hard **security NON-GOAL**: no new
 AssumeRole principal, no trust-policy widening, no provider-SA token mount, no
@@ -46,11 +50,19 @@ chainsaw per-run-ID prefix + cleanup.
    `source: IRSA` **AND** no static-cred AWS ProviderConfig **AND** no
    `AWS_ACCESS_KEY_ID` in the provider pod env. The caller-ARN==expected check is
    **infeasible in-band** and is demoted to an optional out-of-band audit.
-2. **Workflows CAN be edited here** (via jentic Contents-PUT / `ext-github`). The
-   "can't edit workflows → forced run.sh gate" premise is removed. Enforcement is
-   now a **deliberate both-layers choice**: a push-time `run.sh` gate AND a
-   jentic-landed verifier/trigger workflow. **The on-every-bring-up trigger IS
-   deliverable.** Requirement #1 is no longer at risk.
+2. **Workflows CAN be edited here** (via jentic Contents-PUT / `ext-github`), so the
+   "can't edit workflows" premise is removed. **But CI is NOT the trigger
+   (correction #2).** GitHub Actions runs at PR/commit time, which is DECOUPLED from
+   the actual build/bring-up — so verification is coupled to the **build**: the
+   bring-up procedure (`apply-and-verify` / cluster-creation flow, and the spoke
+   reconciliation path) **invokes `tests/live/run.sh` as its final phase**. That is
+   the real "every bring-up" guarantee. Three execution contexts, kept strictly
+   separate: **push/PR CI = static no-cluster checks only**; **build-time = the full
+   live suite, on by default, all-skipped ⇒ RED**; **`workflow_dispatch` = kind
+   render/admit + ad-hoc live runs, never auto-triggered**. Anything needing a
+   cluster (even kind) is `workflow_dispatch`-only (matches chainsaw.yml /
+   terraform-test.yml; AGENTS §6.7). **The on-every-bring-up trigger IS deliverable**
+   as a build-flow invocation. Requirement #1 is no longer at risk.
 3. **The coverage deriver must parse Pipeline-mode compositions** (MR kinds at
    `spec.pipeline[].input.resources[].base.kind`, keyed on group+kind) — verified
    working below. It ships **with a fixture-test and WARN-ONLY first**. IAM
@@ -125,13 +137,21 @@ the author; the "fails-for-the-right-reason" reasoning is guidance, not names.
 
 | Bucket | Runs where / when | Proves | Honest limit |
 |---|---|---|---|
-| **PRE-FLIGHT** (lints) | local + kind, every push, seconds | manifest schema-valid; composition renders; admission *shape*; the two-sided IAM floor/ceiling; `simulate-principal-policy` floor | fake/no cloud; admin or no identity; never evidence the thing built |
-| **BRING-UP** | real cluster, on by default at `apply-and-verify`, cheap (sec–min) | drive the real controller **under `source: IRSA`**; instantiate-and-verify cheap **hermetic** kinds; guard-fired negatives | mutating — needs hard isolation (§8) |
+| **PRE-FLIGHT** (lints) | **static, no cluster** — local + push/PR CI, seconds | manifest schema-valid; kubeconform/schema; helm-template render asserts; the two-sided IAM floor/ceiling; `simulate-principal-policy` floor; coverage-manifest **parse**; `irsa_trust_validator.py` static sweep; the "live-suite is wired into the bring-up and on-by-default" invariant | fake/no cloud; admin or no identity; never evidence the thing built |
+| **BRING-UP** | **real cluster, invoked BY the build** — on by default as the final phase of `apply-and-verify` / cluster-creation, cheap (sec–min); NEVER push/PR-triggered | drive the real controller **under `source: IRSA`**; instantiate-and-verify cheap **hermetic** kinds; guard-fired negatives | mutating — needs hard isolation (§8) |
 | **AFTER-THE-FACT** | real cloud, post-apply, read-only `Describe*` + convergence | the slow/standing things the bring-up already built (EKS, RDS) exist *and behave* | read-only; cannot exercise the create-path permission |
 
 Two **tags**, not tiers: `real-irsa` (the assertion depends on the restricted
 identity, §5) and `expect-full` (set when a phase claims to have built a resource;
 turns a SKIP into a FAIL, §4 — sourced from **git**, not self-report).
+
+**Kind render/admit moves to manual dispatch (correction #2).** `helm template`
+and pure-`yq`/`kubeconform` render asserts need no cluster and stay on push as
+PRE-FLIGHT lints; but anything that **stands up a kind cluster** to render/admit
+(chainsaw-style composition-render and admission-*shape* checks) requires a cluster
+and is therefore **`workflow_dispatch`-only**, never push/PR-triggered — matching
+the repo's existing `chainsaw.yml` / `terraform-test.yml` pattern (AGENTS §6.7).
+The BRING-UP behavioral suite is **not** in CI at all: it is invoked by the build.
 
 **Honesty rename, no move:** relabel `tests/unit/` conceptually as **lints** via
 a README + a `lint` tag. A physical `tests/unit/`→`tests/lint/` move is rejected
@@ -260,43 +280,80 @@ new blast radius). Otherwise the net effect is to move the over-privileged
 principal from Crossplane to the CI key on the account that also hosts the mgmt
 cluster.
 
-## 4. On-every-bring-up trigger + disable switch + anti-silent-regression (resolves round-2 #2, #5; constraint correction)
+## 4. Build-coupled trigger + disable switch + anti-silent-regression (resolves round-2 #2, #5; constraint corrections #1 & #2)
 
-### 4.1 The trigger IS deliverable — both layers (constraint correction; resolves sre C3, qa-guru C1)
-The "can't edit workflows" premise is **removed**. Per `CONSTRAINT-CORRECTION.md`,
-`.github/workflows/*` can be created/edited via **jentic Contents-PUT
-(`ext-github`, `op_12ee1daaad73b14b`)** — the git-push OAuth token and the GitHub
-MCP write tools lack `workflow` scope, but the jentic path does not. So the
-enforcement/executor vehicle is a **deliberate design choice, recommended as
-BOTH layers**:
+### 4.1 The trigger is the BUILD, not CI — three execution contexts (corrections #1 & #2; resolves sre C3, qa-guru C1)
+Workflow files **can** be created/edited here via **jentic Contents-PUT
+(`ext-github`, `op_12ee1daaad73b14b`)** — correction #1 (the git-push OAuth token
+and GitHub MCP write tools lack `workflow` scope; jentic does not). **But CI is the
+wrong place to run verification (correction #2):** GitHub Actions fires at PR/commit
+time, which is DECOUPLED from when the cluster is actually brought up, and standing
+up a cluster (even kind) in push/PR CI is forbidden. So the trigger **moves out of
+CI and into the build**, and the layers are re-keyed into **three strictly-separate
+execution contexts**:
 
-- **Push-time `run.sh` gate (always-on floor).** The coverage/skip/IAM lints live
-  in `tests/unit/run.sh` (already push-gated by `unit-tests.yml`). No workflow-
-  scope dependency; simplest; runs locally too.
-- **A jentic-landed verifier/trigger workflow (the live PR-gating layer).** A
-  `live-verify` workflow, landed via jentic, (a) **invokes `tests/live/run.sh` at
-  the end of `apply-and-verify`** — wiring requirement #1's on-by-default trigger —
-  (b) gates the PR check on live evidence, and (c) runs the spoke hook (§10).
-  This is the part the synthesized plan wrongly declared undeliverable.
+- **Push/PR CI (automatic) — STATIC, NO CLUSTER.** Only no-cluster checks run here:
+  lints, kubeconform/schema, helm-template render asserts, the derived-coverage-
+  manifest **PARSE** (static, §4.5), the no-wildcard IAM ceiling lint (§3.3),
+  `irsa_trust_validator.py` static sweeps (§7), AND a **static invariant check that
+  the live suite is wired into the bring-up and on-by-default** (§4.2). These live in
+  `tests/unit/run.sh` (already push-gated by the light push workflow `unit-tests.yml`)
+  and need no `workflow` scope. **No cluster is ever stood up on push/PR.**
+- **Build-time (coupled, on by default) — THE FULL LIVE SUITE.** The bring-up
+  procedure itself — the operator/agent's `apply-and-verify` / cluster-creation flow,
+  and the spoke reconciliation path (§10) — **invokes `tests/live/run.sh` as its
+  final phase**. This is requirement #1's real "every bring-up" guarantee: it is the
+  build running the suite, not a CI check waiting for a commit. **`all-skipped ⇒ RED`
+  and the `expect-full` floor apply HERE.** A jentic-landed `apply-and-verify` /
+  bring-up flow wires this invocation in (the committable half is `tests/live/run.sh`
+  + its self-test; the build-flow wiring is the landable other half, §12).
+- **Manual dispatch (`workflow_dispatch`) — kind + ad-hoc.** Kind-based render/admit
+  and any ad-hoc live runs are `workflow_dispatch`-only, **never push- or
+  PR-triggered**, matching `chainsaw.yml` / `terraform-test.yml` (AGENTS §6.7). These
+  are landed via jentic but stay manual.
 
-The new `tests/unit/test_*.sh` gate files must be added to **both** `run.sh` and
-`unit-tests.yml` in the same PR; `unit-tests.yml` is editable via normal push
-(it is a light push workflow), and the §-sync catch-all step is kept as backstop.
-`run.sh` learns the action via an explicit `LIVE_MODE=mutating|readonly` arg
-(passed by the workflow): `verify` ⇒ `readonly` (after-the-fact only),
-`apply-and-verify` ⇒ `mutating` (BRING-UP allowed). A unit test asserts
-`verify ⇒ readonly` so an agent's frequent `verify` calls never provision
-NLBs/IAM/secrets (sre C3 second half; qa-guru m1). The mutating instantiate-path
-of `crossplane-claim-verify` runs only under `mutating`.
+**The push/PR check NEVER relies on a cluster run.** It at most verifies *static
+evidence* — that a recorded green build-suite result exists for the deployed
+SHA/cluster (§4.3) — but the PRIMARY anti-regression guarantee is the **build
+coupling**, not the PR check. Correctness is never gated on PR-time cluster work.
 
-### 4.2 Default-ON, and the default is a *tested invariant*
-Default = ON. Disable only via `LIVE_VERIFY=0` / per-check `LIVE_SKIP=...`. A unit
-test asserts the on-by-default value (in the orchestrator's **own committed
-config** — the single source the test reads; any `workflow_dispatch` default is
-advisory, k8s-expert m4) is literally `enabled`, so flipping it is a red diff. The
-master kill-switch is guarded: `LIVE_VERIFY=0` makes the banner **RED and exits
+The new `tests/unit/test_*.sh` static-gate files must be added to **both**
+`tests/unit/run.sh` and `unit-tests.yml` in the same PR; `unit-tests.yml` is a light
+**no-cluster** push workflow editable via normal push, and the §-sync catch-all step
+is kept as backstop. `tests/live/run.sh` learns the action via an explicit
+`LIVE_MODE=mutating|readonly` arg (passed by the **build flow**, not a PR check):
+`verify` ⇒ `readonly` (after-the-fact only), `apply-and-verify` ⇒ `mutating`
+(BRING-UP allowed). A unit test asserts `verify ⇒ readonly` so an agent's frequent
+`verify` calls never provision NLBs/IAM/secrets (sre C3 second half; qa-guru m1).
+The mutating instantiate-path of `crossplane-claim-verify` runs only under
+`mutating`.
+
+### 4.2 Default-ON (at build-time), and the default is a *tested invariant*
+Default = ON, where "on" means the **bring-up invokes the live suite** (§4.1), not
+that a CI check is enabled. Disable only via `LIVE_VERIFY=0` / per-check
+`LIVE_SKIP=...`. Two tested invariants, both checkable **statically on push** (no
+cluster):
+- The on-by-default value (in the orchestrator's **own committed config** — the
+  single source the test reads; any `workflow_dispatch` default is advisory,
+  k8s-expert m4) is literally `enabled`, so flipping it is a red diff.
+- **The live suite is wired into the bring-up.** A static lint asserts the committed
+  `apply-and-verify` / bring-up flow invokes `tests/live/run.sh` as its final phase
+  (grep the flow definition for the invocation) — so silently un-coupling the suite
+  from the build is a red push diff. This is the static half that protects the
+  build-coupling guarantee without needing a cluster at push time.
+
+The master kill-switch is guarded: `LIVE_VERIFY=0` makes the banner **RED and exits
 non-zero** unless a top-level `disable_all` register entry (reason/owner/expires)
-exists. **All-skipped is RED by construction.** (Must-not-weaken, every reviewer.)
+exists. **All-skipped is RED by construction** — enforced at build-time when the
+suite runs. (Must-not-weaken, every reviewer.)
+
+A note on the `live-verify` artifact name: where this plan says "`live-verify`
+workflow," it means a **`workflow_dispatch`-only** GitHub Actions workflow for
+**manual/ad-hoc** live runs (context 3) — NOT a push/PR-triggered job and NOT the
+thing that delivers the every-bring-up guarantee. The every-bring-up trigger is the
+**build invoking `tests/live/run.sh`** (context 2), wired into the committed
+bring-up flow, never an Actions trigger. Cluster-requiring workflows are landed via
+jentic but stay `workflow_dispatch`-only (correction #2).
 
 ### 4.3 `expect-full` is derived from GIT, not the system under test (resolves round-2 #5; qa-guru C2; sre M1)
 The synthesized plan set `expect-full` off "what the bring-up *declared* it
@@ -311,11 +368,15 @@ That is **blocker #5 one level up**. The fix:
   diffed against runtime. It is **never** derived from the live status of the
   bring-up under test (circular).
 - **Fail-closed on a missing oracle:** a BRING-UP test that emits *no* phase/skip
-  classification at all is treated as `expect-full` (loud, not silent-green); and
-  "`tests/live/run.sh` was never invoked for this HEAD SHA" is a **FAIL of the
-  push gate** (a committed live-evidence marker per HEAD SHA — the teeth DevX-r2
-  demanded), so "coupled to the change" cannot reduce to "coupled to whoever
-  remembers to dispatch."
+  classification at all is treated as `expect-full` (loud, not silent-green). The
+  PRIMARY anti-regression guarantee is the **build coupling** (the bring-up invokes
+  the suite — §4.1/§4.2), not a PR check. As a **secondary static backstop** only,
+  a push/PR check may verify *static evidence* that a recorded green build-suite
+  result exists for the deployed SHA/cluster (a committed live-evidence marker per
+  HEAD SHA); a missing marker is a push WARN/FAIL on **that static evidence**, never
+  a PR-time cluster run. This keeps "coupled to the change" anchored to the build —
+  not reduced to "coupled to whoever remembers to dispatch" — while never gating
+  correctness on PR-time cluster work (correction #2).
 
 ### 4.4 The executed-test FLOOR / skip-promotion (the load-bearing part)
 Three skip states (not two): **not-applicable** (no kube-API at all — informational,
