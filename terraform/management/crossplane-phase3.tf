@@ -162,6 +162,12 @@ locals {
       # ${cluster_name}-argocd role created in irsa.tf.
       accountId     = data.aws_caller_identity.current.account_id
       argocdRoleArn = module.irsa_argocd.iam_role_arn
+      # Security-group id of the ONE shared SSM kube-API relay (provisioned by
+      # kube-access.tf on the hub). The platform-cluster Composition adds an
+      # ingress rule on each cluster's SG admitting this relay on 443, so the
+      # single relay can tunnel kubectl to every cluster — no per-cluster relay
+      # instance (the account is capped at 9 EC2 instances). See docs/decisions/0006.
+      relaySecurityGroupId = aws_security_group.kube_relay.id
     }
   })
 }

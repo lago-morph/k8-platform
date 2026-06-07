@@ -16,6 +16,12 @@ module "eks" {
   # Restrict to operator IP ranges in production environments.
   cluster_endpoint_public_access = true
 
+  # Access entries are how the sandbox identity gets read-only kube RBAC
+  # (see kube-access.tf). This is the module v20 default; pinned explicitly so a
+  # future default change can't silently drop the cluster into CONFIG_MAP-only
+  # and break aws_eks_access_entry.sandbox.
+  authentication_mode = "API_AND_CONFIG_MAP"
+
   # EKS module v20 defaults this to false. Without it, the IAM principal that
   # creates the cluster has no access entry and the helm provider's token is
   # rejected ("the server has asked for the client to provide credentials").

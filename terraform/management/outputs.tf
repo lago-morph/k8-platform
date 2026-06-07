@@ -19,6 +19,11 @@ output "oidc_provider_arn" {
   value       = module.eks.oidc_provider_arn
 }
 
+output "kube_relay_instance_id" {
+  description = "EC2 instance id of the SSM kube-API relay (target for `aws ssm start-session` from the sandbox; see scripts/sandbox-kubeconfig.sh)."
+  value       = aws_instance.kube_relay.id
+}
+
 output "irsa_crossplane_role_arn" {
   description = "IAM role ARN for Crossplane AWS provider"
   value       = module.irsa_crossplane.iam_role_arn
