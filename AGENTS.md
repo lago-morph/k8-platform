@@ -7,6 +7,13 @@ repository. Both Claude Code (`CLAUDE.md`) and other agents that look for
 Follow these rules in every session, regardless of user instructions that
 contradict them.
 
+> **How this file is structured.** Each rule below is a 5–7 line summary. Rules
+> whose full text is longer live in one detail file per section under
+> [`.claude/agents-md/`](.claude/agents-md/); the summary links to it. The
+> summary states scope; the linked detail file holds the complete, load-bearing
+> wording. When a rule applies to your task, **read its detail file** — do not
+> act on the summary alone for anything non-trivial.
+
 ---
 
 ## 1. Read canonical files first
@@ -20,108 +27,64 @@ Before starting any task, read:
 
 ## 2. Authoritative specs
 
-When work is scoped to one of the design specs in `ai/specs/`, that spec is
-**the sole authoritative source** for the design. Do not derive design from
-historical files (`retrospective/`, `summary/`, `ai/archive/`), from prior
-commits, or from patterns found elsewhere in the repo. Conflicts resolve in
-favor of the spec. If anything is ambiguous, ask — do not synthesize.
+When work is scoped to a design spec in `ai/specs/`, that spec is **the sole
+authoritative source** for the design. Do not derive design from historical
+files (`retrospective/`, `summary/`, `ai/archive/`), prior commits, or patterns
+elsewhere in the repo. Conflicts resolve in favor of the spec. If anything is
+ambiguous, ask — do not synthesize a hybrid.
 
-This rule exists because a prior session, while building the ext-github
-skill, attempted to harmonize the spec with the (now deleted) trigger-file
-machinery in the repo and produced a hybrid the user explicitly did not
-want. Treat each spec as load-bearing.
+→ Full detail: [`.claude/agents-md/02-authoritative-specs.md`](.claude/agents-md/02-authoritative-specs.md)
 
 ---
 
 ## 3. Branch policy
 
-**Never commit to `main` directly.** All work happens on named branches.
+**Never commit to `main` directly.** All work happens on named branches:
+`feat/`, `fix/`, `chore/`, `test/` + short description. The Terraform CI
+workflow (`terraform-test.yml`) is `workflow_dispatch`-only, invoked via the
+active capability profile (`gh` → GitHub MCP → `ext-github`). **Stacked PRs:**
+when dependent work must start before a parent merges, open the child PR with
+`base = <parent branch>` (not `main`); GitHub auto-rebases on parent merge.
+Don't wait for the parent.
 
-```
-feat/<short-description>    # new functionality
-fix/<short-description>     # bug or CI fix
-chore/<short-description>   # maintenance (deps, docs, refactor)
-test/<short-description>    # adding tests or re-running existing tests
-```
-
-The Terraform CI workflow (`terraform-test.yml`) is `workflow_dispatch`-only.
-The agent invokes it via the active capability profile (`gh` CLI →
-GitHub MCP with Actions coverage → `ext-github` via jentic). Detection and
-the per-profile operation table live in
-`.claude/skills/terraform-ci-watch/reference/capabilities.md`.
-
-### Stacked PRs
-
-When dependent work needs to start before a parent PR has merged, stack:
-
-1. Create the parent PR off `main` as normal.
-2. From the parent branch, create the child branch.
-3. Open the child PR with `base = <parent branch>` (not `main`).
-4. Once the parent merges, GitHub auto-rebases the child to `main`.
-
-Don't wait for a parent to merge before starting the child. State the
-dependency in the child PR's description.
+→ Full detail: [`.claude/agents-md/03-branch-policy.md`](.claude/agents-md/03-branch-policy.md)
 
 ---
 
 ## 4. Required GitHub Actions secrets
 
-| Secret | Purpose | Required? |
-|--------|---------|-----------|
-| `AWS_ACCESS_KEY_ID` | AWS credential for the target account | Yes |
-| `AWS_SECRET_ACCESS_KEY` | AWS credential for the target account | Yes |
-| `AWS_REGION` | e.g. `us-east-1` | Yes |
+Three repo secrets are required: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
+`AWS_REGION`. Everything else (state bucket, lock table, root domain, Cognito
+test creds) is auto-computed at runtime by `.github/workflows/terraform-test.yml`.
+AWS account constraints (instance-type whitelist, EC2 quota, hosted-zone
+discovery) live in `ai/testing-guidelines.md`.
 
-Everything else (state bucket, DynamoDB lock table, root domain, Cognito
-test credentials) is auto-computed at runtime by
-`.github/workflows/terraform-test.yml`. AWS account constraints
-(instance-type whitelist, EC2 quota, hosted-zone discovery) live in
-`ai/testing-guidelines.md`.
+→ Full detail: [`.claude/agents-md/04-github-actions-secrets.md`](.claude/agents-md/04-github-actions-secrets.md)
 
 ---
 
 ## 5. Phase workflow
 
-This repo is built in iterative phases (0–6, see `ai/handoff.md`). When the
-user says **"work on phase N"** or any equivalent phrasing, follow the
-procedure in `ai/testing-guidelines.md` §3 **without asking for
-clarification**.
+This repo is built in iterative phases (0–6, see `ai/handoff.md`). When the user
+says **"work on phase N"** (or equivalent), follow `ai/testing-guidelines.md` §3
+**without asking for clarification**.
 
 ### Two invariants
 
 1. **Never destroy a phase numerically lower than the one being worked on.**
-2. **After every state change (apply, verify, destroy), update the
-   Environment State block at the top of `ai/handoff.md` and commit.**
+2. **After every state change (apply, verify, destroy), update the Environment
+   State block at the top of `ai/handoff.md` and commit.**
 
 ### 5.1 "Tear down phase X" — precise definition
 
-When the user says "tear down phase X" (or "destroy phase X",
-"remove phase X", or equivalent), the scope is **exactly** these
-three steps, in order:
+"Tear down phase X" means **exactly** three steps, in order: (1) delete every
+Claim from phase-X XRDs and wait for deprovision; (2) delete the phase-X
+XRDs/Compositions/manifests; (3) `terraform destroy` the modules phase X added,
+reverse dependency order. It does **NOT** touch phase X-1 or lower, the
+management bootstrap stack, unrelated state files, or shared IRSA/IAM. Broader
+teardown requires an explicit user request; when in doubt, ask.
 
-1. **Delete every Claim** that was created from XRDs introduced in
-   phase X. Wait for Crossplane to deprovision the underlying cloud
-   resources (`kubectl wait --for=delete claim/<name>`), with a
-   per-claim timeout suitable for the resource type (5 min for S3,
-   20 min for EKS).
-2. **Delete the XRDs / Compositions / supporting manifests** that
-   phase X introduced from the cluster (`kubectl delete -f crossplane/...`
-   for the files touched by phase X).
-3. **Run `terraform destroy`** for any Terraform module the phase X
-   PR added or substantially modified, in reverse dependency order.
-
-The scope **does NOT include**:
-
-- Tearing down phase X-1 or anything lower (re-asserts §5 invariant 1).
-- Touching the management cluster's bootstrap stack (ingress-nginx,
-  ArgoCD, ESO, Crossplane core, ExternalDNS, Kyverno) — those are
-  phase 1 infrastructure and outlive every higher phase.
-- Deleting Terraform state files for phases not being torn down.
-- Removing IRSA roles or IAM policies that other phases depend on.
-
-If the user wants a broader teardown they will say so explicitly
-("tear down everything", "tear down phase 0 and 1", etc.). When
-in doubt, ask before destroying.
+→ Full detail: [`.claude/agents-md/05.1-tear-down-phase-x.md`](.claude/agents-md/05.1-tear-down-phase-x.md)
 
 ---
 
@@ -129,1198 +92,498 @@ in doubt, ask before destroying.
 
 ### 6.1 Author tests alongside features
 
-For every phase of work — and within a phase, for every component — the
-agent authors **all applicable test layers** as part of the same PR that
-delivers the code:
+For every phase — and every component within it — author **all applicable test
+layers** in the same PR that delivers the code: unit, kubeconform, Kyverno
+audit, integration, chainsaw. The default is **maximal coverage** (overlapping
+layers are not redundant — they fire at different lifecycle moments).
+**kubeconform is the first schema gate** — fix the field, never add a skip
+header. **Composition render dry-run is mandatory** — every new/modified
+Composition lands with `render-fixtures/` (input + expected). SPEC-S6/S9.
 
-| Layer | Required when | Lives at |
-|---|---|---|
-| Unit | always | `tests/unit/test_*.sh` |
-| kubeconform | for any YAML touched under `crossplane/`, `argocd/`, `clusters/`, `policies/` | `tests/unit/test_kubeconform_manifests.sh` (SPEC-S6) |
-| Kyverno audit policy | for any new runtime invariant that can be expressed as a cluster-resource pattern | `policies/audit/*.yaml` |
-| Integration | for every end-to-end flow the phase introduces | `tests/integration/NN_*.sh` (claim waits use `scripts/wait-for-claim.sh`; see SPEC-S7) |
-| Chainsaw | for every XRD / Composition added (every scenario inherits the shared catch block — see testing-guidelines §6.4) | `tests/chainsaw/` |
-
-**kubeconform is the first line of schema defense.** It runs on every
-push and catches the silent-schema-mismatch bug class (Bug 4 PR #61,
-Bug 1 PR #74, Kyverno drift PR #64) at commit time instead of at
-chainsaw / apply / reconcile time. When kubeconform flags a manifest,
-**fix the field — do not add a `# kubeconform-skip` header.** The
-allowlist exists for documentation placeholders, not for real
-authoring bugs. SPEC-S6 §5.4.
-
-The default is **maximal coverage**: if a contract can be expressed as a
-helm-render assertion, a Kyverno policy, an integration test, AND a
-Chainsaw scenario, write all four. Tests that overlap on the same bug
-class are not redundant — they fire in different environments and catch
-different failure modes (authoring time, runtime drift, real-AWS flow,
-Crossplane composition logic).
-
-**Composition render dry-run is mandatory at author time** — every new
-or modified Composition MUST land with a matching
-`crossplane/xrds/<name>/render-fixtures/` directory containing
-`input.yaml` and `expected.yaml`. See SPEC-S9
-(`ai/brainstorming/specs/SPEC-S9-composition-render-dryrun.md`). The
-helper `scripts/composition-render.sh` runs the diff; the pre-commit
-hook and `tests/unit/test_composition_render_fixtures.sh` gate every
-push.
+→ Full detail: [`.claude/agents-md/06.1-author-tests-alongside-features.md`](.claude/agents-md/06.1-author-tests-alongside-features.md)
 
 ### 6.2 TDD discipline when fixing bugs
 
-**When the agent finds any issue — CI failure, verify mismatch, runtime
-surprise, user-reported bug, anything — the order of operations is:**
+When you find **any** issue (CI failure, verify mismatch, runtime surprise,
+user-reported, "obvious" bug): (1) write a test that would have caught it at the
+closest layer; (2) run it red against the unfixed code; (3) fix; (4) verify the
+test goes green AND the symptom is gone; (5) commit fix + test together.
+Skipping a step is a procedure violation. Does **not** apply to pure refactors
+or net-new features (those follow §6.1).
 
-1. **Write a test that would have caught the bug.** Pick the test layer
-   that's closest to the bug's authoring time (e.g. an IAM-policy
-   completeness bug is a unit test, a runtime drift bug is a Kyverno
-   policy, a multi-step AWS flow bug is an integration test). If the
-   bug fits multiple layers, author the test in each layer.
-2. **Run the test against the unfixed code.** Confirm it **fails** (red).
-   If the test passes against buggy code, the test does not actually
-   catch the bug — rewrite it before continuing.
-3. **Implement the fix.**
-4. **Verify both:** the new test now passes (green), AND the original
-   symptom (CI step, e2e check, etc.) is resolved.
-5. **Commit the fix and the test together.** The PR diff must show both
-   so reviewers see what would have caught the regression.
-
-Skipping any step is a procedure violation. The cost of writing the test
-first is usually 5–15 minutes; the value is permanent — every future
-session benefits. Do not negotiate this point with yourself.
-
-This applies to:
-- bugs the agent introduces and immediately discovers,
-- bugs surfaced by CI or a verify step,
-- bugs the user reports,
-- "obvious" bugs ("the import is missing", "the YAML key is wrong" — these
-  are exactly the silent-failure class that tests prevent).
-
-It does **not** apply to:
-- pure refactors that don't change behavior (no bug, no test to add),
-- net-new features (those follow §6.1).
+→ Full detail: [`.claude/agents-md/06.2-tdd-discipline-bug-fixes.md`](.claude/agents-md/06.2-tdd-discipline-bug-fixes.md)
 
 ### 6.3 Always run all tests when the environment is brought up
 
-After every fresh `apply-and-verify` on phase 0 or phase 1, the agent
-runs the full test bundle before reporting "phase verified". The bundle:
+After every fresh `apply-and-verify` on phase 0/1, run the full bundle before
+reporting "phase verified": `tests/unit/run.sh`, `test-e2e` dispatch,
+`tests/integration/run.sh`, the Kyverno policy/violation scripts, and
+`scripts/irsa_trust_validator.py --all` (must report `0 MISMATCH`). Any failure
+triggers §6.2. The workflow's `[management] e2e-verify` is the *minimum*, not
+the full bundle.
 
-1. `tests/unit/run.sh` — pure-local. Always passes if helm + yq are on PATH.
-2. `phase=test, action=test-e2e` workflow dispatch — read-only AWS sanity.
-3. `tests/integration/run.sh` — full ten-test integration suite against
-   the live cluster.
-4. `scripts/kyverno-policies.sh` and `scripts/kyverno-violations.sh` —
-   sanity-check the policy bundle is loaded and no unexpected violations.
-5. `scripts/irsa_trust_validator.py --all` — IRSA trust-policy vs SA
-   fleet sweep. Must report `0 MISMATCH` before phase sign-off.
-
-If any of these report a failure, the TDD discipline in §6.2 applies — the
-agent does not declare "phase verified" until both the original symptom is
-gone and a regression-catching test exists.
-
-`.github/workflows/terraform-test.yml`'s `[management] e2e-verify` is the
-*minimum* verification — it does not exhaust the test bundle. The full
-bundle is required for phase sign-off.
+→ Full detail: [`.claude/agents-md/06.3-run-all-tests-on-bringup.md`](.claude/agents-md/06.3-run-all-tests-on-bringup.md)
 
 ### 6.4 Adversarial subagent review of test plans
 
-**Trigger — source-agnostic.** Whenever any new tests are about to be
-drafted, or any existing test is about to be extended with a new
-assertion shape, **spawn one or more subagents with an
-adversarial-reviewer brief** before authoring the tests. The trigger
-does not depend on *who* proposed the tests — the user, the agent,
-an external review comment, a copy-paste from another repo, anyone.
-It is a gate on the *act* of drafting tests, not on the source.
+**Source-agnostic trigger:** whenever new tests are about to be drafted, or an
+existing test extended with a new assertion shape, **spawn one or more
+adversarial-reviewer subagents first** to attack the plan and propose specific
+tests at specific layers. Applies to new phases/components/standalone additions;
+not to pure refactors, moves, or semantics-preserving fixture updates. The brief
+MUST carry the 5 required parts; run ≥2 in parallel for substantial work; adopt
+every suggestion unless you can write a one-line out-of-scope reason.
 
-This applies to:
-
-- New phases (everything in `tests/**` and `policies/audit/**` for
-  that phase).
-- New components within an existing phase (a new `helm_release`, a
-  new IRSA role, a new XRD, a new ingress).
-- Standalone test additions in an otherwise-stable phase — e.g. a
-  PR that exists only to add coverage.
-- Extensions to existing tests that introduce a new assertion shape
-  (a new yq path, a new resource kind, a new failure path).
-
-It does NOT apply to:
-
-- Pure refactors of existing tests that don't change what's asserted.
-- Test file moves / renames.
-- Fixture updates that don't change assertion semantics.
-
-The job of the adversarial reviewer is to attack the plan: enumerate
-contracts the plan does not cover, name failure modes the existing
-layers miss, propose specific tests at specific layers that would
-catch those gaps. Then implement their suggestions.
-
-Default subagent type: `general-purpose`. Run two or more in parallel
-for substantial additions (new phase, new component) — they reach
-independent conclusions because they don't see each other's reports.
-A single subagent is acceptable for small standalone additions.
-
-The brief MUST include:
-
-1. **What the phase ships** — bullet list of new files / resources /
-   contracts. No prose; just facts.
-2. **The current test plan** — the list of tests the lead agent is
-   planning to write, with the layer (unit / kyverno / integration /
-   chainsaw) and the assertion shape for each.
-3. **The known bug history** — for new phases, paste the bug-to-test
-   traceability matrix from `ai/TESTING-PLAN.md`. For phase expansions,
-   paste any recent retros' bug-class findings.
-4. **The job** — verbatim: *"Tear this test plan apart. For each
-   contract not covered or under-covered, propose a specific test:
-   layer + file path + assertion. Be ruthless about what would
-   silently pass with the bug present. Aim for ten or more concrete
-   additions; restate which contracts each one defends."*
-5. **What to skip** — declared non-goals (e.g. "we are not testing
-   AWS API rate-limiting behaviour"). Without this the reviewer
-   wastes effort on out-of-scope material.
-
-Adopt every adversarial-reviewer suggestion **unless** you can write a
-one-line explanation in the PR description for why it's out of scope.
-The cost of writing more tests is small; the cost of missed coverage
-is paid every time the phase fails in CI.
-
-The default heuristic is **lots of tests, but useful ones**. "Useful"
-means: each test defends an identifiable contract, fails for a
-specific reason in language that points at the cause, and would not
-trivially pass against a regression. Tests that overlap on the same
-contract across different layers (unit + Kyverno + integration) are
-not redundant — they fire in different environments and catch the
-contract at different lifecycle moments.
+→ Full detail: [`.claude/agents-md/06.4-adversarial-subagent-review-test-plans.md`](.claude/agents-md/06.4-adversarial-subagent-review-test-plans.md)
 
 ### 6.5 Confirm before acting on compound prompts
 
-**Default — repeat back before acting.** For any user message that
-contains three or more distinct actions, bundles a feature request
-with a meta-instruction, crosses more than one PR scope, or runs
-longer than ~200 words, the agent's **first** response is a
-structured repeat-back. **No tool calls before the repeat-back
-is sent.**
+For any message with ≥3 distinct actions, a feature+meta bundle, multi-PR scope,
+or >~200 words, the **first** response is a structured repeat-back (numbered
+actions in order; explicit stopping points; flagged ambiguities; implicit
+assumptions) — **no tool calls before it**. End with "OK to proceed?" Opt-out
+only on an explicit signal ("just do it"). **Action is not confirmation** — a
+merge/review/dispatch by the user is not approval; approval comes from chat,
+in words.
 
-The repeat-back contains four parts:
-
-1. **Numbered actions in execution order.** Each action gets one
-   bullet, in the order the agent intends to perform them. Use
-   real branch names, file paths, and PR numbers from context — no
-   "your branch" or "the file" placeholders.
-2. **Explicit stopping points.** Mark every point at which the agent
-   will pause for confirmation or for an external event (CI run,
-   PR merge, manual review, etc.).
-3. **Flagged ambiguities.** Under each step, list any phrase or
-   intent in the prompt the agent had to interpret. State the
-   chosen interpretation; the user can correct each independently.
-4. **Implicit assumptions.** Anything the agent inferred from
-   context that the prompt did not state explicitly (default tools,
-   target branches, file naming, etc.).
-
-End with: "OK to proceed once you give the green light?"
-
-**Opt-out.** The repeat-back is skipped **only** when the user's
-prompt itself contains an explicit signal: "do this without
-confirming", "just do it", "skip the recap", "no need to repeat
-back", "go ahead", or equivalent. Do not infer opt-out from tone
-or brevity.
-
-**Action-is-not-confirmation.** If after sending the repeat-back the
-user does not reply in chat but instead takes a system action —
-merges a PR, leaves a review comment, dispatches a workflow, edits
-a file — **do not interpret that as approval**. The user is often
-reviewing and approving pull requests in parallel with agents doing
-work, and may take those actions without even realizing the agent
-has asked for approval for something. Approval comes from chat,
-explicitly, with words. Continue waiting for that chat reply.
-
-If the wait is unproductive, the agent's options are:
-- Continue any orthogonal work that is unaffected by the pending
-  question (e.g. drafting documentation for a different concern).
-- Send a follow-up chat message reminding the user the question is
-  open, naming the specific question.
-- Do not proceed on the question itself until the user replies in
-  chat with explicit approval, correction, or redirection.
-
-When the prompt is not compound (single action, short, unambiguous),
-proceed without a repeat-back. The discipline is filtering, not
-ceremony.
+→ Full detail: [`.claude/agents-md/06.5-confirm-compound-prompts.md`](.claude/agents-md/06.5-confirm-compound-prompts.md)
 
 ### 6.6 Throughput-without-attention mode
 
-The user may explicitly grant a mode in which the §6.5 repeat-back gate is
-suspended, the agent makes its own defensible assumptions instead of
-asking, and large work is split across stacked PRs so the user can review
-asynchronously. This section codifies that mode so it can be reached
-without re-explaining each session.
+The user may grant a mode that suspends the §6.5 repeat-back gate: phrases like
+"go go go", "ship it", "make assumptions and continue", "stack PRs" flip it ON
+until countermanded. While in it: make defensible assumptions (spec → ADR →
+handoff → nearest pattern) and state them in the PR; split large work into
+stacked PRs (§3). It suspends **only** §6.5 — never §6.1–6.4, §6.3, §9, or
+branch policy. Halt-and-ask anyway for out-of-scope destruction, a missing
+account constraint, or an unfavored fork.
 
-**Trigger.** Any of these phrases (or close paraphrases) flips the mode
-ON for the remainder of the session, unless the user later countermands:
-
-- "go go go" / "just go" / "ship it" / "keep working"
-- "don't stop for me" / "I'll be away" / "I want throughput without attention"
-- "make assumptions and continue" / "you decide" / "use your judgement"
-- "stack PRs" / "use PR stacking" / "divide it up how you think best"
-
-The trigger is the *intent*, not exact wording. Once flipped, the mode
-persists until the user explicitly reverts ("stop", "wait", "ask me first",
-"check with me before X").
-
-**While in the mode, the agent:**
-
-1. **Makes assumptions and proceeds.** Where the prompt is ambiguous,
-   pick a defensible default — preferring (in order) the relevant spec
-   under `ai/specs/`, an ADR in `docs/decisions/`, the handoff Immediate
-   Next Step, then the closest existing pattern in the repo. State the
-   assumption inline in the commit or PR description ("Assumed X because
-   Y; happy to change in review"). Do not pause to ask. If the user
-   disagrees they will edit the PR.
-
-2. **Splits large work into stacked PRs by default.** Any work that
-   exceeds one PR's worth of cohesive scope — multiple distinct
-   deliverables, multi-component features, anything touching more than
-   ~5 directories — gets divided across a stacked sequence per §3
-   Stacked PRs. Rules:
-
-   - PR n+1 branches off PR n (`base = <parent branch>`, not `main`).
-   - Each PR ships ONE coherent thing — a bug fix, a feature increment,
-     one infra layer. The PR title names that one thing.
-   - Open every PR as **draft only if** the work is genuinely incomplete
-     in this session; otherwise mark ready for review so the user can
-     merge asynchronously.
-   - Each child PR's body states its dependency on the parent and what
-     it adds.
-
-3. **Keeps the next thing dispatched.** While a long-running CI run /
-   apply / build is in flight, the agent's job is to author the next
-   deliverable, not to babysit the run. PR webhook events arrive
-   asynchronously; the agent reacts when they land. Do not idle.
-
-4. **Does NOT waive any other discipline.** Throughput-without-attention
-   suspends §6.5 only. It does not suspend:
-   - §6.1 / §6.2 — TDD discipline on bug fixes and feature tests.
-   - §6.3 — full test bundle after every fresh `apply-and-verify`.
-   - §6.4 — adversarial subagents at every test-drafting point. Spawn
-     them in parallel and continue authoring while they run; adopt
-     suggestions when they return.
-   - §9 — commit standards.
-   - Branch policy (§3) — no commits to `main`.
-
-**Stop conditions — halt and ask even in throughput mode:**
-
-- A destructive operation outside the user's stated scope is required
-  (a teardown they did not request; deleting state; force-pushing `main`).
-- An account constraint specified in `ai/testing-guidelines.md §1` is
-  missing entirely — the user wants to know about silently-removed
-  limits before the agent provisions anything.
-- The work reaches a fork where each branch would invalidate the other
-  (e.g., choosing between two incompatible XRD schemas) AND neither
-  branch is favored by an existing spec / ADR / handoff entry.
-- The user countermands the mode in chat.
-
-**When forced to halt:** state the question concisely (one paragraph,
-one specific question), then continue any orthogonal work that does not
-depend on the answer. Idle waiting is never the right choice in this
-mode.
+→ Full detail: [`.claude/agents-md/06.6-throughput-without-attention.md`](.claude/agents-md/06.6-throughput-without-attention.md)
 
 ### 6.7 Manual-verify-then-PR for heavy CI workflows
 
-**Heavy CI workflows MUST NOT run on every push.** A heavy workflow is
-one that takes more than ~2 minutes, boots a cluster, provisions cloud
-resources, or burns runner minutes the agent would otherwise have to
-babysit. Examples: `chainsaw.yml` (kind boot + Crossplane + scenarios),
-`terraform-test.yml` (15-minute management apply).
+**Heavy CI workflows MUST NOT run on every push** (anything >~2 min, boots a
+cluster, or provisions cloud). They are `workflow_dispatch`-only: dispatch
+against a specific commit SHA, iterate to green, **then** open the PR. A
+<5s push-time verifier gates the PR check on finding a cached green run for that
+SHA. Promise: if a PR exists, its HEAD is already green. Current contract:
+`chainsaw.yml` ↔ `chainsaw-verify.yml`. (unit-tests / terraform-validate are
+light and run on every push.)
 
-Heavy workflows are `workflow_dispatch`-only. The agent runs them
-explicitly, against a specific commit SHA, **before** opening the PR.
-
-A lightweight verifier workflow runs on push instead. It queries the
-GitHub Actions API for a green run of the heavy workflow against the
-same commit SHA, and gates the PR check on finding one. The verifier
-is < 5 seconds — `curl + python3`.
-
-**Why:** before this rule was codified, the chainsaw workflow re-ran on
-every push during a 2-hour iteration session. The agent fixed install
-bugs, config bugs, schema bugs, and binding bugs across ~10 CI failures
-on a single PR. The merged-to-main artifact would have been identical
-if the agent had dispatched chainsaw locally, fixed each failure, then
-opened the PR with the final green run cached on the SHA. The user
-would have seen one green PR check instead of ten red ones.
-
-**Operating contract.** When opening a PR that touches paths the heavy
-workflow watches:
-
-1. Push the commits to the branch.
-2. Dispatch the heavy workflow with the commit SHA as input
-   (e.g. `gh workflow run chainsaw.yml --ref <branch> -f commit_sha=$(git rev-parse HEAD)`).
-3. Wait for the dispatched run to complete green. If red, iterate
-   (fix → push → dispatch again).
-4. **Only then** open the PR. The verifier workflow fires on the PR's
-   push, finds the cached green run, and reports ✅.
-
-**Promise to the user:** if a PR exists, the heavy tests are already
-green for that PR's HEAD SHA. CI red after PR open means the verifier
-is doing its job (the agent forgot to dispatch, or pushed new code
-after dispatching) — not a flaky test.
-
-**Workflows currently under this contract:**
-
-- `.github/workflows/chainsaw.yml` ↔ `.github/workflows/chainsaw-verify.yml`
-
-**Workflows NOT under this contract** (light + fast):
-
-- `.github/workflows/unit-tests.yml` — runs on every push.
-- `.github/workflows/terraform-validate.yml` — runs on every push.
-
-(`terraform-test.yml` is workflow_dispatch-only by design but does not
-yet have a verifier; phase apply-and-verify is invoked too rarely to
-need one.)
+→ Full detail: [`.claude/agents-md/06.7-manual-verify-then-pr-heavy-ci.md`](.claude/agents-md/06.7-manual-verify-then-pr-heavy-ci.md)
 
 ### 6.8 Live-admission verification for v2 Crossplane CRD changes
 
-**Dispatch live chainsaw before relying on kubeconform alone for v2
-Crossplane manifest changes.** For any PR that migrates Crossplane
-manifests across a major API-version boundary (e.g. v1 → v2 group
-rename, XRD `apiextensions/v1` → `/v2`, Composition rewrites with new
-`providerConfigRef` shapes), dispatch `chainsaw.yml` against the branch
-SHA and confirm at least the `xrd-establishes` scenario passes BEFORE
-merging.
+For any PR crossing a major Crossplane API-version boundary (v1→v2 group rename,
+XRD/Composition rewrites), dispatch `chainsaw.yml` against the branch SHA and
+confirm at least `xrd-establishes` passes **before** merging. kubeconform's
+static schema isn't sufficient: the live v2 admission webhook rejects fields the
+schema accepts (e.g. `connectionSecretKeys` on a v2 XRD). Schema-pass is still
+the necessary first gate. ADR-0001.
 
-**Why kubeconform isn't sufficient here.** The static kubeconform JSON
-schema is generated from the CRD's `openAPIV3Schema`. The live
-admission webhook has additional handler logic that can reject fields
-the schema accepts. The 2026-05-26 v1 → v2 migration discovered this
-the hard way: `compositeresourcedefinition_v2.json` accepts
-`connectionSecretKeys` on a v2 XRD (the field still exists in the v2
-CRD for back-compat), but the v2 admission webhook rejects it at apply
-time:
-
-```
-CompositeResourceDefinition.apiextensions.crossplane.io
-"xplatformclusters.platform.k8-platform.io" is invalid: spec:
-Invalid value: "object": XR connection secrets aren't supported in
-apiextensions.crossplane.io/v2
-```
-
-That gap cost a hotfix PR plus two chainsaw iterations after Wave 2
-merged. See `docs/decisions/0001-kubeconform-not-sole-gate-for-v2-crd-changes.md`
-for the full ADR.
-
-**Operating contract** (specializes §6.7):
-
-1. After kubeconform CI is green, dispatch `chainsaw.yml` against
-   `BRANCH` with `commit_sha=$(git rev-parse HEAD)`. Use
-   `scenario_filter=""` for full set, or at minimum a filter that
-   includes `xrd-establishes`.
-2. On failure: fetch the chainsaw stdout via `ext-github`
-   `op_c08d23e5bd6966cb` per §10 of `ai/testing-guidelines.md` BEFORE
-   forming hypotheses. Common v2 admission-rejection shapes:
-   `is invalid: spec: Invalid value: …`, `--for=condition=Offered`
-   timeouts (v2 has no claim CRD, so the Offered condition never
-   appears), `no matches for kind <V1Kind>` (v1 claim kind in a v2
-   cluster).
-3. On success: paste the chainsaw run URL into the PR description
-   under "§6.7 chainsaw contract".
-4. Only then consider the PR ready to merge.
-
-**Schema-pass IS still the necessary first gate** — kubeconform catches
-field-structure changes that the schema correctly reflects (the same
-2026-05-26 migration caught `vpcConfig[0]` → `vpcConfig` and
-`scalingConfig[0]` → `scalingConfig` via kubeconform locally). This
-rule supplements kubeconform with a live-admission gate for the
-specific class of failures the schema can't express.
+→ Full detail: [`.claude/agents-md/06.8-live-admission-verify-v2-crd.md`](.claude/agents-md/06.8-live-admission-verify-v2-crd.md)
 
 ### 6.9 Read the failure log first
 
-**Read the failure log first.** "When ANY CI check fails, the first
-action is to fetch the job log (e.g., via `ext-github`'s
-`download_job_logs` operation, job ID = last path segment of the
-check's `details_url`). Do not read the PR description, workflow YAML,
-spec, test source, or commit message before reading the log.
-Hypotheses formed from indirect sources are guesses; the actual error
-is in the workflow stdout."
+When ANY CI check fails, the first action is to **fetch the job log** (e.g.
+`ext-github` `download_job_logs`, job ID = last path segment of the check's
+`details_url`). Do not read the PR description, workflow YAML, spec, test
+source, or commit message before the log — hypotheses from indirect sources are
+guesses; the actual error is in the stdout. See `ai/testing-guidelines.md §10`
+(incl. §10.1 on environmental preconditions).
 
-*Grounded in: session 2026-05-26 Phase 2 — multiple turns speculating
-about AWS-side root causes for chainsaw failures when the log
-immediately revealed the v1/v2 provider mismatch.*
-
-See `ai/testing-guidelines.md §10` for the full procedure including
-§10.1 on verifying environmental preconditions (AWS creds, cluster
-reachability, tool availability) before debugging code.
+→ Full detail: [`.claude/agents-md/06.9-read-failure-log-first.md`](.claude/agents-md/06.9-read-failure-log-first.md)
 
 ### 6.10 Never foreground-poll a long-running CI run
 
-**Every tool call re-uploads the entire accumulated conversation
-context to the model.** A 100K-token session that foreground-polls a
-15-minute CI run every 10 seconds spends ~90 × ~100K ≈ **9 million
-input tokens** to learn `status: in_progress` repeatedly. The useful
-information is the final ~2KB.
+Every tool call re-uploads the whole conversation; foreground-polling a 15-min
+run wastes millions of tokens to read `in_progress`. Instead: dispatch **exactly
+ONE** background poll (`Bash` `run_in_background`, `until status=completed`), do
+no status tool calls until the completion notification, one poll per run, and
+author other durable work meanwhile. On resume-after-idle or at **ETA+50%** with
+no webhook event, issue **ONE** direct status query — never a polling loop.
 
-**The rule.** When you need to wait for a long-running CI run (any
-GitHub Actions workflow, terraform-test, chainsaw, anything that takes
->1 minute):
-
-1. **Dispatch exactly ONE background poll** via `Bash` with
-   `run_in_background: true`. The poll loop runs `curl` against the
-   GitHub API and exits only when `status=completed`. Example:
-   ```bash
-   until [ "$(curl -sS "https://api.github.com/repos/$OWNER/$REPO/actions/runs/$RUN_ID" \
-       | python3 -c "import json,sys; print(json.load(sys.stdin).get('status',''))")" = "completed" ]; do
-     sleep 60
-   done
-   ```
-   This polling happens **outside** the model loop — zero tokens
-   consumed per check.
-
-2. **Do not make any tool call that queries the same run's status
-   until the harness delivers the polling background's completion
-   notification.** No `mcp__*__execute` status checks. No `date` calls
-   "just to keep alive". No `ls /tmp/.../task-output`. The notification
-   IS the wake-up signal — wait for it.
-
-3. **One background poll per run.** Do not launch overlapping polls on
-   the same run. If you switched branches or context and lost track of
-   the original poll, that is acceptable cost — do NOT add a second
-   poll and a third on top.
-
-4. **Do parallel-author work in the meantime, if it doesn't depend on
-   the running CI.** Prepare the next PR's content, draft the
-   run-summary, run local unit tests — anything that produces durable
-   on-disk artifacts. But do NOT call the status tool.
-
-*Grounded in: auto-003 chainsaw waits, where I dispatched a correct
-background poll AND then proceeded to foreground-poll the same run
-~90 times during the wait, re-uploading the full ~100K-token context
-on each call. The user called this out twice in one session.*
-
-**The sandbox suspends when idle — back stop the wait when you resume.**
-When `mcp__github__subscribe_pr_activity` is active, completion events
-for dispatched runs (chainsaw.yml, terraform-test.yml) normally arrive
-as `<github-webhook-activity>` envelopes once the workflow run reaches
-`completed`. The Claude Code-on-the-web sandbox is suspended after
-inactivity; events that arrive while the sandbox is suspended do not
-appear as `<github-webhook-activity>` envelopes when the sandbox
-resumes. Three data points so far:
-- auto-003 PR #111 final-SHA `ef410ac` chainsaw success: not surfaced
-  on resume.
-- 2026-05-28 PR #125 run `26552671925` (failure conclusion): surfaced
-  while the sandbox was still active.
-- 2026-05-28 PR #129 run `26555037975` (success conclusion): completed
-  during a multi-minute idle period; not surfaced on resume.
-This is a sandbox-lifecycle property, NOT a GitHub webhook reliability
-claim. The same envelope shape arrives reliably for events that
-complete during an active session.
-
-The cheap mitigation: when you resume after an idle period, OR when
-you have dispatched a heavy run and **no** webhook event has arrived
-by **expected ETA + 50%** (e.g. 22 minutes for chainsaw, whose normal
-wall-clock is ~15 min), issue ONE direct `mcp__*__execute` query
-against the run id to read its status. ONE. This costs a single tool
-call's context, where ETA+50% with no event is roughly the point at
-which the run has either landed or is genuinely stuck — either way,
-you need to know.
-
-Do NOT begin polling on a regular interval if the first backup query
-returns `in_progress`. Either dispatch a new background poll for the
-remaining time, or accept the wait will end via webhook OR the next
-ETA+50% backup, whichever fires first.
+→ Full detail: [`.claude/agents-md/06.10-never-foreground-poll-ci.md`](.claude/agents-md/06.10-never-foreground-poll-ci.md)
 
 ### 6.11 `[Request interrupted by user]` is a hard stop
 
-**When the harness delivers a `[Request interrupted by user]` system
-message, do NOT pivot into an adjacent task** ("let me do this small
-thing instead", "while I have you"). Stop the current activity, do not
-start a new one, and wait for the user's next explicit direction.
-Background processes the agent had started prior to the interrupt
-should be killed if they continue to consume model context or
-registry/API quota. Treat the interrupt the same way a SIGINT from a
-terminal would be treated by an interactive program: full halt.
+When the harness delivers `[Request interrupted by user]`, do NOT pivot to an
+adjacent task ("let me do this small thing instead"). Stop the current activity,
+start nothing new, and wait for explicit direction. Kill background processes
+that keep consuming context or quota. Treat it like a terminal SIGINT: full
+halt.
 
-*Grounded in: auto-003 post-retro phase, where `[Request interrupted
-by user]` fired twice and the agent both times continued with a small
-adjacent task; the user replied "you keep doing things even when I
-push stop."*
+→ Full detail: [`.claude/agents-md/06.11-request-interrupted-hard-stop.md`](.claude/agents-md/06.11-request-interrupted-hard-stop.md)
 
 ### 6.12 Don't claim a tool is "unavailable" until you've tried to install or start it
 
-**Before reporting "X is not available in this sandbox" or deferring
-work on that basis, attempt the obvious installation or activation
-paths:**
+Before reporting "X is not available" or deferring work on that basis, try the
+obvious paths: already-installed-but-not-on-PATH (`which`, common bins),
+daemon-stopped (`systemctl`/`service`/`pgrep`, `sudo Xd &`), one-line install
+(`curl` a release). Report "unavailable" only after a concrete failure. `which X`
+returning nothing is an unanswered question, not an answer.
 
-1. **Already installed but not at PATH?** `which X`, `ls /usr/bin/X
-   /usr/local/bin/X /root/.local/bin/X`.
-2. **Daemon installed but stopped?** `systemctl status X`, `service X
-   status`, `pgrep X`, `sudo Xd &`.
-3. **One-line install available?** `curl -fL <release-url> -o /tmp/X
-   && chmod +x /tmp/X`.
-
-Report "unavailable" only after at least one of those attempts has
-failed with a concrete error. The wrong shape of "unavailable" claim
-is `which X` returning nothing — that's an unanswered question, not
-an answer.
-
-*Grounded in: auto-003 post-retro phase, where the agent twice
-deferred substantial work ("docker not in sandbox", "kubectl not in
-sandbox") that turned out to be wrong on both counts — docker daemon
-needed `sudo dockerd &`, kubectl was a one-line curl install. The
-user pointed both out.*
+→ Full detail: [`.claude/agents-md/06.12-try-install-before-unavailable.md`](.claude/agents-md/06.12-try-install-before-unavailable.md)
 
 ### 6.13 Run a pre-dispatch static audit before any long CI dispatch
 
-**Before dispatching a long-running CI workflow** (chainsaw,
-terraform-test, integration suite), run a one-pass static audit for
-every known bug class the changed files could exhibit. Long CI
-iterations cost minutes per round and tend to surface bugs in layers —
-one fix unmasks the next. A pre-dispatch audit catches multiple bug
-classes in one pass, in seconds.
+Before dispatching a long CI workflow (chainsaw, terraform-test, integration),
+run `scripts/pre-chainsaw-audit.sh` (the `pre-dispatch-static-audit` skill) for
+every known bug class: non-ASCII in tag `description:`, bash-isms in `/bin/sh`
+chainsaw scripts, v2 condition-array length ≠ 3, `($namespace)` literals,
+golden YAMLs missing `metadata.namespace`, golden-vs-scenario data drift. Each
+check is a one-line grep; fix every FAIL and re-run until clean before
+dispatching.
 
-The canonical audit lives at `scripts/pre-chainsaw-audit.sh` and is
-the implementation of the `pre-dispatch-static-audit` skill
-(`SKILL-SPEC-3a7d2e9f1c`). Invoke it before every `chainsaw.yml`
-dispatch. The audit MUST cover at minimum:
-
-- (a) non-ASCII characters in tag-bound `description:` / `Description:`
-  fields (the AWS Resource Groups Tagging service rejects them — see
-  §6.8 ADR-0001).
-- (b) `set -o pipefail` / `[[ ]]` / other bash-isms in chainsaw
-  `script.content:` blocks (chainsaw runs scripts under `/bin/sh`).
-- (c) `status.conditions:` array length not equal to 3 on v2 XR
-  asserts (v2 carries Synced + Ready + Responsive).
-- (d) `($namespace)` literals in `apply.resource.metadata.namespace`
-  (chainsaw's pre-substitution validation rejects these as invalid
-  RFC 1123 labels).
-- (e) golden YAMLs missing `metadata.namespace: default` (chainsaw
-  `assert: file:` searches the per-test namespace by default).
-- (f) golden-vs-scenario data-value drift on fields the Composition
-  propagates (notably `tags.Description`).
-
-Each check is a one-line grep; the full audit runs in seconds.
-Skipping it costs ~5-15 minutes per chainsaw iteration per missed bug
-class. Fix every FAIL before dispatching; re-run the audit until clean.
-
-*Grounded in: auto-003 PR #111 chainsaw iterations 1-5, each
-surfacing a different bug class that a single pre-dispatch audit
-would have caught.*
+→ Full detail: [`.claude/agents-md/06.13-pre-dispatch-static-audit.md`](.claude/agents-md/06.13-pre-dispatch-static-audit.md)
 
 ### 6.14 Use Bash run_in_background, not Monitor, for single-notification waits
 
-**Use `Bash` with `run_in_background: true` for single-notification
-waits; reserve `Monitor` for streams of multiple events.** A Monitor
-that just sleeps and ticks is an anti-pattern — every tick is a
-chat-visible notification, the monitor doesn't end on the event you
-care about, and there is no surfaced way to stop it early. For "tell
-me when X completes", use `Bash` with `run_in_background: true` and an
-`until <check>; do sleep <N>; done` loop that exits when the
-condition is met.
+For "tell me when X completes", use `Bash` with `run_in_background: true` and an
+`until <check>; do sleep N; done` loop that exits on the event. Reserve
+`Monitor` for streams of multiple events — a Monitor that just sleeps and ticks
+spams chat with useless notifications, doesn't end on your event, and can't be
+stopped early.
 
-*Grounded in: 2026-05-28 chainsaw-verify wait — armed a Monitor as a
-generic ticker, received 29 useless tick notifications before the
-180-second timeout fired. See
-`retrospective/2026-05-28-121/AGENTS-MD-5bdc52acff-bash-bg-not-monitor-single-notification.md`.*
+→ Full detail: [`.claude/agents-md/06.14-bash-bg-not-monitor.md`](.claude/agents-md/06.14-bash-bg-not-monitor.md)
 
 ### 6.15 Webhook backup poll at 1.5x expected ETA
 
-**When a webhook subscription is the agreed completion channel and
-1.5x the expected ETA has elapsed with no event, do a single
-direct-API status query as a backup.** This specializes §6.10's
-"no foreground polling" rule for the silent-event-loss case.
-PR-activity subscriptions occasionally drop `workflow_run completed`
-events without dropping the surrounding `check_suite` failure events;
-silence on the channel does not mean the work is still running.
-Confirm with one direct-API call before assuming. One direct call at
-ETA + 50% does not constitute a polling loop — it's a single fallback
-query.
+When a webhook subscription is the agreed completion channel and 1.5× the
+expected ETA has elapsed with no event, do a **single** direct-API status query
+as a backup. Subscriptions occasionally drop `workflow_run completed` events
+without dropping the surrounding failure events; silence ≠ still-running. One
+call at ETA+50% is a fallback, not a polling loop. Specializes §6.10.
 
-*Grounded in: 2026-05-28 PR #111 chainsaw run 26550478501 —
-completion event for the green run never delivered via
-`mcp__github__subscribe_pr_activity`; user noticed before agent did.
-See `retrospective/2026-05-28-121/AGENTS-MD-ae0308b2ac-webhook-backup-poll.md`.*
+→ Full detail: [`.claude/agents-md/06.15-webhook-backup-poll.md`](.claude/agents-md/06.15-webhook-backup-poll.md)
 
 ### 6.16 `tests/unit/run.sh` and `.github/workflows/unit-tests.yml` must stay in sync
 
-**Every test in `tests/unit/run.sh` MUST also be enumerated in
-`.github/workflows/unit-tests.yml`'s per-step list, OR the workflow
-must end with a `run.sh` catch-all step that invokes it.** Per-step CI
-is preferred for separate-failure diagnosability in the Actions UI,
-but silently drifts when tests are added to `run.sh` without a paired
-workflow edit. The catch-all alternative trades that UI clarity for
-guaranteed coverage. Either pattern is acceptable; the gap between
-them is not. When authoring a new `tests/unit/test_*.sh`, the same
-PR must update `unit-tests.yml` (or rely on the catch-all if it
-exists).
+Every test in `tests/unit/run.sh` MUST also be enumerated in `unit-tests.yml`'s
+per-step list, OR the workflow must end with a `run.sh` catch-all. Per-step is
+preferred for diagnosability but drifts silently; the catch-all guarantees
+coverage. Either is fine; the gap between them is not. A new
+`tests/unit/test_*.sh` updates `unit-tests.yml` in the same PR.
 
-*Grounded in: 2026-05-28 audit found 17 of 39 tests in
-`tests/unit/run.sh` missing from `unit-tests.yml`'s per-step list,
-including the two enforcers whose absence caused PR #111's chainsaw
-rounds 1-2 (POSIX-sh + 3-conditions) to re-discover bugs the
-enforcers were authored specifically to catch. See
-`retrospective/2026-05-28-121/AGENTS-MD-1390a5c6a8-run-sh-and-unit-tests-yml-in-sync.md`
-and `handoff-followups-2026-05-28.md` Task 1.*
+→ Full detail: [`.claude/agents-md/06.16-run-sh-unit-tests-yml-sync.md`](.claude/agents-md/06.16-run-sh-unit-tests-yml-sync.md)
 
 ### 6.17 Never present a hypothesis as a conclusion
 
-**State the strength of every claim.** When you report findings to
-the user, distinguish:
+State the strength of every claim: **Observation** (saw it — quote it),
+**Exclusion** (ruled out — name the criterion), **Hypothesis** (fits but
+unconfirmed — label it), **Conclusion** (positively tested or last-standing
+after exhaustive exclusion). "X is the cause" requires positive evidence or full
+exclusion; one fits-the-pattern data point is "consistent with X", not "X". A
+hypothesis dressed as a conclusion costs the user's trust.
 
-- **Observation** — something you saw in the logs / output. Quote it.
-- **Exclusion** — something you ruled out by topology, by evidence,
-  or by direct test. Name the exclusion criterion.
-- **Hypothesis** — a candidate explanation that fits the evidence
-  but is NOT confirmed. Label it as such.
-- **Conclusion** — a hypothesis that has been positively tested or
-  that follows from exclusion of every other plausible alternative.
-
-If you write "X is the cause" or "this is not a regression I
-introduced," you are claiming a conclusion. That requires either
-positive evidence (a test that confirms X) or exhaustive exclusion
-(every other candidate ruled out). If you only have one piece of
-fits-the-pattern evidence, the right framing is "this is consistent
-with hypothesis X" — not "X is the cause."
-
-User attention is precious. A hypothesis dressed as a conclusion
-leads the user to make a decision based on something that may turn
-out to be wrong, with no flag in the prose telling them it could.
-The cost of accurate framing is one extra word ("hypothesis",
-"consistent with", "appears to"); the cost of inaccurate framing
-is the user's trust.
-
-*Grounded in: 2026-05-28 PR #125 chainsaw failure on `composition-drift`.
-I told the user "AWS-provider cold-start, not a regression my work
-introduced." The first half was a hypothesis with no positive
-evidence; the second half was true by topology but I had not framed
-it as exclusion-by-topology. The user called this out and pointed to
-the discipline gap.*
+→ Full detail: [`.claude/agents-md/06.17-hypothesis-not-conclusion.md`](.claude/agents-md/06.17-hypothesis-not-conclusion.md)
 
 ### 6.18 Never ignore an undiagnosed failure — log to the open-issues register
 
-**Every observed failure must either be diagnosed in this session
-or recorded in the durable register at `docs/open-issues.md`.** No
-silent-skip, no "out of scope so I'll move on," no leaving a flaky
-red check unfollowed.
+Every observed failure is either diagnosed this session or recorded in
+`docs/open-issues.md` — no silent-skip, no "out of scope so I'll move on", no
+unfollowed flaky red. A deferred entry carries: status, verbatim symptom,
+evidence so far, labelled hypotheses (§6.17), what's ruled out, next concrete
+step, owner. Out-of-scope justifies deferral, never dropping. Flakes get an
+entry too. Keep the register tight.
 
-When a failure surfaces in CI, in a probe, in a manual test, or in
-any other channel — even one that doesn't gate any PR — the options
-are:
-
-1. **Diagnose it now.** Fix the underlying issue, write the
-   regression-catching test per §6.2, close the loop.
-2. **Defer to a tracked issue.** Add an entry to `docs/open-issues.md`
-   with: status, symptom (with verbatim error text or log quote),
-   diagnostic evidence available so far, hypotheses currently on
-   the table (labelled per §6.17), what's ruled out, the next
-   concrete diagnostic step, and an owner / next action. Commit it
-   in the same PR (or a follow-up PR) so the register stays current
-   with the work.
-
-Out-of-scope is a valid reason to defer; it is NOT a valid reason
-to drop the observation on the floor. Future sessions inherit
-`docs/open-issues.md` as ground-truth backlog — a problem we walked
-past today should not have to be re-discovered when it re-surfaces
-in production.
-
-Pure flakes get an entry too. A flake is "undiagnosed but observed,"
-not "no problem." Two occurrences of the same flake without a
-matching register entry IS the problem.
-
-The register is small by intent. Closed items move into a
-historical section or are removed once their fix has landed and
-been verified. Stale entries are a tax on the next agent who has
-to re-read them all; keep it tight.
-
-*Grounded in: same PR #125 session as §6.17. I initially proposed
-"out of scope, file as separate follow-up" for the chainsaw
-`composition-drift` failure, with no mechanism to ensure the
-follow-up actually happened. The user named this as horrible
-engineering discipline. The register is the mechanism.*
+→ Full detail: [`.claude/agents-md/06.18-log-undiagnosed-to-open-issues.md`](.claude/agents-md/06.18-log-undiagnosed-to-open-issues.md)
 
 ### 6.19 Never silence cleanup failures with `|| true`
 
-**Test and CI cleanup steps that depend on succeeding (re-applying
-state, deleting resources, restoring config) MUST fail loudly when
-they fail.** The `|| true` shell idiom masks the underlying error and
-lets contamination propagate to subsequent scenarios. If a cleanup is
-genuinely best-effort, guard with `[ -f X ] && cmd` or an explicit
-`if ! cmd; then echo WARN; fi` so the warning surfaces.
+Cleanup/CI steps that depend on succeeding (re-applying state, deleting
+resources, restoring config) MUST fail loudly. `|| true` masks the error and
+lets contamination cascade into later scenarios. For genuinely best-effort
+cleanup, guard explicitly: `[ -f X ] && cmd`, or `if ! cmd; then echo WARN; fi`
+so the warning surfaces.
 
-*Grounded in: 2026-05-28 PR #129 composition-drift — the original
-cleanup ran `kubectl apply -f crossplane/compositions/platform-secret.yaml || true`
-with a path that didn't resolve from chainsaw's CWD; the `|| true`
-masked the error and cascaded into three downstream scenario failures
-(claim-creates-secret, claim-rotation, claim-deletion-cleanup, each
-timing out at ~250s on the same chainsaw run). See
-`retrospective/2026-05-28-129/AGENTS-MD-6e0243fa6a-no-or-true-cleanup-mask.md`
-and OI-2026-05-28-1 Issue B in `docs/open-issues.md`.*
+→ Full detail: [`.claude/agents-md/06.19-no-or-true-cleanup-mask.md`](.claude/agents-md/06.19-no-or-true-cleanup-mask.md)
 
 ### 6.20 After session resume from suspension, verify status of in-flight dispatches
 
-**When the sandbox suspends mid-wait (typically while waiting for a
-long CI run), webhooks that arrive during suspension do not deliver as
-`<github-webhook-activity>` envelopes on resume.** The first action
-after resume — before authoring new work, before answering a user
-question that depends on the run's outcome — is one direct-API query
-against any in-flight dispatch's run id. This complements §6.10 and
-§6.15: those rules cover the active-wait case; this one covers the
-resumed-after-suspension case. Both fire the same one-shot direct
-query, but their triggers are different and neither subsumes the
-other.
+When the sandbox suspends mid-wait, webhooks arriving during suspension do not
+deliver on resume. The first action after resume — before new work, before
+answering a question that depends on the outcome — is **one** direct-API query
+against each in-flight dispatch's run id. Complements §6.10/§6.15 (active-wait);
+this covers the resumed-after-suspension case.
 
-*Grounded in: 2026-05-28 PR #129 chainsaw run 26555037975 (success
-conclusion) — completion arrived during sandbox idle, no webhook
-envelope on resume; the user's `Check on run` was what prompted the
-direct query that surfaced the green status. See
-`retrospective/2026-05-28-129/AGENTS-MD-6163a071e9-verify-inflight-after-resume.md`.*
+→ Full detail: [`.claude/agents-md/06.20-verify-inflight-after-resume.md`](.claude/agents-md/06.20-verify-inflight-after-resume.md)
 
 ### 6.21 Act on the answer to a question you asked
 
-**When you ask the user a question — via AskUserQuestion or in prose —
-and they answer, that answer overrides your prior plan.** Implement what
-they chose, not what you were about to do. Do not re-ask the same
-decision, do not re-open the options you just presented, and do not
-pivot back to your own preferred approach after they have picked a
-different one.
+When you ask the user a question (AskUserQuestion or prose) and they answer,
+that answer overrides your prior plan. Implement what they chose, not what you
+were about to do. Do not re-ask the decision, re-open the options, or pivot back
+to your own preferred approach after they picked a different one.
 
-*Grounded in: 2026-06-05 subnet-injection session — the user answered a
-posed decision and the agent appeared to keep building a different
-approach, prompting "I told you what to do and ignored me." See
-`retrospective/2026-06-05-01/AGENTS-MD-af34f513e7-act-on-the-answer-to-a-question-you-asked.md`.*
+→ Full detail: [`.claude/agents-md/06.21-act-on-the-answer.md`](.claude/agents-md/06.21-act-on-the-answer.md)
 
 ### 6.22 Distinguish provisioning from verification in a GitOps repo
 
-**In a GitOps repository, do not tell the user they must "provision" or
-"apply" something manually when ArgoCD/Crossplane/CI converge it from
-git.** Before describing any step as a manual user action, ask whether
-GitOps or a CI workflow already performs it; reserve "manual" for the
-genuine gaps (a deliberately-disabled auto-sync, a Terraform bootstrap
-the agent itself dispatches). When you cannot complete a step, name the
-real blocker — usually verification access, not provisioning. To drive
-ArgoCD itself, read the ArgoCD credential from the Terraform outputs
-(§10.1) and run the `argocd` CLI via CI.
+In a GitOps repo, do not tell the user to "provision"/"apply" something manually
+when ArgoCD/Crossplane/CI converge it from git. Before calling any step a manual
+user action, ask whether GitOps or CI already does it; reserve "manual" for
+genuine gaps (disabled auto-sync, a Terraform bootstrap you dispatch). When
+blocked, name the real blocker — usually verification access, not provisioning.
+Drive ArgoCD via the Terraform-output credential (§10.1).
 
-*Grounded in: 2026-06-05 phase-3 session — the agent framed the spoke as
-"you must provision"; the user replied "aren't we using gitops here?" The
-real limit was verification access (no sandbox cluster creds), not
-provisioning. See
-`retrospective/2026-06-05-140/AGENTS-MD-429a56a4b8-distinguish-provisioning-from-verification.md`.*
+→ Full detail: [`.claude/agents-md/06.22-provisioning-vs-verification.md`](.claude/agents-md/06.22-provisioning-vs-verification.md)
 
 ### 6.23 Use the capability you have before asking, in a build session
 
-**In a delegated/long build session, exhaust available tools and make a
-defensible call before asking the user.** "When the user has delegated
-execution (build everything tested, use the skill, go), do not stop on an
-`AskUserQuestion` for something a tool or a defensible default can resolve —
-check the capability first (dispatch the probe, try the install, read the
-output) per §6.12/§8.5. Reserve user questions for genuine forks with
-cost/irreversibility and no defensible default. Asking when the path was
-available reads as not-listening and wastes a round-trip."
+In a delegated/long build session, exhaust available tools and make a defensible
+call before asking. Don't stop on an `AskUserQuestion` for something a tool or
+default can resolve — check the capability first (dispatch the probe, try the
+install, read the output) per §6.12/§8.5. Reserve user questions for genuine
+forks with cost/irreversibility and no defensible default. Asking when the path
+was available reads as not-listening.
 
-*Grounded in: 2026-06-05 auto-005 — the agent asked about creds/mechanism the
-user expected it to resolve itself ("check yourself", "use it"). See
-`retrospective/2026-06-05-142/AGENTS-MD-38ee9c5ae4-use-capability-before-asking-in-build-mode.md`.*
+→ Full detail: [`.claude/agents-md/06.23-use-capability-before-asking.md`](.claude/agents-md/06.23-use-capability-before-asking.md)
 
 ### 6.24 Never remove or weaken error checking to work around an undiagnosed error
 
-**Disabling a failing check to make red go green is the worst possible
-"fix" — always.** When a guardrail fails — an admission webhook, a
-validation hook, a test, a verification step, a lint, a type check, an
-assertion, a readiness gate — and you **cannot diagnose the root cause**,
-you do NOT delete, disable, bypass, or weaken the check to get past it. The
-check is load-bearing; a failing check is *information*, not an obstacle.
-Removing it hides the exact problem the check exists to surface and ships
-the failure downstream.
+Disabling a failing check to turn red green is the worst possible "fix" —
+always. A failing guardrail (webhook, validation, test, lint, type check,
+assertion, readiness gate) is *information*, not an obstacle. When the cause is
+unclear the only moves are: fix the actual cause; use a mechanism that works
+*with* the check (e.g. clean delete+create vs disabling a hook); or stop,
+escalate, and log to `docs/open-issues.md`. Never "skip the test"/`|| true`/
+`-k`/comment-out.
 
-When a check fails and the cause is unclear, the ONLY acceptable moves are:
-
-1. **Fix the actual cause.** Get the visibility you're missing (read the
-   log, add diagnostics through a path that does not remove the check) and
-   address the underlying problem.
-2. **Use a mechanism that works WITH the check, not around it.** E.g. if an
-   in-place Helm upgrade deadlocks on a pre-upgrade hook, force a clean
-   delete+create (which runs the install hook cleanly) rather than disabling
-   the hook; if a test is environment-flaky, fix the environment, not the
-   assertion.
-3. **Stop, escalate, and document.** If you genuinely cannot fix it now,
-   leave the check in place, log it to `docs/open-issues.md`, and surface the
-   blocker. A documented red is honest; a green achieved by deleting the
-   check is a lie.
-
-Disabling the check is never one of the options. "Turn off the webhook",
-"skip the test", "add `|| true`", "lower the assertion", "comment out the
-validation", "`--insecure`/`-k` to dodge a cert error" — these are all the
-same anti-pattern: trading a *visible* failure for an *invisible* one. If
-you catch yourself proposing to remove a check because you can't make it
-pass, stop: that is the signal you have not yet found the real fix.
-
-*Grounded in: 2026-06-06 auto-007 — facing an ingress-nginx admission-webhook
-pre-upgrade hook timeout the agent could not diagnose (no cluster visibility),
-it proposed and implemented disabling the admission webhook. The user: "Option
-a is terrible … You are hiding the error not fixing it. The webhook is there
-for a reason." The correct fix kept the webhook and forced a clean recreate by
-tainting the resource in Terraform state.*
+→ Full detail: [`.claude/agents-md/06.24-never-weaken-error-checking.md`](.claude/agents-md/06.24-never-weaken-error-checking.md)
 
 ### 6.25 Prove a fix with consistent end-to-end tests, not a single signal
 
-**Prove a fix with consistent end-to-end tests, not a single signal.** "Do not
-call something fixed or working from one positive observation. Require the real
+Do not call something fixed from one positive observation. Require the real
 end-to-end operation to succeed repeatedly with the actual tool — a lone 200 or
 one green check is not proof. State explicitly what was tested vs assumed; if the
-next call contradicts the first, the state is not-confirmed, not fixed."
+next call contradicts the first, the state is not-confirmed, not fixed.
 
-*Grounded in: 2026-06-06 auto-007 — the agent declared ArgoCD "reachable / fixed"
-off one healthz 200; the very next `argocd login` failed on DNS. The user: "How
-do you know it is fixed without testing it? You are presenting guesses as fact."*
+→ Full detail: [`.claude/agents-md/06.25-prove-fix-consistent-e2e.md`](.claude/agents-md/06.25-prove-fix-consistent-e2e.md)
 
 ### 6.26 Diagnose the cluster through the cloud API when the kube-API is unreachable
 
-**Diagnose the cluster through the cloud API when the kube-API is unreachable.**
-"When kubectl is blocked, do not declare the problem un-diagnosable — reach the
-same facts through the cloud provider API: pod density via ENI/IP counts
-(`aws ec2 describe-network-interfaces`), load via CloudWatch, capacity via
+When kubectl is blocked, don't declare the problem un-diagnosable — reach the
+same facts via the cloud provider API: pod density via ENI/IP counts
+(`describe-network-interfaces`), load via CloudWatch, capacity via
 `describe-instance-types`, cluster/nodegroup health via the EKS API. Label
-cloud-API-derived facts as such, and route facts only the kube-API has (pod
-events, exact per-node pod counts) through CI."
+cloud-API-derived facts as such; route facts only the kube-API has (pod events,
+exact per-node counts) through CI.
 
-*Grounded in: 2026-06-06 auto-007 — pod-IP exhaustion (3/3 ENIs, 18/18 IPs on
-t3.medium = the ~17 max-pods ceiling) was diagnosed entirely via the AWS CLI
-because the EKS kube-API was gateway-blocked; the first instinct had been to call
-it un-diagnosable and disable the failing webhook.*
+→ Full detail: [`.claude/agents-md/06.26-diagnose-via-cloud-api.md`](.claude/agents-md/06.26-diagnose-via-cloud-api.md)
 
 ### 6.27 Sandbox egress is a strict-verifying MITM gateway
 
-**Sandbox egress is a strict-verifying MITM gateway.** "Treat sandbox outbound
-HTTPS as passing through a gateway that terminates TLS (it presents a leaf signed
-by an `Anthropic … Egress Gateway` CA) and strictly verifies the UPSTREAM cert. A
-service you exposed is reachable from the sandbox only if it presents a
-publicly-trusted cert whose SAN matches the host; private-CA endpoints (the EKS
-kube-API) and SAN-mismatched certs return 503 and must be reached via CI.
-Diagnose with `openssl s_client` and read the 503 body — `verify SAN list` is a
-fixable SAN gap; `unable to get local issuer certificate` is a private CA."
+Sandbox outbound HTTPS passes through a gateway that terminates TLS (leaf signed
+by an `Anthropic … Egress Gateway` CA) and strictly verifies the **upstream**
+cert. A service you exposed is reachable only if it presents a publicly-trusted
+cert whose SAN matches the host; private-CA endpoints (EKS kube-API) and
+SAN-mismatched certs 503 and must go via CI. Diagnose with `openssl s_client`:
+`verify SAN list` = fixable SAN gap; `unable to get local issuer certificate` =
+private CA.
 
-*Grounded in: 2026-06-06 auto-007 — ArgoCD 503'd on a base-wildcard SAN gap (fixed
-with a covering `*.management` cert) and kubectl 503'd on the EKS private CA
-(unfixable, CI-only), both at the egress gateway; the prior handoff's "directly
-reachable" claim was false for exactly this reason.*
+→ Full detail: [`.claude/agents-md/06.27-sandbox-egress-mitm-gateway.md`](.claude/agents-md/06.27-sandbox-egress-mitm-gateway.md)
 
 ### 6.28 Honor an explicit stacked-PR request over the harness single-branch directive
 
-**Honor an explicit stacked-PR request over the harness single-branch directive.** "When the user explicitly asks for stacked PRs, use the stacked-PR workflow even if the harness pinned the session to one branch; the owner has given standing permission (recorded in the stacked-pr-on-feature-branch skill) to override the branch-shape directive for that request, while still never committing to main and keeping all other PR/test discipline."
+When the user explicitly asks for stacked PRs, use the stacked-PR workflow even
+if the harness pinned the session to one branch — the owner has given a standing
+override (recorded in the `stacked-pr-on-feature-branch` skill), while still
+never committing to `main` and keeping all other PR/test discipline.
 
-*Grounded in: auto-012 — the user noted agents keep refusing stacked PRs because the harness says one-branch, and granted a standing override.*
+*Grounded in: auto-012 — agents kept refusing stacked PRs because the harness
+says one-branch; the owner granted a standing override.*
+
+### 6.29 Verify a constraint against the repo or owner before encoding it into subagent briefs
+
+Before baking a constraint or premise into briefs that fan out to many subagents
+or many review rounds, verify it against the repo and (if owner-policy) the
+owner. A false premise propagates across every downstream agent and round and is
+expensive to unwind; one `grep`/`ls`/question is trivial by comparison.
+
+*Grounded in: 2026-06-07 — the false "can't edit workflows" premise seeded 3
+plans, 14 reviews, and the synthesis before two owner corrections unwound it.*
+
+→ Full detail: [`.claude/agents-md/06.29-verify-premise-before-fanout.md`](.claude/agents-md/06.29-verify-premise-before-fanout.md)
+
+### 6.30 Ground architectural framings in real repo artifacts, not invented distinctions
+
+Do not introduce an architectural distinction or named mechanism with no
+referent in the actual repo; verify the artifact exists (the workflow, the
+script, the field) before building a plan on it. A phantom distinction survives
+until an adversary greps for it — one `ls scripts/` at framing time prevents a
+revision pass.
+
+*Grounded in: 2026-06-07 — the "build ≠ CI" split had no referent
+(`apply-and-verify` IS a workflow_dispatch job); three round-3 reviewers grepped
+and collapsed it.*
+
+→ Full detail: [`.claude/agents-md/06.30-ground-framings-in-artifacts.md`](.claude/agents-md/06.30-ground-framings-in-artifacts.md)
+
+### 6.31 Adversarial and synthesis subagents must verify load-bearing claims against the tree
+
+Brief adversarial and synthesis subagents to verify every load-bearing factual
+claim against the actual repo files, not just reason about the document, and name
+the files to check. Plan-level facts (a ProviderConfig source, a CRD api
+version, an endpoint flag) are routinely wrong and only tree-grounding catches
+them.
+
+*Grounded in: 2026-06-07 — tree-grounded reviewers caught `source: IRSA` (not
+`InjectedIdentity`), v1-vs-v2 claim-verify, Pipeline MR-kind paths, and the
+public spoke; document-only reasoning would have shipped all four wrong.*
+
+→ Full detail: [`.claude/agents-md/06.31-reviewers-verify-against-tree.md`](.claude/agents-md/06.31-reviewers-verify-against-tree.md)
+
+### 6.32 Finalize commits before dispatching a SHA-gated heavy CI run
+
+Do not push further commits after dispatching a heavy CI run that a verifier
+gates by exact HEAD SHA; finalize all commits first, then dispatch, or the
+cached green run never matches HEAD and the gate stays red on validated work.
+Corollary: `mergeable_state: unstable` means mergeable with non-blocking checks
+failing/pending — not blocked; check the state before deferring a merge.
+
+*Grounded in: 2026-06-07 — dispatched chainsaw then pushed docs commits, so
+chainsaw-verify never matched HEAD; the merge relied on `unstable`, not a green
+gate.*
+
+→ Full detail: [`.claude/agents-md/06.32-finalize-before-sha-gated-dispatch.md`](.claude/agents-md/06.32-finalize-before-sha-gated-dispatch.md)
 
 ---
 
 ## 7. Testing loops — companion skills
 
-- After every `git push` to a non-main branch that affects Terraform,
-  invoke the **`terraform-ci-watch`** skill.
-- After applying a Crossplane Claim, XRD, or Composition (whether via
-  `kubectl`, ArgoCD sync, or CI), invoke the
-  **`crossplane-claim-verify`** skill to wait for `Synced`/`Ready` and
-  verify the underlying cloud resource is healthy.
-- When a claim is stuck or slow, run
-  `scripts/crossplane-trace.sh <kind>/<name> [-n <ns>]` for a one-shot
-  condition walk down claim → XR → managed-resources → IRSA → atProvider;
-  use `--watch` while waiting for reconciliation and `--json` to diff
-  snapshots across runs.
+- After every `git push` to a non-main branch affecting Terraform, invoke the
+  **`terraform-ci-watch`** skill.
+- After applying a Crossplane Claim, XRD, or Composition (kubectl, ArgoCD, or
+  CI), invoke **`crossplane-claim-verify`** to wait for `Synced`/`Ready` and
+  confirm the cloud resource is healthy.
+- When a claim is stuck, run `scripts/crossplane-trace.sh <kind>/<name>` for a
+  one-shot condition walk (`--watch` / `--json` available).
+
+→ Full detail: [`.claude/agents-md/07-testing-loops-companion-skills.md`](.claude/agents-md/07-testing-loops-companion-skills.md)
 
 ---
 
 ## 8. Session handoff
 
-At the end of every session (or when the user asks to wrap up), update
-`ai/handoff.md` with:
-- What was done this session (bullet list)
-- Current iteration status table (update the Status column)
-- The immediate next step
-- Any new decisions or constraints discovered
+At the end of every session (or when asked to wrap up), update `ai/handoff.md`
+with: what was done (bullets), the current iteration-status table (update the
+Status column), the immediate next step, and any new decisions/constraints. Keep
+it current — it is the first thing a new session reads to orient itself.
 
-Keep it current — it is the first thing a new session reads to orient
-itself without re-reading the full conversation.
+→ Full detail: [`.claude/agents-md/08-session-handoff.md`](.claude/agents-md/08-session-handoff.md)
 
 ### 8.1 The AWS test account is ephemeral — NEVER hardcode account-derived values
 
-The AWS account underneath the test environment is rotated between
-sessions; the prior account is usually torn down in full before the
-next session starts. **The account ID, derived FQDNs, IRSA role ARNs,
-EKS cluster endpoint, OIDC provider ARN, ACM cert ARNs, Cognito pool
-IDs, and any other account-scoped identifier are NOT durable.**
+The AWS account is rotated between sessions. Account ID, derived FQDNs, IRSA
+role ARNs, EKS endpoint, OIDC ARN, ACM/Cognito IDs are **not durable** — never
+write them into docs, code, commits, PRs, `.tf` files, fixtures, or workflows
+(use variables/data sources/secrets). Refer to the account abstractly. Run URLs
+and SHAs are fine (durable). Run `scripts/whereami.sh` as the first command of
+every session; treat handoff phase-states as belief, not ground truth.
 
-Do NOT write account-derived values into:
-- `ai/handoff.md`, `ai/PLAN.md`, or any other plan/spec/design doc
-- code comments, commit messages, PR descriptions, or skill content
-- Terraform `.tf` files (use variables / data sources / `local.account_id = data.aws_caller_identity.current.account_id`)
-- Test fixtures, scripts, or workflow YAML (read from `${{ secrets.AWS_REGION }}` / `aws sts get-caller-identity`)
-
-Refer to the account abstractly: "the test account", "the account ID (query
-via `aws sts get-caller-identity`)", "the `<account-id>.realhandsonlabs.net`
-zone". When the next session reads a stale hardcoded ID, it wastes a debug
-loop discovering "wait, that resource doesn't exist" before realizing the
-doc lied.
-
-Run URLs (`https://github.com/.../actions/runs/N`) and PR/commit SHAs
-are fine to cite — those are durable audit-trail artifacts. The line
-is: "does this identifier still resolve to a live resource after the
-account is rotated?" If no, it's ephemeral and doesn't belong in a
-plan or handoff.
-
-Run `scripts/whereami.sh` as the first command of every session; use `--json`
-for machine-readable output. This replaces the manual `aws sts get-caller-identity` /
-`aws eks list-clusters` sequence and surfaces kubectl context, ArgoCD URL, and
-Crossplane version in one call (SPEC-S4).
-
-When picking up a session, the first concrete commands are:
-1. `scripts/whereami.sh` — one call for account, region, EKS, zone, kubectl ctx, ArgoCD URL, Crossplane version.
-2. Treat the handoff doc's account-level statements (phase 0+1 "applied" vs "needs apply") as the session-author's belief, not ground truth — verify with the live API.
+→ Full detail: [`.claude/agents-md/08.1-ephemeral-account-no-hardcode.md`](.claude/agents-md/08.1-ephemeral-account-no-hardcode.md)
 
 ### 8.2 Re-check environmental preconditions when CI surfaces infra-level errors
 
-**Re-check environmental preconditions on each rotated account before
-diagnosing code failures.** At session start (always, per §8.1
-`scripts/whereami.sh`) AND when any CI failure shows infrastructure-
-level errors, verify:
+Re-check preconditions both at session start (§8.1 `whereami.sh`) AND when any
+CI failure shows infra-level errors: STS identity, the phase-0 state bucket for
+the current account, and (surfacing to the user) whether the GHA secrets match.
+Trigger shapes: `Unable to find remote state`, `InvalidClientTokenId`/`403`,
+kubectl `connection refused`/DNS, 245s chainsaw timeouts. If a precondition
+fails the handoff is stale — stop code-hypothesis debugging; document the
+rotation.
 
-1. `aws sts get-caller-identity` succeeds with the expected account.
-2. The state bucket for phase 0 exists for the current account:
-   `aws s3 ls "s3://k8-platform-tfstate-$(aws sts get-caller-identity --query Account --output text)/"`.
-3. The GitHub Actions repo secrets (`AWS_ACCESS_KEY_ID`,
-   `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`) match the current account.
-   This cannot be verified from the sandbox; if any other precondition
-   above fails, secrets are almost certainly stale too — surface to the
-   user.
-
-If any precondition fails, the in-repo handoff doc is stale per §8.1
-— **DO NOT continue with code-hypothesis debugging.** Stop, document
-the rotation, and either rotate the credentials (operator action) or
-re-bootstrap from phase 0.
-
-**Failure shapes that trigger this rule** (specialization of
-`ai/testing-guidelines.md` §10.1):
-
-- `Error: Unable to find remote state` from terraform (phase 0 state
-  doesn't exist on the rotated account).
-- `InvalidClientTokenId` / `The security token included in the
-  request is invalid` / `403 Forbidden` from STS or any AWS API.
-- `connection refused` / `dial tcp: lookup …: no such host` from
-  kubectl (cluster torn down or kubeconfig stale).
-- Real-AWS chainsaw scenarios timing out at 245s with
-  `Ready=False, message: "Unready resources: …"` — same shape as the
-  original `00-situation.md` §1 symptom but now on v2.5.0, where that
-  bug is fixed. Most likely cause: chainsaw provider can't
-  authenticate to AWS because the runner's secrets are stale.
-
-**Why this rule exists separately from §8.1.** §8.1 says "verify with
-the live API" at session start. §8.2 says "verify ALSO when these
-specific CI symptoms surface mid-session", because rotation can be
-discovered partway through a run and the surrounding code-hypothesis
-debugging will go nowhere until the precondition is fixed. See
-`retrospective/2026-05-26-106.md` for the 2026-05-26 v1→v2 migration
-that surfaced this pattern.
+→ Full detail: [`.claude/agents-md/08.2-recheck-preconditions-on-ci-infra-errors.md`](.claude/agents-md/08.2-recheck-preconditions-on-ci-infra-errors.md)
 
 ### 8.3 Handoff docs carry factual state only
 
-**Handoff docs carry factual state only.** "When writing a handoff
-document for a future agent, restrict the content to (a) verified
-outcomes with run IDs / SHAs / PR numbers, (b) the exact open work and
-the one concrete next action, and (c) brief neutral operating notes. Do
-not include emotional commentary about the user, profanity,
-self-flagellation about prior mistakes, ranked speculation about what
-the user is most likely to ask next, or verbose narrative of how each
-past bug was discovered."
+A handoff restricts content to (a) verified outcomes with run IDs/SHAs/PR
+numbers, (b) the exact open work and the one concrete next action, and (c) brief
+neutral operating notes. No emotional commentary about the user, profanity,
+self-flagellation, ranked speculation about the next ask, or verbose narrative
+of how each past bug was found — those prime the next session for defensiveness.
 
-*Grounded in: PR #116 handoff `i-am-a-fucking-idiot.md` primed the next
-session for defensiveness; PR #117 sanitization (`handoff-recovery.md`)
-preserved every verified outcome, PR number, run ID, SHA, and the
-exact one-line fix needed for PR #111 at roughly half the line count
-by stripping every priming surface.*
-
-See `retrospective/2026-05-28-117/AGENTS-MD-9621828c6c-handoff-docs-factual-state-only.md`
-for the per-rule source and full justification.
+→ Full detail: [`.claude/agents-md/08.3-handoff-docs-factual-only.md`](.claude/agents-md/08.3-handoff-docs-factual-only.md)
 
 ### 8.4 Assume a rotated account is EMPTY until the live API proves otherwise
 
-**A new session almost always lands on a freshly-rotated AWS account with
-NO prior phase work instantiated.** The lab account underneath the test
-environment is torn down and re-issued between sessions. When a new
-session starts, the default, conservative assumption is:
+A new session almost always lands on a freshly-rotated account with no prior
+phase work: no state backend, no EKS, no IRSA/ACM/ASM/Cognito — only the single
+Route53 hosted zone. Treat **every** phase as `not applied` regardless of the
+handoff table until the live API proves otherwise. Before reading a phase's
+outputs / dispatching `verify` / calling a phase live, confirm via
+`whereami.sh`; if a resource is absent, `apply-and-verify` from scratch — never
+`verify` against nothing.
 
-- **No Terraform state backend** — the `k8-platform-tfstate-<account-id>`
-  S3 bucket and the `k8-platform-tfstate-lock` DynamoDB table do **not**
-  exist yet.
-- **No EKS clusters** — `aws eks list-clusters` returns `[]`. There is no
-  `k8-platform-mgmt`, no kubeconfig context, no live Crossplane/ArgoCD.
-- **No IRSA roles, no ACM certs, no ASM secrets, no Cognito pool** from any
-  prior phase.
-- **The ONLY pre-existing resource** is the single public Route53 hosted
-  zone (`<account-id>.realhandsonlabs.net.`), which the lab provisions.
-
-This means **every phase (0, 1, 2, …) must be treated as `not applied` on
-the new account until the live API proves otherwise** — regardless of what
-`ai/handoff.md`'s Phase-states table says. The handoff's
-`applied`/`verified` markers describe the *previous* account and are NOT
-durable across rotation (this re-asserts §8.1 and §2 of
-`ai/testing-guidelines.md`: handoff phase-state is the prior session's
-belief, not ground truth).
-
-**Required confirmation before acting on any "already applied" assumption.**
-Before reading from a phase's outputs, dispatching a `verify` (rather than
-`apply-and-verify`), or telling the user a phase is live, the agent MUST
-confirm the resources actually exist on the current account:
-
-1. `scripts/whereami.sh` (or `aws sts get-caller-identity` + `aws eks
-   list-clusters` + `aws s3 ls s3://k8-platform-tfstate-<account-id>/`).
-2. If a resource the agent expected is absent, the account was rotated —
-   bring the phase up from scratch (`apply-and-verify`), do not `verify`
-   against nothing.
-
-Do NOT skip this and assume the cluster is up because the handoff (or a
-prior session, or an earlier run in *this* session before a rotation) said
-so. A `verify` dispatched against a non-existent cluster wastes a CI cycle
-and produces a confusing failure that looks like a code bug.
-
-*Grounded in: 2026-05-29 auto-004 run. The handoff QUICKSTART said phase 0
-+ phase 1 were `verified` (2026-05-28). The account had since rotated to a
-fresh one: `aws eks list-clusters` returned `[]`, the
-`k8-platform-tfstate-<account-id>` bucket returned `NoSuchBucket`, and only
-the Route53 zone existed. A `test-e2e` probe confirmed CI's secrets were
-valid for the new account and that the state backend was un-bootstrapped
-("note: bucket missing is expected … without prior bootstrap") — so the
-correct action was a from-scratch phase-0 `apply-and-verify`, not a
-`verify`.*
-
----
+→ Full detail: [`.claude/agents-md/08.4-assume-rotated-account-empty.md`](.claude/agents-md/08.4-assume-rotated-account-empty.md)
 
 ### 8.5 Check credentials via Actions — do NOT assume they are stale
 
-**Verify the AWS credentials yourself before claiming they are stale or
-deferring work on that basis.** §8.1/§8.2/§8.4 say "assume the account may
-be rotated and verify with the live API" — that is about *resource
-existence*, NOT a license to assume the GitHub Actions AWS secrets are
-invalid. The sandbox has no standing creds, but CI does, and you can check
-at any time by dispatching a workflow:
+§8.1/§8.2/§8.4 are about resource *existence*, not a license to assume the GHA
+AWS secrets are invalid. The sandbox has no standing creds but CI does: dispatch
+`terraform-test.yml` `phase=test action=test-e2e` (read-only probe) or any
+`apply-and-verify` (fails fast on `InvalidClientTokenId`/`403`). When you need
+to know whether creds work, **dispatch the probe and read the result** — stale
+is a *verified* state, not a default (cf. §6.12).
 
-- `terraform-test.yml` with `phase=test action=test-e2e` is the read-only
-  credential/account probe (a few seconds of real AWS calls, no mutation).
-- Any `apply-and-verify` also exercises the creds and fails fast and loudly
-  if they are invalid (`InvalidClientTokenId` / `403`).
-
-So the correct move when you need to know whether creds work is **dispatch
-the probe and read the result**, not assume stale and stop. Telling the
-user "I can't, the creds are probably stale" without having dispatched a
-check is the wrong shape of "unavailable" (cf. §6.12). Stale creds are a
-*verified* state, not a default assumption.
-
-*Grounded in: 2026-06-05 auto-005 long-run — the agent assumed the rotated
-account's GHA secrets were stale, scoped out the live build on that basis,
-and asked the user instead of checking. The user: "The credentials are
-current. In the future check yourself. You can do that any time via
-actions."*
+→ Full detail: [`.claude/agents-md/08.5-check-creds-via-actions.md`](.claude/agents-md/08.5-check-creds-via-actions.md)
 
 ### 8.6 Build everything already tested; plan the session while long builds run
 
-**The default for a delegated/long session is to BUILD — bring up every
-phase that has already been tested — not to hunt for code-only side
-quests.** Unless the user directs otherwise:
+The default for a delegated/long session is to **BUILD** every already-tested
+phase, not hunt code-only side quests. (1) Start the long pole first — dispatch
+the cluster/infra build (~20 min) at session start. (2) Plan and prep the rest
+while it runs (no foreground-polling, §6.10). (3) Build what's tested (phases
+0-3) and then work live (hub-spoke, `platform-services`, hello app) rather than
+re-litigating tested code.
 
-1. **Start the long pole first.** Cluster/infra builds take ~20 minutes
-   (the management EKS apply especially). Dispatch the build pipeline
-   (`phase=base` → `phase=management` → phase-2 chainsaw → phase-3) at the
-   very start of the session so the slow apply is running while you do
-   everything else.
-2. **Plan the session's work while the build runs.** Do not idle waiting on
-   a dispatched apply (§6.10 forbids foreground-polling anyway). Write the
-   session plan, prep the next phase's manifests/checks, draft live-verify
-   steps — all the work that does not depend on the in-flight apply.
-3. **Build what is tested before proposing new work.** Phases 0-3 are
-   tested (terraform-validate, unit, kubeconform, render fixtures, chainsaw
-   `xrd-establishes`); the mandate is to instantiate them on the live
-   account and then work in the live environment (the hub-spoke,
-   `platform-services`, the hello app — handoff §D), NOT to re-litigate the
-   already-tested code.
-
-*Grounded in: 2026-06-05 auto-005 — the agent spent the session on code-only
-follow-ups and a decision brief while the real mandate was to build phases
-0-3 and work live. The user: "You are supposed to be building phases 0-3
-then working in the live environment… unless directed otherwise build
-everything that has already been tested and plan work for the session while
-waiting. Building clusters takes 20 or so minutes, so start that process
-first."*
+→ Full detail: [`.claude/agents-md/08.6-build-everything-tested.md`](.claude/agents-md/08.6-build-everything-tested.md)
 
 ---
 
 ## 9. Commit standards
 
 - **One logical change per commit.** Don't bundle unrelated fixes.
-- **Message format:** imperative present tense, ≤72 chars on subject line.
-  Blank line, then body explaining *why*.
-- **Never commit** `terraform.tfvars`, `.terraform/`, state files, or any
-  file matching the patterns in `terraform/*/.gitignore`.
-- **Bug fixes commit with their tests** — see §6.2.5.
+- **Message format:** imperative present tense, ≤72 chars on subject line. Blank
+  line, then body explaining *why*.
+- **Never commit** `terraform.tfvars`, `.terraform/`, state files, or any file
+  matching the patterns in `terraform/*/.gitignore`.
+- **Bug fixes commit with their tests** — see §6.2.
 
 ---
 
 ## 10. Terraform conventions
 
-- All sensitive values come from `TF_VAR_` environment variables or
-  `-backend-config` flags. Nothing sensitive is ever committed.
+- All sensitive values come from `TF_VAR_` env vars or `-backend-config` flags.
+  Nothing sensitive is ever committed.
 - `terraform plan` is always run before `terraform apply`. No blind applies.
-- Version pins in `versions.tf` and `variables.tf` (Helm chart versions)
-  are updated deliberately with a commit that explains the reason.
-- Both modules (`terraform/base/` and `terraform/management/`) must pass
-  `terraform validate` before a PR is considered ready.
+- Version pins in `versions.tf` / `variables.tf` are updated deliberately with a
+  commit that explains the reason.
+- Both modules (`terraform/base/`, `terraform/management/`) must pass
+  `terraform validate` before a PR is ready.
 
 ### 10.1 ArgoCD credentials are a Terraform output (so a session can drive ArgoCD)
 
-**When Terraform installs ArgoCD on the management cluster, it MUST create
-a dedicated ArgoCD credential and expose it — plus the ArgoCD server URL —
-as Terraform outputs.** The agent has no standing kube/ArgoCD credentials
-in the sandbox (verified: no AWS env, no `~/.aws`, IMDS blocked, no
-kubeconfig — AWS egress works but returns 401/403 unauthenticated). The
-ONLY supported way for a session to trigger anything in ArgoCD during
-implementation (sync the platform-cluster XR, query Application
-sync/health, force a refresh) is:
+When Terraform installs ArgoCD it MUST create a dedicated credential and expose
+it — plus the server URL — as Terraform outputs (the sandbox has no standing
+kube/ArgoCD creds). Drive ArgoCD by reading `argocd_admin_password` /
+`argocd_server_url` from state via a CI workflow, then `argocd login` + `app
+sync`/`get`. Do **not** depend on `argocd-initial-admin-secret` or hand the user
+a "click Sync" step. Generate via `random_password` + a `terraform_data`
+local-exec bcrypt (never `bcrypt()` in a resource arg — perpetual diff).
 
-1. Read the credential from Terraform state: `terraform -chdir=terraform/management output -raw argocd_admin_password` and `... output -raw argocd_server_url`. This runs in the CI workflow that holds the AWS/state creds (e.g. a `terraform-test.yml` action), not the sandbox.
-2. `argocd login "$ARGOCD_SERVER_URL" --username admin --password "$ARGOCD_ADMIN_PASSWORD" --grpc-web` then `argocd app sync platform-cluster-claim` / `argocd app get <app> -o json`.
-
-**Do NOT** depend on `argocd-initial-admin-secret` (it's ephemeral, not in
-Terraform state, and unreadable without standing cluster creds) and do NOT
-hand the user a "click Sync in the UI" step — the agent drives ArgoCD
-itself, via the Terraform-output credential, through CI.
-
-**Implementation note (avoid the bcrypt non-determinism trap):** generate
-the password with `random_password`, and apply the bcrypt hash to the
-`argocd-secret` in a `terraform_data` `local-exec` (compute the hash in the
-provisioner, e.g. `argocd account bcrypt` / `htpasswd -nbBC 10`, NOT via
-Terraform's `bcrypt()` in a resource argument — `bcrypt()` re-salts every
-plan and causes a perpetual diff). Trigger the provisioner on
-`random_password.result` so it only re-runs when the password changes.
-Output `argocd_admin_password` (sensitive) and `argocd_server_url`.
-
-*Grounded in: 2026-06-05 phase-3 session — the agent repeatedly framed the
-platform-cluster sync as a "manual operator step" because it could not
-reach ArgoCD; the user pointed out the session should create ArgoCD creds
-in Terraform and read them from the outputs to drive ArgoCD itself.*
+→ Full detail: [`.claude/agents-md/10.1-argocd-creds-terraform-output.md`](.claude/agents-md/10.1-argocd-creds-terraform-output.md)
 
 ---
 
 ## 11. File layout
 
-```
-terraform/base/          # Phase 0 — VPC, Route53, Cognito
-terraform/management/    # Phase 1 — EKS, IRSA, ArgoCD, Crossplane, ESO, ExternalDNS, Kyverno
-argocd/                  # ArgoCD Applications and Projects
-crossplane/              # XRDs, Compositions, Claims
-clusters/                # Per-cluster Kubernetes resource overlays
-platform-services/       # Helm values for platform components
-policies/audit/          # Kyverno audit-mode ClusterPolicies
-scripts/                 # Diagnostic helper scripts (read-only)
-scripts/_lib/            # Shared bash helpers sourced by scripts/ executables (SPEC-S7+)
-tests/unit/              # Pre-apply unit tests (helm-render, IRSA linkage, IAM policy completeness, EKS module defaults)
-tests/integration/       # End-to-end smoke tests against the live cluster
-tests/chainsaw/          # Chainsaw scenarios for Crossplane XRDs (phase 2+)
-tests/e2e/               # Read-only AWS sanity checks
-docs/                    # ADRs, operations runbook, diagrams
-ai/                      # Design documents, requirements, handoff, testing plan
-.github/workflows/       # CI workflows
-.github/scripts/         # Helper scripts called by workflows
-```
+The repository layout (Terraform phases, `crossplane/`, `argocd/`, `clusters/`,
+`platform-services/`, `policies/audit/`, `scripts/`, the `tests/` layers,
+`docs/`, `ai/`, `.github/`) is documented in full in the detail file.
+
+→ Full detail: [`.claude/agents-md/11-file-layout.md`](.claude/agents-md/11-file-layout.md)
 
 ---
 
@@ -1328,20 +591,11 @@ ai/                      # Design documents, requirements, handoff, testing plan
 
 ### 12.1 Crossplane v2 has no claims — use "XR" / "composite resource", not "claim"
 
-**Crossplane v2 has no claims — say "XR" / "composite resource", not
-"claim".** This repo runs Crossplane v2 (`apiextensions.crossplane.io/v2`,
-`scope: Namespaced`), which has NO claim CRD and no claim→XR promotion:
-`XPlatformSecret` / `XPlatformCluster` are namespaced composite resources
-(XRs) the user applies directly. In commentary, commit messages, PR text,
-and docs, call them the XR or the composite resource, never the claim. Some
-artifact names still contain `claim` as v1-era holdovers (the chainsaw
-scenarios `claim-creates-secret` / `claim-rotation`, the step
-`wait for claim Ready`, the file
-`clusters/platform/platform-cluster-claim.yaml`, and the ArgoCD Application
-`platform-cluster-claim`) — quoting those proper names verbatim is fine, but
-do not let `claim` leak into conceptual descriptions of how the resource
-works.
+This repo runs Crossplane v2 (`apiextensions.crossplane.io/v2`, `scope:
+Namespaced`): no claim CRD, no claim→XR promotion. `XPlatformSecret` /
+`XPlatformCluster` are namespaced XRs applied directly. In commentary, commits,
+PRs, and docs say "XR" / "composite resource", never "claim". Some proper names
+still contain `claim` (v1-era holdovers) — quoting those verbatim is fine, but
+don't let `claim` leak into conceptual descriptions.
 
-*Grounded in: 2026-05-29 auto-004 — the agent repeatedly called the v2 XRs
-"claims" in running commentary; the user challenged it. See
-`retrospective/2026-05-29-133-a/AGENTS-MD-1545d62c89-v2-no-claims-xr-terminology.md`.*
+→ Full detail: [`.claude/agents-md/12.1-v2-no-claims-xr-terminology.md`](.claude/agents-md/12.1-v2-no-claims-xr-terminology.md)
