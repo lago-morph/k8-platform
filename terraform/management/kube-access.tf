@@ -29,39 +29,18 @@
 # See docs/decisions/0006-sandbox-kubectl-via-ssm-tunnel.md.
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Auth: a read-only EKS access entry for the sandbox IAM identity.
+# Auth: the sandbox IAM identity already has an EKS access entry on THIS cluster.
 # ──────────────────────────────────────────────────────────────────────────────
 # The sandbox authenticates with `aws eks get-token`; the cluster must map that
-# IAM principal to kube RBAC. The EKS module runs in API_AND_CONFIG_MAP mode
-# (module v20 default; eks.tf pins it explicitly), so access entries are honored.
-# AmazonEKSAdminViewPolicy = read-only on ALL resources incl. CRDs (Crossplane
-# XRs, ArgoCD Applications) — useful for diagnostics, never mutating.
-
-variable "sandbox_principal_name" {
-  description = "IAM username of the sandbox identity granted read-only kube access via an EKS access entry."
-  type        = string
-  default     = "cloud_user"
-}
-
-locals {
-  sandbox_principal_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:user/${var.sandbox_principal_name}"
-}
-
-resource "aws_eks_access_entry" "sandbox" {
-  cluster_name  = module.eks.cluster_name
-  principal_arn = local.sandbox_principal_arn
-  type          = "STANDARD"
-}
-
-resource "aws_eks_access_policy_association" "sandbox_view" {
-  cluster_name  = module.eks.cluster_name
-  principal_arn = aws_eks_access_entry.sandbox.principal_arn
-  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSAdminViewPolicy"
-
-  access_scope {
-    type = "cluster"
-  }
-}
+# IAM principal to kube RBAC. On the management cluster the sandbox identity
+# (`user/cloud_user`) IS the cluster creator — CI applies this module with
+# cloud_user's credentials — so `enable_cluster_creator_admin_permissions = true`
+# (eks.tf) already creates an admin access entry for it. We therefore do NOT add
+# a second entry here: a duplicate STANDARD entry for the same principal is a
+# ResourceInUseException. (Platform clusters are created by the Crossplane role,
+# not cloud_user, so their Composition DOES add a read-only access entry —
+# AmazonEKSAdminViewPolicy — for the sandbox identity.) The module pins
+# authentication_mode = API_AND_CONFIG_MAP so access entries are honored.
 
 # ──────────────────────────────────────────────────────────────────────────────
 # The SSM relay instance — ONE shared relay for ALL clusters.
@@ -180,5 +159,5 @@ resource "aws_vpc_security_group_ingress_rule" "kube_relay_to_mgmt" {
   from_port                    = 443
   to_port                      = 443
   ip_protocol                  = "tcp"
-  description                  = "SSM kube-API relay -> mgmt API server"
+  description                  = "SSM kube-API relay to mgmt API server"
 }

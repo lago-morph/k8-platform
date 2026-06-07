@@ -628,7 +628,7 @@ spec:
                   ipProtocol: tcp
                   fromPort: 443
                   toPort: 443
-                  description: "SSM kube-API relay -> cluster API server"
+                  description: "SSM kube-API relay to cluster API server"
                   tags:
                     ManagedBy: crossplane
                     PlatformAbstraction: PlatformCluster
