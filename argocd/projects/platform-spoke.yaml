@@ -76,6 +76,13 @@ spec:
       kind: "MutatingWebhookConfiguration"
     - group: "scheduling.k8s.io"
       kind: "PriorityClass"
+    # IngressClass is CLUSTER-scoped (not namespaced), so the
+    # namespaceResourceWhitelist's networking.k8s.io/* does NOT cover it. The
+    # ingress-nginx chart ships an IngressClass; without this the spoke
+    # ingress-nginx sync fails closed: "resource networking.k8s.io:IngressClass
+    # is not permitted in project platform-spoke" (auto-012).
+    - group: "networking.k8s.io"
+      kind: "IngressClass"
   namespaceResourceWhitelist:
     - group: ""
       kind: "*"

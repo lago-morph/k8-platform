@@ -44,7 +44,10 @@ fi
 
 # 5. The workload kinds the add-on charts need must be whitelisted (CRD + cluster
 #    RBAC are the easy-to-miss ones that block ingress-nginx/prometheus installs).
-for kind in CustomResourceDefinition ClusterRole ClusterRoleBinding; do
+# IngressClass is cluster-scoped and shipped by the ingress-nginx chart; its
+# absence blocked the spoke ingress-nginx sync (auto-012). The namespaced
+# networking.k8s.io/* whitelist does NOT cover this cluster-scoped kind.
+for kind in CustomResourceDefinition ClusterRole ClusterRoleBinding IngressClass; do
   if yq -e ".spec.clusterResourceWhitelist[] | select(.kind == \"$kind\")" "$PROJ" >/dev/null 2>&1; then
     echo "ok: clusterResourceWhitelist includes $kind"
   else
