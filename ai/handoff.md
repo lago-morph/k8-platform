@@ -23,41 +23,49 @@ last, the current state, and the next concrete steps. Keep it factual
 > - **#161 MERGED** — added the shared **`ClusterProviderConfig/default` (IRSA)**
 >   via GitOps (`crossplane/providerconfig/`); it was a manual bootstrap step
 >   (SEG-1 §0c) never automated, absent on the rebuilt cluster, blocking ALL AWS MRs.
-> - **#162 OPEN** — XSpokeAccess XRD+Composition+spoke-access wiring (phase-3 spoke
->   AWS trust plane) + EnvironmentConfig `accountId`/`argocdRoleArn` extension +
->   provider-kubernetes install. Validated (render/kubeconform/61-assert unit test);
->   live MR field names verified against the running CRDs. **NOT merged** (review +
->   needs the management apply to take effect). PR also carries the kube-diagnose
->   workflow + this handoff/summary/decision-note/retro.
+> - **#162 (MERGED 2026-06-07)** — XSpokeAccess XRD+Composition+spoke-access wiring
+>   (phase-3 spoke AWS trust plane) + EnvironmentConfig `accountId`/`argocdRoleArn`
+>   extension + provider-kubernetes (**v1.2.1**) install + the child-provider IRSA
+>   fix + the SessionStart tools hook + run docs/retro. Its terraform was applied
+>   live (`management apply-and-verify`, green) BEFORE merge.
 >
-> **THE ONE REMAINING PHASE-3 BLOCKER → `decisions/auto-011-child-provider-irsa.md`:**
-> the `platform-cluster-claim` XR is fully composed (11 MRs) but every MR fails
-> `token file name cannot be empty` — the **child AWS providers
-> (eks/iam/acm/route53/secretsmanager/rds) run pods whose SAs lack the IRSA
-> role-arn annotation** (only `upbound-provider-family-aws` has it; the crossplane
-> role trust is `StringEquals` on that one subject). Fix = give the child providers
-> `runtimeConfigRef: aws-provider-config` (Option A, minimal) OR a per-child
-> annotated SA + wildcard trust (Option B); then a `management apply-and-verify`.
-> The decision note has both options + validation steps. This is load-bearing
-> (security of the crossplane role) so it was left as a decision, not shipped blind.
+> **✅ PHASE-3 CLUSTER IS LIVE.** The three blockers are all fixed and the platform
+> cluster provisioned:
+> - #160 AppProject RBAC; #161 ClusterProviderConfig/default (IRSA); **blocker #3
+>   (child-provider IRSA) FIXED via Option A** — `runtimeConfigRef: aws-provider-config`
+>   on all 6 child providers so their pods run under `upbound-provider-family-aws`
+>   (the only subject the crossplane role trusts). Confirmed live: the eks provider
+>   pod has `AWS_WEB_IDENTITY_TOKEN_FILE`; XR `Synced=True`.
+> - **`provider-kubernetes` was failing** because the subagent guessed tag `v0.16.0`
+>   which is NOT published to xpkg (404 MANIFEST_UNKNOWN) and predates Crossplane v2.
+>   Bumped to **v1.2.1** (the v1.x line is the Crossplane-v2 series); now Healthy,
+>   `providerconfig.kubernetes.crossplane.io/hub` created.
+> - **Live now:** EKS `k8-platform-services` **ACTIVE**, node group **ACTIVE**,
+>   `*.platform.596430611165.realhandsonlabs.net` ACM cert **ISSUED**, mgmt e2e-verify
+>   all green (ArgoCD HTTP 200). The XR `Ready` may still show `Creating` briefly while
+>   it aggregates the last MR condition — verify it flips to `Ready=True`.
 >
-> **IMMEDIATE NEXT STEPS:**
-> 1. Apply the child-provider IRSA fix (decision note Option A first) — terraform +
->    `management apply-and-verify`. Verify via kube-diagnose that an eks provider
->    pod has `AWS_WEB_IDENTITY_TOKEN_FILE`.
-> 2. The 11 already-composed MRs then reconcile → platform EKS + `*.platform.<domain>`
->    ACM cert provision (~20 min). NO re-sync of platform-cluster-claim needed.
-> 3. Merge #162 (so XSpokeAccess + the EnvironmentConfig extension are on main);
->    the same management apply installs provider-kubernetes + extends the envconfig.
-> 4. Resume `decisions/auto-009-phase3-live-completion-runbook.md`: overlay
->    `XPlatformCluster.status.oidcIssuer` onto the XSpokeAccess XR → `argocd app
->    sync spoke-access` → register `platform-spoke` cluster Secret → converge spoke
->    apps → verify `https://hello.platform.596430611165.realhandsonlabs.net` (200, ACM chain).
-> 5. Phase 5: sync `keycloak-db` XDatabase XR on the spoke; verify RDS + secret +
->    Keycloak. (xdatabase XRD now syncs too — the include-glob was widened to `xrds/*`.)
+> **IMMEDIATE NEXT STEPS — spoke registration (resume `decisions/auto-009-phase3-live-completion-runbook.md`):**
+> 1. Confirm `crossplane-resources` synced the **XSpokeAccess XRD + Composition**
+>    (now on main) and the **`spoke-access` Application** exists (manual-sync).
+> 2. Read the cluster's live `oidcIssuer`:
+>    `argocd`/ArgoCD-API → `XPlatformCluster.status.oidcIssuer` (or kube-diagnose).
+>    Overlay it onto the XSpokeAccess XR (`clusters/platform/spoke-access/spoke-access.yaml`
+>    spec.oidcIssuer is a placeholder), then `argocd app sync spoke-access` → creates
+>    the OIDC provider + external-dns IRSA Role/RolePolicy + EKS AccessEntry on the spoke.
+> 3. Build the **`platform-spoke` ArgoCD cluster Secret** from the EKS Cluster MR's
+>    connection secret (endpoint+CA, aws/exec auth via the argocd role) — provider-kubernetes
+>    + the `hub` ProviderConfig are installed for this. NOTE: provider-kubernetes Object
+>    MRs need RBAC to write the Secret (same class as the ESO ClusterRole) — grant it.
+> 4. Overlay spoke values (certArn/domain/region) → spoke apps converge (ingress-nginx →
+>    external-dns → hello) → verify `https://hello.platform.596430611165.realhandsonlabs.net`
+>    (200, valid ACM chain).
+> 5. **Phase 5:** sync `keycloak-db` XDatabase XR; verify RDS + connection secret +
+>    Keycloak. (xdatabase XRD now syncs — include-glob widened to `xrds/*`.)
 >
-> Open issues: `OI-2026-06-06-5` (child-provider IRSA, this note),
-> `OI-2026-06-06-3` (xdatabase `-master` secret orphan), `OI-2026-05-28-1` (claim-creates-secret flake).
+> Open issues: `OI-2026-06-06-5` (child-provider IRSA — FIXED via Option A, keep the
+> note as the rationale record), `OI-2026-06-06-3` (xdatabase `-master` secret orphan),
+> `OI-2026-05-28-1` (claim-creates-secret flake).
 
 > **[auto-010 — 2026-06-06 — SUPERSEDES the auto-009 block below.]** Full detail:
 > `run-summary-auto-010.md` + `retrospective/2026-06-06-159/`.

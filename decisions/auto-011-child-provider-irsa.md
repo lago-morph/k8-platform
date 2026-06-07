@@ -1,9 +1,12 @@
 # auto-011 — Child AWS providers have no IRSA identity (phase-3 blocker #3)
 
-**Status:** Option A CHOSEN by the user and IMPLEMENTED in terraform (auto-011);
-**pending `management apply-and-verify` to take effect + validate.** This is the
-**only** remaining blocker for the platform-cluster provision; the XR is composed
-and ready, every other input is correct.
+**Status:** Option A CHOSEN, IMPLEMENTED, **APPLIED, and VERIFIED LIVE (2026-06-07).**
+The `management apply-and-verify` ran green; the eks provider pod now has
+`AWS_WEB_IDENTITY_TOKEN_FILE`, all child providers run under
+`upbound-provider-family-aws`, the platform-cluster XR is `Synced=True`, and EKS
+`k8-platform-services` reached **ACTIVE** with its ACM cert ISSUED. Crossplane did
+NOT churn on the shared pinned SA (Option A's one risk did not materialize), so the
+Option-B fallback was not needed. This note is retained as the rationale record.
 
 **Implemented (Option A):** `runtimeConfigRef: {kind: DeploymentRuntimeConfig,
 name: aws-provider-config}` added to all six child providers — eks/iam/acm/route53

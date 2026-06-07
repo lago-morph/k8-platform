@@ -25,8 +25,12 @@ mandate), merged to `main` in stages.
   (`decisions/auto-011-child-provider-irsa.md`).
 - **Authored + validated the entire XSpokeAccess phase-3-spoke composition** (#162,
   open) incl. live CRD field verification.
-- **Cluster is NOT yet provisioned** — gated solely on blocker #3. The path from
-  there is fully documented; no further design work is needed, just apply+verify.
+- **UPDATE (2026-06-07): blocker #3 FIXED (Option A) + provider-kubernetes fixed
+  (v0.16.0→v1.2.1, the guessed tag 404'd) → PLATFORM CLUSTER IS LIVE.** EKS
+  `k8-platform-services` ACTIVE, node group ACTIVE, `*.platform.<domain>` ACM cert
+  ISSUED, XR Synced=True; mgmt e2e-verify green. #162 merged. Remaining: spoke
+  registration (XSpokeAccess sync → cluster Secret → spoke apps → hello.platform)
+  then phase 5 — see ai/handoff.md QUICKSTART.
 
 ## 2. Suggested merge order
 
