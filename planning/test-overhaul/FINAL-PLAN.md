@@ -116,18 +116,28 @@ supersede the round-2 framing where they conflict.
   in `scripts/`). The live suite is a **STEP added to the apply-and-verify job**.
   The two surfaces: **push/PR (automatic) = static, no-cluster**; **workflow_dispatch
   (manual) = apply-and-verify + ad-hoc, the full live suite.** (§4.1)
-- **R3-B. "On by default" is made mechanical by the fail-closed live-evidence
-  gate** (§4.3) + the `mgmt_apply`-gated step + the GitOps-config trigger (exec
-  summary above). This is the spine fix and the centerpiece.
+- **R3-B. "On by default" is made mechanical by the FAIL-closed live-evidence gate**
+  (§4.3) + the `mgmt_apply`-gated step + the GitOps-config trigger + the readonly-path
+  expect-full floor (exec summary above). This is the spine fix and the centerpiece;
+  the round-2→round-3 WARN demotion is reverted to FAIL.
 - **R3-C. The build runs under the admin CI key — split the identity.**
-  `terraform apply` keeps admin; `tests/live/run.sh` runs under a scoped,
-  zero-wildcard, tag-conditioned verifier/reaper role; `LIVE_MODE` defaults
-  fail-closed to `readonly`. (§3.4, §4.1)
+  `terraform apply` keeps admin (unavoidable for bootstrap); `tests/live/run.sh` runs
+  under a **scoped, zero-wildcard, tag-conditioned** verifier/reaper role committed as
+  an IAM policy file; a static lint asserts the live phase **cannot inherit the admin
+  env block** (`secrets.AWS_ACCESS_KEY_ID`); `LIVE_MODE` defaults **fail-closed to
+  `readonly`**. The NON-GOAL is preserved and distinguished: this scoped role is for
+  the verifier/reaper *harness*, **not** a new AssumeRole principal impersonating the
+  Crossplane controller — driving the real controller under `source: IRSA` is still
+  the only identity oracle. (§3.4, §4.1)
 - **R3-D. The spoke is PUBLIC** (`endpointPublicAccess: true`, platform-cluster.yaml:329);
-  CI reaches it via `aws eks update-kubeconfig` exactly as it reaches mgmt. The
-  "private-CA spoke API" residual is mis-diagnosed and removed; spoke verification
-  is a **post-reconcile step in the dispatch job**, not a standing watcher daemon.
-  (§10, §14)
+  CI reaches it via `aws eks update-kubeconfig` exactly as it reaches mgmt today (the
+  integration suite already does, integration-tests.yml:74). The "private-CA spoke API"
+  residual was **mis-diagnosed and is removed**; the real precondition is the
+  public-endpoint CIDR allowlist + the EKS AccessEntry for the CI identity (a config
+  check, verified at spike time). This **un-strands the 6 spoke blockers.** Spoke
+  verification is a **post-reconcile STEP in the dispatch job** (watch the spoke XR
+  reach `Ready` on the hub, then verify) — **not** a standing controller/daemon the
+  plan never builds. (§10, §14)
 
 **What round-2 corrected (carried forward, still load-bearing).**
 
@@ -140,21 +150,28 @@ supersede the round-2 framing where they conflict.
    `AWS_ACCESS_KEY_ID` in the provider pod env. The caller-ARN==expected check is
    **infeasible in-band** and is demoted to an optional out-of-band audit.
 2. **Workflows CAN be edited here** (via jentic Contents-PUT / `ext-github`), so the
-   "can't edit workflows" premise is removed. **The live suite is a STEP in the
+   "can't edit workflows" premise is removed. **The live suite is a STEP added to the
    apply-and-verify job of `terraform-test.yml`** (a `workflow_dispatch` workflow),
-   landed via jentic. Two real execution surfaces (round-3 R3-A): **push/PR CI
-   (automatic) = static no-cluster checks only**; **`workflow_dispatch` (manual) =
-   the apply-and-verify job (full live suite, on by default, all-skipped ⇒ RED) AND
-   ad-hoc/kind runs**. Cluster work (even kind) is `workflow_dispatch`-only (matches
-   chainsaw.yml / terraform-test.yml; AGENTS §6.7) — satisfying correction #2.
-   "On by default" is enforced **mechanically** by the fail-closed live-evidence
-   gate, the `mgmt_apply`-gated step, and the GitOps-config trigger (§4) — not by
-   the dispatch UI default, which is advisory. Requirement #1 ships as a mechanism,
-   not a convention.
+   landed via jentic — this IS a workflow edit, not a non-CI executor. Two — and only
+   two — real execution surfaces (round-3 R3-A): **push/PR CI (automatic) = static
+   no-cluster checks only**; **`workflow_dispatch` (manual) = the apply-and-verify job
+   (full live suite, on by default, all-skipped ⇒ RED) AND ad-hoc/kind runs** — the
+   same Actions surface, two action choices. Cluster work (even kind) is
+   `workflow_dispatch`-only (matches chainsaw.yml / terraform-test.yml; AGENTS §6.7) —
+   satisfying correction #2. "On by default" is enforced **mechanically** by the
+   FAIL-closed live-evidence gate, the `mgmt_apply`-gated step, the readonly-path
+   expect-full floor, and the GitOps-config trigger (§4) — **never** by the dispatch
+   UI default (which is advisory only). Requirement #1 ships as a mechanism, not a
+   convention.
 3. **The coverage deriver must parse Pipeline-mode compositions** (MR kinds at
-   `spec.pipeline[].input.resources[].base.kind`, keyed on group+kind) — verified
-   working below. It ships **with a fixture-test and WARN-ONLY first**. IAM
-   per-component attribution is dropped (irsa.tf is one flat policy).
+   `spec.pipeline[].input.resources[].base.kind`, keyed on **group+kind with the
+   apiVersion VERSION stripped**, deduped) — verified working below. The extractor
+   and the committed fixture oracle must be **byte-identical** (round-3 k8s-expert C2:
+   the raw `apiVersion + "/" + .base.kind` emits `…/v1beta1/Role` but the oracle was
+   written as `…/Role`, so the WARN-ONLY gate could never flip green). It ships
+   WARN-ONLY first, with an **explicit, mechanical WARN→enforce flip condition** (not
+   warn-only forever). IAM per-component attribution is dropped (irsa.tf is one flat
+   policy).
 4. **`simulate-principal-policy` is a FLOOR only,** not the completeness oracle —
    the policy is already `Resource:"*"` so simulate is circular. The real
    completeness signal is **drive-the-controller**. The ceiling must **narrow**
@@ -162,13 +179,22 @@ supersede the round-2 framing where they conflict.
    a **non-deferred fail-on-unexercised-grant tier**.
 5. **`crossplane-claim-verify` is v1-claim-shaped** (`spec.resourceRefs`, claim
    kind) but the repo is v2 namespaced-XR with no claim. **Porting it to v2 is a
-   prerequisite** before it can be mandatory; otherwise it verifies zero MRs.
+   prerequisite** before it can be mandatory; otherwise it verifies zero MRs. The v2
+   composed-MR enumeration is via **`spec.crossplane.resourceRefs`** (the v2
+   relocation of the old top-level `spec.resourceRefs`; `status` carries conditions,
+   not the ref list) — pinned at spike time against the live cluster. `wait-for-claim.sh`
+   waits **top-level Ready only and descends nothing** (verified: it polls one named
+   object, exits 0 on top-level Ready); composed-MR enumeration is solely the v2-ported
+   claim-verify Phase 3's job — it is load-bearing new code, not a reused asset.
 6. **The reaper is friendly-fire** on the shared ephemeral account → needs an
    **account-mutex** + age-floor ≥ slowest build (≥45 min) + a structural
    *deny-list* account guard (not an allow-match that bricks on rotation).
-7. **The spoke trigger is GitOps-native** — key off the spoke XR reaching Ready
-   on the **hub** + git-desired-state, not an imperative apply GitOps would
-   revert.
+7. **The spoke trigger is a post-reconcile STEP in the dispatch job** — key off the
+   spoke XR reaching `Ready` on the **hub** + git-desired-state, then verify; not an
+   imperative apply GitOps would revert, and **not** a standing watcher daemon (the
+   plan builds no controller/CronJob). The spoke kube-API is PUBLIC
+   (`endpointPublicAccess: true`), reached from the runner via `aws eks
+   update-kubeconfig` like mgmt — so behavioral spoke checks are not stranded.
 8. **Requirement-4 "both" collides with the singleton rule** — partition cheap
    resources into *hermetic* (both, always) vs *singleton-coupled* (after-the-fact
    on the hub; instantiate only in an isolated spoke/namespace).
@@ -240,7 +266,10 @@ PRE-FLIGHT lints; but anything that **stands up a kind cluster** to render/admit
 (chainsaw-style composition-render and admission-*shape* checks) requires a cluster
 and is therefore **`workflow_dispatch`-only**, never push/PR-triggered — matching
 the repo's existing `chainsaw.yml` / `terraform-test.yml` pattern (AGENTS §6.7).
-The BRING-UP behavioral suite is **not** in CI at all: it is invoked by the build.
+The BRING-UP behavioral suite IS a `workflow_dispatch` CI run — specifically a STEP
+added to the apply-and-verify job of `terraform-test.yml` — not a separate non-CI
+executor (no such executor exists in the repo). Its on-by-default guarantee is
+enforced by the push/PR FAIL-closed live-evidence gate (§4.3), not by the dispatch.
 
 **Honesty rename, no move:** relabel `tests/unit/` conceptually as **lints** via
 a README + a `lint` tag. A physical `tests/unit/`→`tests/lint/` move is rejected
@@ -358,78 +387,137 @@ single contract with explicit precedence:
   if the owner declines the tightening, the deny tests are dropped and that gap is
   documented, not faked.
 
-### 3.4 The verifier/reaper identity is itself a least-privilege deliverable (security C2.2, the merge's systemic flaw)
-The overhaul hardens Crossplane's identity but the test/verifier identity silently
-needs `iam:SimulatePrincipalPolicy`, `cloudtrail:LookupEvents`, `accessanalyzer:*`,
-`servicequotas:Get*`, `resourcegroupstaggingapi:GetResources`, and cross-service
-deletes for the reaper. The plan ships an **explicit allowlist of the verifier/
-reaper identity's read+delete actions as a first-class artifact**, the ceiling lint
-(§3.3) covers *that* role too, and the reaper identity is **scoped tightly** (it is
-new blast radius). Otherwise the net effect is to move the over-privileged
-principal from Crossplane to the CI key on the account that also hosts the mgmt
-cluster.
+### 3.4 The verifier/reaper identity is itself a least-privilege deliverable — and the build-coupled trigger concentrated the privilege (round-3 security C1; round-2 C2.2)
+**The genuine new hole correction #2 opened.** `apply-and-verify` runs inside
+`terraform-test.yml`, which injects the **admin** AWS keys (`:41-43`). Appending
+`tests/live/run.sh` as a step there means the verifier, reaper, simulate, RGT-diff,
+and the reaper's cross-service **deletes** would all run as **the most-privileged
+principal on the account that also hosts the mgmt cluster** — a *worse* blast radius
+than the one the overhaul retires from Crossplane. The plan must re-reckon this, not
+just name it. Required:
+
+- **Split the build flow's identity.** `terraform apply` keeps admin (unavoidable for
+  bootstrap). The `tests/live/run.sh` phase **MUST NOT inherit the admin env block**;
+  it re-scopes — via an explicit `sts assume-role` to a dedicated least-privilege role
+  (or a separate job/identity) — so the suite never holds `terraform apply`-grade
+  power.
+- **A static push lint asserts the live phase cannot run as admin:** the
+  `terraform-test.yml` step that invokes `tests/live/run.sh` does **not** reference
+  `secrets.AWS_ACCESS_KEY_ID` directly. This is the "runs-under-the-scoped-identity"
+  static invariant, alongside §4.2's "wired-and-on-by-default" one.
+- **The allowlist is a committed IAM policy file** (`.tf`/JSON artifact, not prose),
+  with **zero wildcards** — `accessanalyzer:*` is enumerated to the two or three read
+  verbs actually used; `servicequotas:Get*` likewise; the mutex backing store is
+  **pinned** (SSM `ssm:GetParameter`/`PutParameter` **or** DynamoDB
+  `GetItem`/`PutItem`/`DeleteItem` — pick one so the policy can be written). The §3.3
+  ceiling lint covers this file with `K=0` (no wildcard tolerated here at all).
+- **The reaper's deletes are enumerated per service AND tag/path-conditioned in the
+  policy itself** (`eks:DeleteCluster`/`DeleteNodegroup`, `rds:DeleteDBInstance`/
+  `DeleteDBSubnetGroup`, `iam:DeleteRole`/`DeleteOpenIDConnectProvider`/
+  `DeleteRolePolicy`, `secretsmanager:DeleteSecret`, `route53:ChangeResourceRecordSets`),
+  with an IAM `Condition` that the resource carries the `live-verify` run-id tag —
+  defense-in-depth, since the runtime three-predicate AND is the very thing under test
+  and a bug in it under admin deletes real infrastructure.
+- **NON-GOAL boundary (explicit, so this does not violate the spine):** this scoped
+  role is the verifier/reaper **harness** identity. It is **NOT** a new AssumeRole
+  principal that impersonates the Crossplane controller, **NOT** a trust-policy
+  widening on the provider role, and **NOT** a probe-SA path. The controller's
+  create-path permission is still proven only by driving the real controller under
+  `source: IRSA` (§3.1/§3.2). The harness role observes/reaps *around* that test; it
+  never stands in for the controller's identity.
 
 ## 4. Build-coupled trigger + disable switch + anti-silent-regression (resolves round-2 #2, #5; constraint corrections #1 & #2)
 
-### 4.1 The trigger is the BUILD, not CI — three execution contexts (corrections #1 & #2; resolves sre C3, qa-guru C1)
-Workflow files **can** be created/edited here via **jentic Contents-PUT
-(`ext-github`, `op_12ee1daaad73b14b`)** — correction #1 (the git-push OAuth token
-and GitHub MCP write tools lack `workflow` scope; jentic does not). **But CI is the
-wrong place to run verification (correction #2):** GitHub Actions fires at PR/commit
-time, which is DECOUPLED from when the cluster is actually brought up, and standing
-up a cluster (even kind) in push/PR CI is forbidden. So the trigger **moves out of
-CI and into the build**, and the layers are re-keyed into **three strictly-separate
-execution contexts**:
+### 4.1 The execution model — TWO real Actions surfaces, made on-by-default by a push gate (corrections #1 & #2; resolves round-3 sre/security/devx/k8s-expert/qa-guru C1)
+**The "build ≠ CI" framing is deleted — it had no referent.** Grounded against the
+tree: `apply-and-verify` is a `workflow_dispatch` **input value** of
+`.github/workflows/terraform-test.yml` (`:24`); the cluster comes up **on a GitHub
+Actions runner** via `aws eks update-kubeconfig` (`:90,:329`); there is **no**
+`scripts/apply-and-verify.sh` / `bring-up.sh` / non-CI executor (`ls scripts/` is
+diag/status/verify helpers only). So "the bring-up" IS a dispatched CI run. Workflow
+files **can** be edited here via **jentic Contents-PUT (`ext-github`,
+`op_12ee1daaad73b14b`)** — correction #1 (the git-push OAuth token and GitHub MCP
+write tools lack `workflow` scope; jentic does not). The honest topology is **two —
+and only two — execution surfaces:**
 
-- **Push/PR CI (automatic) — STATIC, NO CLUSTER.** Only no-cluster checks run here:
+- **Surface A — push/PR (automatic): STATIC, NO CLUSTER.** Only no-cluster checks:
   lints, kubeconform/schema, helm-template render asserts, the derived-coverage-
   manifest **PARSE** (static, §4.5), the no-wildcard IAM ceiling lint (§3.3),
-  `irsa_trust_validator.py` static sweeps (§7), AND a **static invariant check that
-  the live suite is wired into the bring-up and on-by-default** (§4.2). These live in
-  `tests/unit/run.sh` (already push-gated by the light push workflow `unit-tests.yml`)
-  and need no `workflow` scope. **No cluster is ever stood up on push/PR.**
-- **Build-time (coupled, on by default) — THE FULL LIVE SUITE.** The bring-up
-  procedure itself — the operator/agent's `apply-and-verify` / cluster-creation flow,
-  and the spoke reconciliation path (§10) — **invokes `tests/live/run.sh` as its
-  final phase**. This is requirement #1's real "every bring-up" guarantee: it is the
-  build running the suite, not a CI check waiting for a commit. **`all-skipped ⇒ RED`
-  and the `expect-full` floor apply HERE.** A jentic-landed `apply-and-verify` /
-  bring-up flow wires this invocation in (the committable half is `tests/live/run.sh`
-  + its self-test; the build-flow wiring is the landable other half, §12).
-- **Manual dispatch (`workflow_dispatch`) — kind + ad-hoc.** Kind-based render/admit
-  and any ad-hoc live runs are `workflow_dispatch`-only, **never push- or
-  PR-triggered**, matching `chainsaw.yml` / `terraform-test.yml` (AGENTS §6.7). These
-  are landed via jentic but stay manual.
+  `irsa_trust_validator.py` static sweeps (§7), the static invariants that the live
+  suite is **wired into the apply-and-verify job, on-by-default, exit-code-gated, and
+  scoped-identity** (§4.2/§3.4), AND **the FAIL-closed live-evidence gate** (§4.3).
+  These live in `tests/unit/run.sh` (already push-gated by the light push workflow
+  `unit-tests.yml`) and need no `workflow` scope. **No cluster is ever stood up on
+  push/PR.**
+- **Surface B — `workflow_dispatch` (manual): the only live surface.** A dispatched
+  run of `terraform-test.yml`. Two action choices on the *same* surface:
+  - `action=apply-and-verify` (and any management `apply`, per §4.2) ⇒ **the full
+    live suite runs as a STEP added to the apply-and-verify job**, `LIVE_MODE=mutating`,
+    with `all-skipped ⇒ RED` and the `expect-full` floor. This is requirement #1's
+    "every bring-up" guarantee — **but a manual dispatch cannot self-enforce "every,"
+    so the teeth live on Surface A** (the live-evidence gate, §4.3).
+  - `action=verify` ⇒ the readonly after-the-fact subset, `LIVE_MODE=readonly`. **The
+    git-sourced `expect-full` floor still applies on this readonly path** (§4.3/§4.4),
+    so a `verify` on a cluster where git declares a kind that is absent (blocker #5's
+    shape) FAILs — it cannot read green having verified nothing.
+  - Kind-based render/admit and ad-hoc live runs are also Surface B (dispatch-only,
+    never push/PR), matching `chainsaw.yml` / `terraform-test.yml` (AGENTS §6.7).
+    Landed via jentic; stay manual.
 
-**The push/PR check NEVER relies on a cluster run.** It at most verifies *static
-evidence* — that a recorded green build-suite result exists for the deployed
-SHA/cluster (§4.3) — but the PRIMARY anti-regression guarantee is the **build
-coupling**, not the PR check. Correctness is never gated on PR-time cluster work.
+**The push/PR gate NEVER stands up a cluster.** It enforces on-by-default by checking
+**static evidence of a fresh green live run** for the deployed `(SHA × account ×
+cluster)` (§4.3) — the FAIL-closed mechanism that turns the absence of a live run
+RED. The live suite is wired as a step **in `terraform-test.yml`** (the only build
+flow; this IS a workflow edit, landed via jentic — §12). The committable half is
+`tests/live/run.sh` + its self-test; the step add is the landable other half.
+
+**The `mgmt_apply ⇒ verify` coupling (round-3 sre C2).** `compute-gates.sh` makes a
+bare `action=apply` first-class (`mgmt_apply=true, mgmt_verify=false`) — so today a
+plain `apply` brings up the cluster with **zero** verification. Fix: gate the
+live-verify step on **`mgmt_apply` as well as `mgmt_verify`** so **any management
+apply triggers the live suite**, and add a push-time unit test asserting
+`compute-gates.sh management apply` yields a true live-verify gate. "You cannot apply
+the management cluster without the live suite running" becomes mechanically true, and
+"apply without verify" is a red diff.
 
 The new `tests/unit/test_*.sh` static-gate files must be added to **both**
 `tests/unit/run.sh` and `unit-tests.yml` in the same PR; `unit-tests.yml` is a light
-**no-cluster** push workflow editable via normal push, and the §-sync catch-all step
-is kept as backstop. `tests/live/run.sh` learns the action via an explicit
-`LIVE_MODE=mutating|readonly` arg (passed by the **build flow**, not a PR check):
-`verify` ⇒ `readonly` (after-the-fact only), `apply-and-verify` ⇒ `mutating`
-(BRING-UP allowed). A unit test asserts `verify ⇒ readonly` so an agent's frequent
-`verify` calls never provision NLBs/IAM/secrets (sre C3 second half; qa-guru m1).
-The mutating instantiate-path of `crossplane-claim-verify` runs only under
-`mutating`.
+**no-cluster** push workflow editable via normal push, and the §6.16-sync catch-all
+step is the source-of-truth backstop. `tests/live/run.sh` learns the action via an
+explicit `LIVE_MODE=mutating|readonly` arg (passed by the workflow step, not a PR
+check): `verify` ⇒ `readonly`, `apply-and-verify` ⇒ `mutating`. **`LIVE_MODE` unset
+defaults fail-closed to `readonly`** (round-3 security M2, devx m2) — an
+under-specified invocation degrades to safe, never to provisioning. Unit tests assert
+both `verify ⇒ readonly` and `unset ⇒ readonly`, and that `mutating` appears only on
+the `apply-and-verify` branch in the workflow file (so an agent's frequent `verify`
+calls never provision NLBs/IAM/secrets). The §4.4 `phase=test` suite asserts this
+**against the `terraform-test.yml` file** (mirroring AGENTS §6.16), not only the
+orchestrator's internal default. The mutating instantiate-path of
+`crossplane-claim-verify` runs only under `mutating`.
 
-### 4.2 Default-ON (at build-time), and the default is a *tested invariant*
-Default = ON, where "on" means the **bring-up invokes the live suite** (§4.1), not
-that a CI check is enabled. Disable only via `LIVE_VERIFY=0` / per-check
-`LIVE_SKIP=...`. Two tested invariants, both checkable **statically on push** (no
-cluster):
+### 4.2 Default-ON, and the default is a *tested invariant* (round-3 security C2, devx m5, qa-guru R3-C1)
+Default = ON, where "on" means the **apply-and-verify job invokes the live suite and
+the build's pass/fail is gated on its exit code** (§4.1), backed by the push
+live-evidence gate (§4.3). Any `workflow_dispatch` UI default is **advisory only**
+(k8s-expert m4) and never the guarantee. Disable only via `LIVE_VERIFY=0` / per-check
+`LIVE_SKIP=...` / SKIP_REGISTER. Static invariants, all checkable **on push, no
+cluster**, asserted against the **actual dispatched workflow** (`terraform-test.yml`,
+the file AGENTS §5 / testing-guidelines §6 name — not "a flow definition" the lint
+could be pointed anywhere):
 - The on-by-default value (in the orchestrator's **own committed config** — the
-  single source the test reads; any `workflow_dispatch` default is advisory,
-  k8s-expert m4) is literally `enabled`, so flipping it is a red diff.
-- **The live suite is wired into the bring-up.** A static lint asserts the committed
-  `apply-and-verify` / bring-up flow invokes `tests/live/run.sh` as its final phase
-  (grep the flow definition for the invocation) — so silently un-coupling the suite
-  from the build is a red push diff. This is the static half that protects the
-  build-coupling guarantee without needing a cluster at push time.
+  single source the test reads) is literally `enabled`, so flipping it is a red diff.
+- **The live suite is wired AND gating, not merely invoked** (security C2 — "wired ≠
+  gating"). The static lint asserts the apply-and-verify path of `terraform-test.yml`
+  invokes `tests/live/run.sh` AND that the build's success is a function of the
+  suite's exit code: it **forbids `tests/live/run.sh || true`, backgrounding (`&`),
+  and an `if:` that can silently exclude the step** (commented-out / `if: false`),
+  per AGENTS §6.19 (PR #129's exact failure class) and §6.24. The §4.4 reserved
+  `exit 3` (expect-full violation) must fail the build, not just the script. A
+  meta-test feeds a stub `tests/live/run.sh` returning `exit 3` and asserts a **failed**
+  build (or, if the real flow can't run statically, asserts the wiring pattern
+  lexically — invocation present, no `|| true`, no `&`, exit code consumed).
+- **The live suite runs under the scoped identity, not admin** (§3.4): the step does
+  not reference `secrets.AWS_ACCESS_KEY_ID`.
 
 The master kill-switch is guarded: `LIVE_VERIFY=0` makes the banner **RED and exits
 non-zero** unless a top-level `disable_all` register entry (reason/owner/expires)
@@ -457,26 +545,73 @@ That is **blocker #5 one level up**. The fix:
   diffed against runtime. It is **never** derived from the live status of the
   bring-up under test (circular).
 - **Fail-closed on a missing oracle:** a BRING-UP test that emits *no* phase/skip
-  classification at all is treated as `expect-full` (loud, not silent-green). The
-  PRIMARY anti-regression guarantee is the **build coupling** (the bring-up invokes
-  the suite — §4.1/§4.2), not a PR check. As a **secondary static backstop** only,
-  a push/PR check may verify *static evidence* that a recorded green build-suite
-  result exists for the deployed SHA/cluster (a committed live-evidence marker per
-  HEAD SHA); a missing marker is a push WARN/FAIL on **that static evidence**, never
-  a PR-time cluster run. This keeps "coupled to the change" anchored to the build —
-  not reduced to "coupled to whoever remembers to dispatch" — while never gating
-  correctness on PR-time cluster work (correction #2).
+  classification at all is treated as `expect-full` (loud, not silent-green).
+
+**The FAIL-closed live-evidence gate (the centerpiece — round-3 spine fix).** Because
+Surface B is a *manual* dispatch, "the apply-and-verify job invokes the suite" cannot
+by itself guarantee "every bring-up": a dispatcher can pick `verify`/`plan`, a
+config-only change reconciles via ArgoCD with no dispatch at all, or the suite can
+crash before its final phase. The round-2→round-3 draft demoted the anti-regression
+check to a "secondary WARN backstop" — **that demotion weakened on-by-default and is
+reverted.** The push/PR gate is the **PRIMARY mechanical default-on**, FAIL-closed:
+
+- **It FAILs (never WARNs)** unless a fresh green live run is recorded for the
+  deployed `(config-SHA × account-id × cluster-name)` triple. "No fresh green run for
+  this triple" is the precise state of "the suite never ran" — and because the gate
+  lives **outside** the suite, it catches the non-invocation cases the inside-suite
+  `all-skip ⇒ RED` cannot (a `verify`/`apply`/`plan` dispatch, a config-only ArgoCD
+  sync, a crash before the final phase). all-skip⇒RED (inside-suite) + no-evidence⇒RED
+  (outside-suite, push gate) together cover both halves.
+- **The evidence is unforgeable, not a hand-writable marker** (round-3 security m1,
+  devx M1, qa-guru M3). The push gate calls the **GitHub Actions API** (the repo's
+  `.github/workflows/chainsaw-verify.yml` pattern) to confirm an `apply-and-verify`
+  run for this SHA **exists**, has `conclusion=success`, ran against **this
+  account-id and cluster-name**, and is **newer than the account's bootstrap**. If a
+  machine-emitted committed marker is used at all, its integrity contract is: written
+  **only** on the §4.4 clean-pass exit code (never on `exit 2`/`exit 3`/all-skip),
+  keyed on the full **(SHA × account-id × cluster-name)** triple so a rotated account
+  (§8.1) invalidates it, by the same step whose exit code it records — and the push
+  lint validates that provenance against the API, not free text. A committed
+  free-text "green" marker is **forbidden** (it re-creates the self-attested oracle
+  this section exists to kill, one level up).
+- **Config-only GitOps changes are a first-class trigger context** (round-3 qa-guru
+  R3-C2, the exact auto-012 change shape). A PR editing `crossplane/**` / `policies/**`
+  — a Composition/IAM/tag edit ArgoCD will sync to the **live hub with no
+  apply-and-verify dispatch** — FAILs the gate unless fresh green live-evidence
+  exists for the resulting config-SHA, forcing a dispatch-before-merge (the §6.7/§6.8
+  pattern the repo already uses for chainsaw on v2 CRD changes). This closes the hole
+  where a Composition edit that re-introduces blocker #9 (drops a subnet tag) or #1
+  (flips authnMode) merges green and is verified by nothing.
+- **Bootstrap case:** the first apply for a fresh/rotated account has no prior marker
+  by construction; that is `expect-full`-from-git (RED, "run the build"), **never**
+  green-by-absence.
+- This keeps "coupled to the change" anchored mechanically — not reduced to "coupled
+  to whoever remembers to dispatch" — while never standing up a cluster at PR time
+  (correction #2): the gate only *reads* the Actions API.
 
 ### 4.4 The executed-test FLOOR / skip-promotion (the load-bearing part)
 Three skip states (not two): **not-applicable** (no kube-API at all — informational,
 allowed); **phase-not-applied** (the git desired-state does not declare this kind
 for this cluster — counted SKIP, allowed); **precondition-absent-but-expected-
-present** (git declares it, the phase applied, it's missing — **FAIL**; literally
-blocker #5's shape). Under `expect-full`, any SKIP of an expected resource is
-promoted to FAIL; `run.sh` exits non-zero if executed checks for the present phase
-fall below a declared floor or if *every* check skipped. **Floor = zero tolerated
-skips for any `expect-full` resource — non-negotiable** (only the register cap N
-and grace window are tunable; qa-guru m6). The conditional-resource rule (DevX C1):
+present** (git declares it, it's missing — **FAIL**; literally blocker #5's shape).
+**The FAIL discriminator keys on git desired-state alone, NOT on "the phase applied"**
+(round-3 qa-guru M5): for a GitOps/ArgoCD-synced resource there is no discrete
+"phase applied" event, and an ArgoCD app can report `Synced` while a composed MR
+underneath is stuck (the §9.1 v2 "XR Ready, child MR stuck" mode). So the rule is:
+**git declares kind K for this cluster ⇒ K is `expect-full` ⇒ the real cloud resource
+(verified via the v2-ported claim-verify descending to the MR + cloud Describe, §9.1)
+must exist; absent ⇒ FAIL, regardless of any ArgoCD/XR `Synced` status.** ArgoCD-Synced
+is never permitted to downgrade an `expect-full` kind to an allowed skip — otherwise
+the GitOps path (6 of 8 blockers) keeps an "app says Synced ⇒ skip-green" escape.
+**The floor is evaluated on BOTH the `verify` (readonly) and `apply-and-verify`
+(mutating) paths** (round-3 qa-guru M2): only the *instantiate-and-verify* create-path
+checks are gated on `LIVE_MODE=mutating`; the after-the-fact existence/convergence
+floor is mode-independent, so the cheapest and most-run action (`verify`) is not the
+blind spot for the slowest blockers (#5/#1). Under `expect-full`, any SKIP of an
+expected resource is promoted to FAIL; `run.sh` exits non-zero if executed checks for
+the present phase fall below a declared floor or if *every* check skipped. **Floor =
+zero tolerated skips for any `expect-full` resource — non-negotiable** (only the
+register cap N and grace window are tunable; qa-guru m6). The conditional-resource rule (DevX C1):
 a conditional MR (e.g. patched-out in `xspokeaccess`) is `expect-full` only when
 its gating param is set in the applied XR; the registry entry carries the
 condition. A `phase=test` unit suite asserts the tabulation: `all-skip ⇒ non-zero`,
@@ -494,15 +629,25 @@ human maintains only the **registry of which test defends which kind**. The
 synthesized plan's derivation rule (`spec.resources[].base.kind` + per-component
 irsa.tf actions) **does not exist in these compositions** and is replaced:
 
-- **Exact extraction path** (verified working this session against all four comps):
+- **Exact extraction path — VERSION-STRIPPED, deduped** (round-3 k8s-expert C2,
+  devx M4/m1). The naive `.base.apiVersion + "/" + .base.kind` emits
+  **group/version/kind** (`iam.aws.m.upbound.io/v1beta1/Role`), but the registry keys
+  on **group/kind** — so the command must strip the version, and a future
+  `v1beta1`→`v1beta2` provider bump must NOT change the key (else a silent coverage
+  miss exactly when a provider upgrade is riskiest). `platform-cluster.yaml` also
+  emits `Role`/`RolePolicyAttachment` multiple times, so the output must be deduped.
+  Use:
   ```
-  yq '.spec.pipeline[]?.input.resources[]? | select(.base) | .base.apiVersion + "/" + .base.kind'
+  yq '.spec.pipeline[]?.input.resources[]? | select(.base) | (.base.apiVersion | sub("/.*";"")) + "/" + .base.kind' | sort -u
   ```
-  This produced exactly the MR set and **no pollution** — `ClusterProviderConfig`
-  (the `providerConfigRef.kind`), the function `Input`/`Resources` wrapper kinds,
-  and the `Composition` doc kind are all excluded because they are not under
-  `.input.resources[].base`. A named, tested **exclude-list** (`ClusterProviderConfig`,
-  `ClusterSecretStore`, `Input`, `Resources`, `Composition`) is kept as defense.
+  This yields the group/kind set with no version segment and no duplicates, and **no
+  pollution** — `ClusterProviderConfig` (the `providerConfigRef.kind`), the function
+  `Input`/`Resources` wrapper kinds, and the `Composition` doc kind are all excluded
+  because they are not under `.input.resources[].base`. A named **exclude-list**
+  (`ClusterProviderConfig`, `ClusterSecretStore`, `Input`, `Resources`, `Composition`)
+  is kept as defense-in-depth — **redundant-by-construction** (the `select(.base)` +
+  `.input.resources[]` path structurally cannot emit them; the bare command is safe
+  without it — k8s-expert Minor-3), so an implementer need not fear the bare command.
 - **Verified MR set the deriver must reproduce** (the fixture-test oracle):
   - `platform-cluster`: `iam.aws.m.upbound.io/Role`, `…/RolePolicyAttachment`,
     `eks.aws.m.upbound.io/Cluster`, `…/NodeGroup`, `acm.aws.m.upbound.io/Certificate`,
@@ -522,13 +667,24 @@ irsa.tf actions) **does not exist in these compositions** and is replaced:
   from the compositions so an un-registered kind is CI-red. The two-sided
   floor/ceiling on irsa.tf stays useful for "no wildcard" and "required action
   present" but is **not** the per-kind coverage source.
-- **Ship with a fixture-test of the deriver itself** (feed it the four committed
-  comps, assert the exact group/kind set above) and **WARN-ONLY (print, exit 0)
-  until that fixture-test is green** — a mis-firing gate that reds every PR is
-  *worse* than the hand manifest (DevX C1, must-not-weaken). The mapping test
-  requires a **real referenced check** whose `--dry-run` fixture **names the
-  registered group/kind in its apply payload** (DevX C2 — a mechanical floor under
-  the "any green test counts" goodwill), not merely a tier declaration.
+- **Ship with a BYTE-IDENTICAL fixture-test of the deriver itself** (round-3
+  k8s-expert C2): feed it the four committed comps and assert the extractor output is
+  **byte-identical** to the committed group/kind oracle above — so the command the
+  plan mandates as extractor and the oracle it mandates as gate cannot drift (the
+  round-2 draft's oracle was written version-stripped while the command emitted
+  versions, which would have stuck the gate WARN-ONLY forever). Add a
+  **version-independence fixture**: the same comps with a bumped provider version must
+  yield the **same** keys. It ships **WARN-ONLY (print, exit 0)** at first — a
+  mis-firing gate that reds every PR is *worse* than the hand manifest (DevX C1,
+  must-not-weaken) — but with an **explicit, mechanical WARN→enforce flip condition,
+  not warn-only-forever** (round-3 devx M4): a push lint asserts that **once the
+  byte-identical fixture-test file exists and passes, the deriver's mode flag is
+  `enforce`** (so the same PR that lands a green fixture flips the gate; an
+  accountable owner owns the flag, and a green fixture with the flag still `warn` is
+  itself a red diff). The mapping test requires a **real referenced check** whose
+  `--dry-run` fixture **names the registered group/kind in its apply payload** (DevX
+  C2 — a mechanical floor under the "any green test counts" goodwill), not merely a
+  tier declaration.
 - **Side-effect resources** absent from `resources[]` (the untagged subnet, a
   controller-created NLB — blockers #9 and the LB) go in a small **`extra:`
   allowlist with a required `reason:`**, AND are covered by a **standing
@@ -761,10 +917,18 @@ returns empty → the skill walks **zero** MRs and reports the XR Ready while ch
 MRs may be stuck — the exact manifest-says-X disease, with a green light. **This
 is a prerequisite task (in P0/P1), not optional:**
 - Phase 1: locate the **XR** (`kubectl get <xr-kind> -A`), not a claim.
-- Phase 3: walk the v2 composed-resource ref path — **verify the actual field on
-  the running cluster at spike time** (v2 surfaces refs under
-  `spec.crossplane.resourceRefs` / `status` depending on version; do NOT assume
-  `spec.resourceRefs`). Assert every composed MR `Synced=True` + `Ready=True`.
+- Phase 3: walk the v2 composed-resource ref path. **Enumerate FIRST via
+  `kubectl get <xr-kind>/<name> -n <ns> -o jsonpath='{.spec.crossplane.resourceRefs[*]}'`**
+  — the v2 relocation of the old top-level `spec.resourceRefs` (`status` carries
+  conditions, not the ref list; do NOT assume `spec.resourceRefs` or `status.resourceRefs`
+  — those return empty and falsely read "no children," k8s-expert M3). Only if that is
+  empty, fall back to probing `status`/`spec.resourceRefs`, and **record which field
+  the live cluster actually uses as a pinned spike fact.** Assert every composed MR
+  `Synced=True` + `Ready=True`, AND assert the enumerated refs **⊇ the deriver's
+  group/kind set** (§4.5) so "XR Ready but children missing" reds.
+  **`scripts/wait-for-claim.sh` cannot substitute for this** — it waits top-level
+  Ready only and descends nothing (verified); the v2-ported Phase 3 is the **sole**
+  composed-MR enumerator and is load-bearing new code.
 - Prerequisites text: match the **family** provider `upbound-provider-family-aws`
   (+ children), not a naive `provider-aws` name.
 - Phase 4 PlatformSecret recipe: digest/length/canary only, **never decode** (§9.2).
@@ -792,31 +956,40 @@ ArgoCD reconciliation of an XR, **not** an imperative apply (an imperative step
 would be reverted by GitOps; there is no `terraform/spoke` to hang an end-of-bring-
 up hook on).
 
-- **Hub-side watch, not imperative apply:** the spoke trigger is part of the
-  **bring-up/reconciliation path, not a CI job** (correction #2). The spoke
-  reconciliation flow watches `XPlatformCluster` / `XSpokeAccess` on the **hub** (a
-  hub object — observable from the hub kube-API) for `Ready=True` transitions and,
-  on transition, **invokes `tests/live/run.sh`** for the spoke AFTER-THE-FACT + (if
-  reachable) the e2e — the same build-coupled invocation as §4.1 context 2, not a
-  push/PR Actions trigger. The committable half is the hub-side watch/invoke script
-  + self-test; an ad-hoc rerun is available via the `workflow_dispatch`-only lane.
+- **A post-reconcile STEP in the dispatch job, NOT a standing watcher daemon**
+  (round-3 sre M1). The plan builds no in-cluster controller/CronJob and there is no
+  long-running hub process to host a "watch-XR-then-invoke-tests" loop — so the
+  earlier "hub-side watcher wired into the reconciliation path" framing implied a
+  daemon the plan never delivers and is **dropped**. Instead, the spoke verification
+  is a **step appended to the same `apply-and-verify` dispatch that provisions the
+  spoke XR**: it blocks on `kubectl wait --for=condition=Ready` on the hub
+  `XPlatformCluster`/`XSpokeAccess` object (bounded), then runs the spoke
+  AFTER-THE-FACT + (if the runner reaches the spoke API) the e2e. This is the same
+  Surface-B dispatch as §4.1, deliverable in CI via jentic.
 - **`expect-full` for the spoke derives from git desired-state** (§4.3): a spoke XR
   committed under `clusters/` makes the spoke's resources `expect-full` even when
   ArgoCD (not a human `apply-and-verify`) synced them — so an ArgoCD-synced spoke
   that silently never provisions is a **FAIL**, not auto-skip-green. This closes
   the GitOps hole the synthesized plan's "imperative apply sets expect-full" model
   left open (k8s-expert M3, sre M1).
-- **The hub→spoke curl e2e is CONDITIONAL on the spoke-API-from-CI operator
-  dependency (§14).** Always-available substitute (the committed default): hub-side
-  XR-Ready + AccessEntry present + ArgoCD `connectionState: Successful` + (proxy)
-  the app-controller AssumeRole success in CloudTrail. The curl e2e (sync an app
-  using a cluster-scoped IngressClass → external-dns writes the Route53 record →
+- **The spoke kube-API is PUBLIC — the curl e2e is NOT stranded** (round-3 k8s-expert
+  M1). `platform-cluster.yaml:329` sets the spoke `vpcConfig.endpointPublicAccess: true`,
+  so a **GitHub Actions runner reaches the spoke API via `aws eks update-kubeconfig`
+  exactly as the integration suite reaches mgmt today** (integration-tests.yml:74;
+  terraform-test.yml:90,329) — bypassing the sandbox's strict-MITM gateway entirely.
+  The "private-CA spoke API" residual the prior draft listed as the lone operator
+  dependency was a **mis-diagnosis and is removed**: the real precondition is (a) the
+  runner egress IP is in the spoke's public-access **CIDR allowlist** and (b) an
+  **EKS AccessEntry/AssumeRole** path for the CI identity — a config check verified at
+  spike time, not an architectural blocker. The curl e2e (sync an app using a
+  cluster-scoped IngressClass → external-dns writes the Route53 record →
   `curl https://hello.platform.<domain>` returns 200 → Keycloak Ready against RDS)
-  ships **when** the CI-spoke-API path is confirmed; run from CI/in-cluster, never
-  the sandbox (strict-MITM egress 503s a private-CA endpoint — read the 503 body to
-  distinguish gateway from app). The `InjectedIdentity` provider-kubernetes `hub`
-  ProviderConfig (crossplane-phase3.tf) is the spoke-Secret write path relevant
-  here — distinct from the AWS IRSA discussion in §3.
+  ships once the CIDR/AccessEntry are confirmed; run from the runner, never the
+  sandbox (the sandbox cannot verify any EKS CA — AGENTS §6.27). The hub-side fallback
+  (XR-Ready + AccessEntry present + ArgoCD `connectionState: Successful` + CloudTrail
+  AssumeRole-success proxy) remains the weaker-but-real default. The `InjectedIdentity`
+  provider-kubernetes `hub` ProviderConfig (crossplane-phase3.tf) is the spoke-Secret
+  write path relevant here — distinct from the AWS IRSA discussion in §3.
 
 ## 11. False-fail SLO — concrete, with teeth, with a data plane (resolves round-2 #11)
 
@@ -837,6 +1010,19 @@ data store. Corrected to a real control:
 - **Consequence (the teeth):** an SLO breach **auto-demotes the offending check to
   a non-gating quarantine lane** (mechanical, not goodwill); quarantine carries an
   expiry (a quarantine older than X with no owner update fails the push check).
+- **Auto-quarantine must NOT silently green a real recurring failure** (round-3
+  qa-guru M4; AGENTS §6.24 automated). The single most load-bearing distinction in
+  the overhaul — `AccessDenied` (real) vs `Throttling` (retry) — must not become the
+  input to an automatic disable. Bounds: **auto-quarantine is permitted ONLY for the
+  `ENVIRONMENTAL-ROTATION`/`THROTTLE`/`QUOTA`/`LEASE-CONTENTION` dispositions.** A
+  check whose window contains **any `AccessDenied-on-restricted-role` or
+  `expect-full`-miss** red (the exact auto-012 blocker classes) is **not
+  auto-quarantinable** — it requires a human `OI-` entry. The classifier fail-safe is
+  **asymmetric toward red: ambiguous/unclassifiable ⇒ treat as REAL (do not
+  quarantine, bundle-red)**. The reserved `exit 3` (expect-full violation) is
+  **ineligible for quarantine** by construction (§4.4/m-note). A classifier
+  fixture-test over a corpus of real AWS error strings guards the classifier itself,
+  with the default for an unmatched string being bundle-red.
 - **Per-check red ≠ bundle red (sre M2):** one flaky DNS check must not red the
   whole bring-up; only an `expect-full` miss or a real `AccessDenied` reds the
   bundle. This separation is what stops the social disable ("I saw red on my
@@ -851,18 +1037,24 @@ data store. Corrected to a real control:
 Every change requiring an action the committable PR cannot itself perform, with
 the committable half vs the operator/jentic half:
 
-| Change | Committable half | Other half | Now deliverable? |
-|---|---|---|---|
-| `apply-and-verify` → `tests/live/run.sh` trigger (build-coupled, NOT CI) | `tests/live/run.sh` + its self-test | the bring-up/build-flow wiring that invokes it (committed build flow; jentic for any helper workflow) | **YES — via build-flow wiring + jentic** (corrections #1 & #2) |
-| Spoke reconcile-completion hook | the hub-side watch/invoke script + self-test | wiring the script into the reconciliation/bring-up path | **YES — build-flow wiring** |
-| `workflow_dispatch`-only ad-hoc live + kind render/admit lane | the gate/check logic | the `workflow_dispatch`-only workflow (never push/PR-triggered) | **YES — via jentic** |
-| Push/PR static gate (lints + coverage parse + ceiling + wired-and-on-by-default invariant + HEAD-SHA static-evidence backstop) | the `test_*.sh` static checks | the per-step add in the no-cluster push workflow | **YES — normal push** |
-| Spoke kube-API read from CI (the curl e2e / behavioral #1/#6) | the check logic | CI reaching the **private-CA spoke API** | **UNCONFIRMED — operator dependency** (§14) |
-| `unit-tests.yml` step list for new gate files | the `test_*.sh` + `run.sh` wiring | the per-step add | **YES — normal push** (light workflow) |
+| Change | Committable half | Other half | Identity it runs under | Now deliverable? |
+|---|---|---|---|---|
+| Live-verify STEP in `terraform-test.yml` apply-and-verify job (gated on `mgmt_apply`) | `tests/live/run.sh` + its self-test | the step add to `terraform-test.yml` (this IS a workflow edit) + `compute-gates.sh` `mgmt_apply⇒verify` change | **scoped verifier role** (NOT admin, §3.4) | **YES — via jentic** (corrections #1 & #2) |
+| Push/PR FAIL-closed live-evidence gate (Actions-API run-ID cross-check, §4.3) | the `test_*.sh` gate calling the Actions API (`chainsaw-verify.yml` pattern) | the per-step add in the no-cluster push workflow | n/a (read-only Actions API) | **YES — normal push** |
+| Config-only GitOps trigger (`crossplane/**`/`policies/**` path-filtered FAIL) | the path-filtered gate logic | the per-step add | n/a | **YES — normal push** |
+| Spoke post-reconcile verification STEP (not a daemon) | the wait-for-Ready + verify logic | the step appended to the spoke-provisioning `apply-and-verify` dispatch | scoped verifier role | **YES — via jentic** (no controller built) |
+| `workflow_dispatch`-only ad-hoc live + kind render/admit lane | the gate/check logic | the `workflow_dispatch`-only workflow | scoped verifier role | **YES — via jentic** |
+| Push/PR static gate (lints + coverage parse + ceiling + wired/gating/scoped/on-by-default invariants) | the `test_*.sh` static checks | the per-step add in the no-cluster push workflow | n/a | **YES — normal push** |
+| Scoped verifier/reaper IAM policy (§3.4) | the committed zero-wildcard `.tf`/JSON policy + ceiling lint over it | applying it via the base/management Terraform | n/a | **YES — committable** |
+| Spoke kube-API read from CI (curl e2e / behavioral #1/#6) | the check logic | runner egress IP in the spoke **public-access CIDR allowlist** + EKS AccessEntry | runner identity | **CONFIG CHECK** — spoke API is PUBLIC (§10, §14); verify at spike |
+| `unit-tests.yml` step list for new gate files | the `test_*.sh` + `run.sh` wiring | the per-step add | n/a | **YES — normal push** (light workflow) |
 
-The only genuine residual operator dependency is the **spoke-API-from-CI** path
-(behavioral #1/#6 / curl e2e). Everything the synthesized plan stranded on "can't
-edit workflows" is now landable via jentic.
+Every "build-flow wiring" the prior draft described is concretely **a step in
+`terraform-test.yml`** landed via jentic — there is no non-CI executor. The
+spoke-API-from-CI dependency is **not** the architectural blocker the prior draft
+painted: the spoke API is public-access-enabled, so it reduces to a CIDR-allowlist +
+AccessEntry config check (round-3 k8s-expert M1). Everything stranded on "can't edit
+workflows" is landable via jentic.
 
 ## 13. Corrected blocker → layer coverage matrix (all 8 + the subnet-tag blocker)
 
@@ -873,12 +1065,12 @@ row to point at a lint). Rows a layer cannot physically observe are corrected.
 
 | # | auto-012 blocker | Caught by — assertion / environment | Push or bring-up |
 |---|---|---|---|
-| 1 | EKS `authenticationMode=CONFIG_MAP` | AFTER-THE-FACT: `describe-cluster` mode includes `API` **+ behavioral** hub app-controller authenticates to spoke (*conditional on §14 spoke-API*; fallback = CloudTrail AssumeRole success); PRE-FLIGHT: **composition-text lint** that base is `API`/`API_AND_CONFIG_MAP` (NOT an admission negative — hardcoded, k8s-expert M2) | both |
+| 1 | EKS `authenticationMode=CONFIG_MAP` | AFTER-THE-FACT: `describe-cluster` mode **contains `API`** (assert membership of `API`, not just the allowed set — security m4) **+ behavioral** hub app-controller authenticates to spoke (spoke API is PUBLIC, reached via `update-kubeconfig`, §10 — fallback = CloudTrail AssumeRole success); PRE-FLIGHT: **composition-text lint** that base contains `API` (NOT an admission negative — hardcoded, k8s-expert M2) | both |
 | 2 | crossplane IRSA missing `iam:TagOpenIDConnectProvider` | PRE-FLIGHT: simulate **floor** (allowed for the action) + narrowing ceiling; BRING-UP: real spoke-access XR provisions the OIDC-tagging path under `source: IRSA`, no `AccessDenied` — **the real completeness signal** (simulate cannot see unknown-missing) | both |
 | 3 | missing `iam:UpdateAssumeRolePolicy` | same as #2 (simulate floor + real-controller positive) | both |
 | 4 | missing `iam:GetRolePolicy` | same as #2 | both |
 | 5 | missing all `rds:*` → RDS never provisioned | PRE-FLIGHT: simulate **floor** for the rds set (slow → no instantiate); AFTER-THE-FACT: `describe-db-instances` + `XDatabase` Ready (`expect-full` from git ⇒ absent = FAIL) | both |
-| 6 | ArgoCD app-controller SA missing IRSA | AFTER-THE-FACT **behavioral**: controller `AssumeRoleWithWebIdentity` succeeds / spoke registration works (annotation-presence is a lint; *conditional on §14*); PRE-FLIGHT: `test_argocd_controller_irsa.sh` (exists) on **both** SAs; AppProject/RBAC deny-by-default for tenant scope (NOT a blanket Kyverno-Enforce mandate) | both |
+| 6 | ArgoCD app-controller SA missing IRSA | PRE-FLIGHT **PRIMARY**: `irsa_trust_validator.py --all` over **both** `argocd:argocd-server` and `argocd:argocd-application-controller` (irsa.tf:21-29 trusts both, attaches no policy — so behavioral AssumeRole-*success* under-proves: it proves identity, not capability — security M4); AFTER-THE-FACT behavioral (spoke registration / `connectionState`) is corroborating. **Owner note (§14):** `role_policy_arns={}` on the controller role — if a spoke-registration policy is expected, the empty attachment is itself a finding | both |
 | 7 | platform-spoke AppProject missing IngressClass permit | BRING-UP (**on a spoke / isolated scope** — singleton-coupled, §5): sync an app using a cluster-scoped IngressClass → must sync (positive) + forbidden kind/repo/destination rejected by the **AppProject** (negative); PRE-FLIGHT: `test_platform_spoke_appproject.sh` extended to the full deny contract | both |
 | 8 | external-dns SA-name ≠ trust subject → 0 records | PRE-FLIGHT **PRIMARY**: `irsa_trust_validator.py --all == 0 MISMATCH` (static, exact blocker shape — security M4); BRING-UP positive (on a spoke): Ingress → Route53 record appears; negative: named auth error (corroborating, log-based) | both |
 | 9 | shared-VPC subnets untagged → NLB never provisioned | AFTER-THE-FACT: **exact** subnet-tag assertion (`kubernetes.io/role/elb`/`internal-elb` + `cluster/<name>`) **+ behavioral** NLB actually provisions + the **RGT-diff** catches it as a side-effect (§4.5); PRE-FLIGHT: lint on the tag-injection composition. **NOT Kyverno** (AWS-side) | both |
@@ -898,11 +1090,15 @@ each PR's slice**, asserting only the rows that PR delivered, so P1 never ships 
    the fallback at spike time; do **not** build P4 on an unproven mechanism. (The
    in-band identity gate is sub-second and CloudTrail-free, so the main spike risk
    is the v2 composed-ref path, not identity latency.)
-2. **Spoke-API-from-CI (the one real operator dependency).** Behavioral #1/#6 and
-   the curl e2e depend on CI reaching the private-CA spoke API. If only
-   `kube-diagnose.yml`-style read paths exist, those assertions fall back to
-   CloudTrail-proxy + hub-side config — marked conditional in §13. **Owner: can CI
-   reach the spoke kube-API?**
+2. **Spoke-API-from-CI is a CONFIG check, not an architectural blocker** (round-3
+   k8s-expert M1). The spoke API is **public-access-enabled**
+   (`platform-cluster.yaml:329`); a runner reaches it via `aws eks update-kubeconfig`
+   exactly as the integration suite reaches mgmt. The real precondition is (a) the
+   runner egress IP is in the spoke's public-access **CIDR allowlist** and (b) an EKS
+   **AccessEntry/AssumeRole** path for the CI identity. **Owner: confirm the CIDR
+   allowlist admits the runner and an AccessEntry exists** — verified at spike time.
+   If not, behavioral #1/#6 fall back to CloudTrail-proxy + hub-side config (§13).
+   This un-strands the 6 spoke blockers.
 3. **Tightening `Resource:"*"` on IAM/RDS (§3.3 deny tests).** Real work, real
    blast radius on the live provider role. **Owner decision:** tighten (and ship
    the deny tests with it) or decline (and drop the deny tests, documenting the
@@ -915,7 +1111,29 @@ each PR's slice**, asserting only the rows that PR delivered, so P1 never ships 
    defaults; tune in the handoff. The `expect-full` floor = **zero** is
    non-negotiable, not a knob.
 6. **`FLAKE_LOG` as a committed file** (§11) trades reviewability for churn on busy
-   periods; acceptable, but confirm the owner prefers it to an external store.
+   periods; make it **append-only, one structured line per run keyed by run-id**
+   (conflicts resolve by union; a lint rejects edits/deletions of existing lines), and
+   **key the SLO window on (test-ID × account-epoch)** so cross-account history does
+   not pollute a fresh environment's flake math (round-3 qa-guru M4a, devx m4).
+   Confirm the owner prefers it to an external store.
+7. **Verifier/reaper runs under a scoped role, not admin** (§3.4) — the genuine new
+   hole correction #2 opened. The split (admin for `terraform apply`, scoped role for
+   `tests/live/run.sh`) is required before P3/P4. **Owner: approve standing up the
+   scoped verifier/reaper IAM role** (new, tightly-scoped blast radius).
+8. **Mutex/age-floor bounds and sandbox-suspend** (round-3 sre m3, security m3): set
+   **age-floor (≥45 min) > lease-TTL ≥ slowest-held-op (~EKS 20 min)** so a dead
+   holder self-expires but a live mid-flight EKS build is never reaped. A run suspended
+   > TTL (AGENTS §6.20) loses its lease; on resume it **re-acquires/renews its lease
+   before trusting prior resources**, and the reaper keys the age-floor off
+   creation+lease-renewal recency, not wall-age alone. Named as a residual interaction.
+9. **Wall-clock budget envelope** (round-3 sre M3, qa-guru m3): the "< 8 min added"
+   budget is measured **inside the apply-and-verify run, over the *existing* verify
+   step** (which already burns up to ~3 min in an 18×10s pod-wait, terraform-test.yml:112)
+   and **excludes account-mutex lease-wait**, which is bounded separately as a
+   serial-by-design operational SLO. The hermetic set runs **concurrently within a
+   run** (the mutex serializes *runs*, not kinds-within-a-run); idempotency
+   double-apply is **sampled (one rotated kind/run) or `LIVE_IDEMPOTENCY=1` on the
+   nightly lane**, not full-cost on every latency-sensitive bring-up.
 
 ## 15. "Done means" acceptance checklist (DevX M1)
 
@@ -937,12 +1155,22 @@ Each line maps to the `phase=test` unit test that proves *the mechanism itself*:
 - [ ] Every `negative`/`precondition` test references a committed red-first
   artifact (gate, not guideline); Enforce promotions scoped + HA-gated + firing-
   tested, never blanket `failurePolicy:Fail`.
-- [ ] The **bring-up/build flow** (not a push/PR CI job) invokes `tests/live/run.sh`
-  on `apply-and-verify` (build-coupled, on by default); push/PR runs static-only; any
-  cluster/kind/ad-hoc lane is `workflow_dispatch`-only; a static push lint asserts the
-  suite is wired into the bring-up and on-by-default; `verify ⇒ readonly`; the
-  HEAD-SHA live-evidence marker is a static push backstop, never a PR-time cluster run.
-- [ ] Verifier/reaper identity has an explicit ceiling-linted allowlist.
+- [ ] The live suite is a STEP in the apply-and-verify job of `terraform-test.yml`
+  (the only build flow; a `workflow_dispatch` CI run), gated on `mgmt_apply` so any
+  management apply triggers it; push/PR runs static-only; kind/ad-hoc is dispatch-only.
+  A static push lint (against `terraform-test.yml`) asserts the step is **wired AND
+  exit-code-gated** (no `|| true`/`&`/`if:false`), on-by-default, and **runs under the
+  scoped verifier role, not the admin env block**. `verify ⇒ readonly`, `unset ⇒
+  readonly`; the readonly path still applies the expect-full floor.
+- [ ] **The push/PR FAIL-closed live-evidence gate** (the mechanical default-on):
+  RED unless a fresh green `apply-and-verify` run exists for `(SHA × account ×
+  cluster)`, verified via the Actions-API run-ID cross-check; `crossplane/**`/`policies/**`
+  edits FAIL without fresh evidence; the marker is machine-emitted on clean-pass only,
+  never hand-writable. "Suite never ran" is RED from outside the suite.
+- [ ] Verifier/reaper identity is a committed **zero-wildcard, tag-conditioned** IAM
+  policy file; ceiling lint covers it at K=0; reaper deletes are per-service +
+  run-id-tag-conditioned in the policy itself; auto-quarantine excludes
+  `AccessDenied`/`expect-full`-miss classes.
 - [ ] False-fail SLO measured into committed `FLAKE_LOG`; breach auto-quarantines;
   per-check red ≠ bundle red; wall-clock **budget** gate distinct from the ceiling.
 
@@ -954,10 +1182,15 @@ subagent review. **The riskiest mechanism is proven END-TO-END before anything i
 built on it.**
 
 - **P0 — Spike (gates everything).** On the live hub: a real v2 XR reconciles
-  under `source: IRSA`; the **v2-ported** skill descends composed MRs; the in-band
-  identity gate fires; simulate returns the right allow/deny with correct
-  `--resource-arns`. Includes the v2 claim-verify port (§9.1). If P0 fails, the
-  plan changes shape.
+  under `source: IRSA`; the **v2-ported** skill descends composed MRs **via
+  `spec.crossplane.resourceRefs`** (pin which field the live cluster uses) and asserts
+  refs ⊇ the derived kinds; the in-band identity gate fires; simulate returns the right
+  allow/deny with correct `--resource-arns`; the spoke public-API CIDR/AccessEntry
+  reachability is confirmed from a runner. Includes the v2 claim-verify port (§9.1)
+  AND a **parametrized-harness proof-of-concept** (round-3 devx M3): two
+  maximally-different kinds (ASM Secret with its force-delete window + a global IAM
+  Role) through the single harness, proving the parametrization seams generalize
+  before P4 bets on it. If P0 fails, the plan changes shape.
 - **P1 — Visibility + both-layer enforcement (cheap/static).** Pipeline-mode
   coverage deriver + fixture-test (**WARN-ONLY**); two-sided IAM floor/ceiling with
   narrowing + capped annotations; simulate floor; `tests/live/run.sh` skeleton
