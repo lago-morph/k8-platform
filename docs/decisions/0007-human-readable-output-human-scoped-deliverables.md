@@ -1,10 +1,10 @@
-# ADR: Human-facing output must be human-readable, calibrated by the human-scoped-deliverables skill
+# 0007 — Human-facing output must be human-readable, calibrated by the human-scoped-deliverables skill
 
 - **ID**: ADR-891fcd621c
-- **Status**: Adopted as [`docs/decisions/0007-human-readable-output-human-scoped-deliverables.md`](../../docs/decisions/0007-human-readable-output-human-scoped-deliverables.md) (ID preserved) — see that file for the canonical record
+- **Status**: Accepted
 - **Date**: 2026-06-07
-- **Source retrospective**: ../2026-06-07-181.md
-- **PRs covered**: #178
+- **Source retrospective**: [`../../retrospective/2026-06-07-181.md`](../../retrospective/2026-06-07-181.md)
+- **PRs covered**: #178 (the convention + skill), #183 (this adoption)
 
 ## Context
 
@@ -26,9 +26,10 @@ normalized form.
 
 Concretely: lead with the idea in plain words; use tables and small (≤7-element)
 diagrams; push hash IDs and `§X.Y` cross-references out of the prose into an
-audit-trail footer; describe effort rather than estimating hours. Encoded as a
-top-of-file principle in `AGENTS.md` and wired into the `autonomous-run` skill's
-morning-summary requirements.
+audit-trail footer; describe effort rather than estimating hours. This is encoded as
+a top-of-file principle in `AGENTS.md` ("Human-readable output is a hard
+requirement") and wired into the `autonomous-run` skill's morning-summary
+requirements (a four-part plain-language opening plus a pointers/audit-trail footer).
 
 ## Alternatives considered
 
@@ -36,8 +37,9 @@ morning-summary requirements.
   because nothing made the readable form the default; a one-off correction does not
   generalize.
 - **Apply human-readable style to everything, including specs/ADRs.** Rejected —
-  canonical AI-to-AI artifacts are the reversible SQL underlay and benefit from
-  normalization; forcing prose onto them would lose precision the next agent needs.
+  canonical AI-to-AI artifacts are the reversible normalized underlay and benefit from
+  precision; forcing prose onto them would lose detail the next agent needs. (This ADR
+  itself is a canonical artifact and is intentionally written in normalized form.)
 
 ## Consequences
 
@@ -51,7 +53,7 @@ morning-summary requirements.
 
 ## References
 
-- [`../2026-06-07-181.md`](../2026-06-07-181.md) — the source retrospective.
-- `.claude/skills/human-scoped-deliverables/SKILL.md` — the calibration skill.
+- [`../../retrospective/2026-06-07-181.md`](../../retrospective/2026-06-07-181.md) — the source retrospective.
+- [`../../.claude/skills/human-scoped-deliverables/SKILL.md`](../../.claude/skills/human-scoped-deliverables/SKILL.md) — the calibration skill.
 - `AGENTS.md` — the top-of-file "Human-readable output is a hard requirement" principle.
-- PR the decision landed in: #178.
+- PRs: #178 (convention + vendored skill), #183 (this adoption).
