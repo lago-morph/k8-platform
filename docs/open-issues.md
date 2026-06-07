@@ -316,6 +316,44 @@ HEAD SHA `b31cc87`).
 **Re-dispatch:** 2026-05-28, run `26553581065` against the same SHA produced
 a DIFFERENT failure pattern, which is what surfaced Issue B.
 
+### Issue A — resolution plan (NEXT SESSION, own PR — owner-directed 2026-06-07)
+
+**Confirmed flaky 3/3** on PR #184 chainsaw runs (`27103469257`, `27103634369`,
+`27103982795`): `claim-deletion-cleanup` fails with
+`FAIL: ASM secret k8-platform/<uid> still exists after claim delete`. The
+offending step is a **one-shot** check in
+`tests/chainsaw/platform-secret/01-claim-deletion-cleanup/chainsaw-test.yaml`
+(step "assert ASM secret is gone (out-of-band aws CLI check)", ~line 98–114):
+it runs `aws secretsmanager describe-secret` exactly once immediately after the
+XR delete and fails if the secret is still present. AWS Secrets Manager deletion
+is eventually-consistent (and a scheduled delete leaves the secret present with a
+`DeletedDate` until the recovery window elapses), so the one-shot describe
+intermittently still finds it.
+
+**Fix (correct, NOT a weaken — keep the assertion, make it respect eventual
+consistency):** replace the single describe with a bounded poll (~30×5s) that
+treats **either** `describe-secret` returning NotFound **or** the returned JSON
+carrying a `DeletedDate` (scheduled for deletion) as success; only FAIL if the
+secret is still fully present (no `DeletedDate`) after the poll window. Sketch:
+```sh
+set -eu
+key=$(cat /tmp/scenario01-asm-key.txt)
+for i in $(seq 1 30); do
+  out=$(aws secretsmanager describe-secret --secret-id "$key" \
+        --region "${AWS_REGION:-us-east-1}" 2>/dev/null) \
+    || { echo "OK: $key gone (NotFound)"; exit 0; }
+  printf '%s' "$out" | grep -q '"DeletedDate"' \
+    && { echo "OK: $key scheduled for deletion"; exit 0; }
+  echo "  still present (attempt $i/30); waiting..."; sleep 5
+done
+echo "FAIL: ASM secret $key still fully present after claim delete"; exit 1
+```
+Then dispatch `chainsaw.yml` for the fix SHA, confirm green (esp.
+`claim-deletion-cleanup`), open the PR, and — once merged — re-dispatch chainsaw
+for PR #184 HEAD and re-run `chainsaw-verify` so #184's gate clears, then merge
+#184. **Do this in a NEW session: the account that ran #184 timed out and is
+gone, so the fix cannot be chainsaw-validated until a fresh account is up.**
+
 ### Issue B — `composition-drift` cleanup silently fails to restore the mutated Composition
 
 **Status:** **RESOLVED** (verified 2026-05-29, auto-004). The fix already

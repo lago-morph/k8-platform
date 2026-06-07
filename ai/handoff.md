@@ -45,8 +45,23 @@ last, the current state, and the next concrete steps. Keep it factual
 > applied on the hub only inside a paused-auto-sync verification window and then
 > pruned on restore; **on merge of #184, ArgoCD recreates them from main** for
 > every platform cluster automatically. The hub relay + access (terraform) are
-> durable now. Remaining on #184: chainsaw dispatch for HEAD to clear
-> chainsaw-verify, then merge.
+> durable now.
+>
+> **⚠️ #184 IS BLOCKED ONLY BY A PRE-EXISTING, UNRELATED FLAKE — owner-directed
+> plan (2026-06-07):** `chainsaw-verify` is red because `claim-deletion-cleanup`
+> flaked **3/3** on the OI-2026-05-28-1 ASM-deletion one-shot check (an
+> XPlatformSecret scenario; ALL sandbox-kubectl scenarios pass — `xrd-establishes`
+> incl. the PlatformCluster XRD, `claim-creates-secret`, `claim-rotation`,
+> `xdatabase`). The owner chose **fix the flake in a NEW session as its own PR**
+> (the account that ran #184 timed out, so the fix can't be chainsaw-validated
+> until a fresh account is up). **Exact fix is written up in
+> `docs/open-issues.md` → OI-2026-05-28-1 → "Issue A — resolution plan"** (poll-
+> with-retry on the out-of-band ASM check in
+> `tests/chainsaw/platform-secret/01-claim-deletion-cleanup/chainsaw-test.yaml`,
+> accepting NotFound or `DeletedDate`). Sequence: bring up phases 0→1 on the fresh
+> account → author the flake fix on a new branch → dispatch `chainsaw.yml`, get
+> green → open + merge the flake PR → re-dispatch chainsaw for **#184** HEAD →
+> re-run `chainsaw-verify` → merge **#184**. #184 itself needs no further code.
 >
 > **⏭ NEXT PHASE: the test-strategy continuation** (the auto-013 CARRIED-FORWARD
 > items below) — finish the P0 spike (`spec.crossplane.resourceRefs` on a live XR
