@@ -465,6 +465,20 @@ gate.*
 
 → Full detail: [`.claude/agents-md/06.32-finalize-before-sha-gated-dispatch.md`](.claude/agents-md/06.32-finalize-before-sha-gated-dispatch.md)
 
+### 6.33 Base a stacked PR on the branch carrying the files it edits
+
+When a stacked PR edits a file, set its base to the branch that already holds the
+most recent version of that file — not `main` and not an older sibling. Otherwise
+checking out the new branch restores the older file versions; the working tree
+looks clean, but a careless `git add -A && commit` ships a silent regression onto
+the stack. Pick the base by asking which open branch last touched the files you
+are about to edit.
+
+*Grounded in: 2026-06-07 — a feasibility branch based on the run-summary branch
+instead of the human-readable branch above it showed committed edits as reverted.*
+
+→ Full detail: [`.claude/agents-md/06.33-stacked-pr-base-selection.md`](.claude/agents-md/06.33-stacked-pr-base-selection.md)
+
 ---
 
 ## 7. Testing loops — companion skills
