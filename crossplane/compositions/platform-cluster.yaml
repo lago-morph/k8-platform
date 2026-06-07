@@ -363,6 +363,12 @@ spec:
               - type: ToCompositeFieldPath
                 fromFieldPath: status.atProvider.identity[0].oidc[0].issuer
                 toFieldPath: status.oidcIssuer
+              # Route the EKS-managed cluster security group id through the XR
+              # so the kube-relay Instance (resource 15) can join it for private
+              # API reach — see docs/decisions/0006.
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.vpcConfig.clusterSecurityGroupId
+                toFieldPath: status.clusterSecurityGroupId
             readinessChecks:
               - type: MatchCondition
                 matchCondition:
@@ -584,6 +590,148 @@ spec:
               - type: FromCompositeFieldPath
                 fromFieldPath: status.certValidationRecordFqdn
                 toFieldPath: spec.forProvider.validationRecordFqdns[0]
+            readinessChecks:
+              - type: MatchCondition
+                matchCondition:
+                  type: Ready
+                  status: "True"
+
+          # ============================================================
+          # SANDBOX KUBECTL ACCESS (docs/decisions/0006).
+          # Lets `kubectl` work directly from the Anthropic sandbox via an SSM
+          # port-forward tunnel (the gateway accepts the public ssmmessages cert;
+          # kubectl verifies the REAL cluster CA end-to-end). NO public listener
+          # is added.
+          #
+          # The account is capped at 9 EC2 instances, so there is NO per-cluster
+          # relay. ONE shared relay (terraform/management/kube-access.tf) lives in
+          # the base VPC that every cluster shares; this Composition only:
+          #   12. admits that relay's SG to THIS cluster's private API on 443, and
+          #   13/14. grants the sandbox identity a read-only EKS access entry.
+          # ============================================================
+
+          # ---------- 12. admit the shared relay to the API ---------
+          # Ingress 443 on this cluster's EKS-managed SG (routed via the XR
+          # status from the eks-cluster MR) from the shared relay SG (from the
+          # cluster-network EnvironmentConfig relaySecurityGroupId). This is what
+          # lets the one relay tunnel kubectl to THIS cluster's private endpoint.
+          - name: kube-relay-ingress
+            base:
+              apiVersion: ec2.aws.m.upbound.io/v1beta1
+              kind: SecurityGroupIngressRule
+              metadata:
+                labels:
+                  platform.k8-platform.io/role: kube-relay-ingress
+              spec:
+                forProvider:
+                  region: us-east-1
+                  ipProtocol: tcp
+                  fromPort: 443
+                  toPort: 443
+                  description: "SSM kube-API relay -> cluster API server"
+                  tags:
+                    ManagedBy: crossplane
+                    PlatformAbstraction: PlatformCluster
+                managementPolicies: [Observe, Create, Update, Delete]
+                providerConfigRef:
+                  kind: ClusterProviderConfig
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+              - type: FromCompositeFieldPath
+                fromFieldPath: status.clusterSecurityGroupId
+                toFieldPath: spec.forProvider.securityGroupId
+              - type: FromEnvironmentFieldPath
+                fromFieldPath: relaySecurityGroupId
+                toFieldPath: spec.forProvider.referencedSecurityGroupId
+            readinessChecks:
+              - type: NonEmpty
+                fieldPath: status.atProvider.id
+
+          # ---------- 13. sandbox EKS access entry ------------------
+          # Read-only access entry for the sandbox IAM identity (cloud_user).
+          # principalArn is built from the EnvironmentConfig accountId — no
+          # account-ephemeral literal in git (AGENTS §8.1).
+          - name: sandbox-access-entry
+            base:
+              apiVersion: eks.aws.m.upbound.io/v1beta1
+              kind: AccessEntry
+              metadata:
+                labels:
+                  platform.k8-platform.io/role: sandbox-access-entry
+              spec:
+                forProvider:
+                  region: us-east-1
+                  type: STANDARD
+                  tags:
+                    ManagedBy: crossplane
+                    PlatformAbstraction: PlatformCluster
+                managementPolicies: [Observe, Create, Update, Delete]
+                providerConfigRef:
+                  kind: ClusterProviderConfig
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.name
+                toFieldPath: spec.forProvider.clusterName
+              - type: CombineFromEnvironment
+                combine:
+                  variables:
+                    - fromFieldPath: accountId
+                  strategy: string
+                  string:
+                    fmt: "arn:aws:iam::%s:user/cloud_user"
+                toFieldPath: spec.forProvider.principalArn
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.accessEntryArn
+                toFieldPath: status.sandboxAccessEntryArn
+            readinessChecks:
+              - type: MatchCondition
+                matchCondition:
+                  type: Ready
+                  status: "True"
+
+          # ---------- 14. sandbox access policy association ---------
+          # AmazonEKSAdminViewPolicy = read-only on ALL resources (incl. CRDs:
+          # Crossplane XRs, ArgoCD Applications) — useful for diagnostics,
+          # never mutating. accessScope.type: cluster.
+          - name: sandbox-access-policy
+            base:
+              apiVersion: eks.aws.m.upbound.io/v1beta1
+              kind: AccessPolicyAssociation
+              metadata:
+                labels:
+                  platform.k8-platform.io/role: sandbox-access-policy
+              spec:
+                forProvider:
+                  region: us-east-1
+                  policyArn: arn:aws:eks::aws:cluster-access-policy/AmazonEKSAdminViewPolicy
+                  accessScope:
+                    type: cluster
+                managementPolicies: [Observe, Create, Update, Delete]
+                providerConfigRef:
+                  kind: ClusterProviderConfig
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.name
+                toFieldPath: spec.forProvider.clusterName
+              - type: CombineFromEnvironment
+                combine:
+                  variables:
+                    - fromFieldPath: accountId
+                  strategy: string
+                  string:
+                    fmt: "arn:aws:iam::%s:user/cloud_user"
+                toFieldPath: spec.forProvider.principalArn
             readinessChecks:
               - type: MatchCondition
                 matchCondition:
