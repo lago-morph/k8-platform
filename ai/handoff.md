@@ -8,6 +8,52 @@ last, the current state, and the next concrete steps. Keep it factual
 
 ## NEW SESSION QUICKSTART (read this first)
 
+> **[sandbox-kubectl — 2026-06-07 — SUPERSEDES the "NEXT PHASE — give the sandbox
+> direct kubectl" proposal further below, which is now BUILT.]** PR **#184**
+> (branch `claude/sandbox-kubectl-access-cmUMQ`). Full rationale:
+> `docs/decisions/0008-sandbox-kubectl-via-ssm-tunnel.md` (ADR-0008, scoped
+> implementation-only). Skill: `.claude/skills/sandbox-kubectl-access`; rule:
+> AGENTS §6.34 (points at ADR-0006 test discipline).
+>
+> **DONE — the sandbox can run kubectl directly against any cluster** via an SSM
+> Session Manager port-forward tunnel (gateway accepts the public `ssmmessages`
+> cert; kubectl verifies the REAL cluster CA; no public listener). Use it:
+> `scripts/sandbox-kubeconfig.sh -c <cluster> --exec kubectl get nodes`
+> (read-only: AmazonEKSAdminViewPolicy). ONE shared `t3.nano` relay serves every
+> cluster (9-EC2 cap) from the base VPC; each cluster's SG admits it on 443.
+>
+> **Live evidence (account `040769423303`, this session):**
+> - Hub `k8-platform-mgmt`: `kubectl get nodes` via relay → 3 Ready nodes.
+> - Spoke `k8-platform-services`: `kubectl get nodes` via the SAME relay → 2 Ready
+>   nodes (proves one relay reaches a 2nd cluster).
+> Both verified behaviorally per ADR-0006 (drive the real controller, not a lint).
+>
+> **Two defects ADR-0006 behavioral testing caught (invisible to render/yq):**
+> 1. upjet `provider-aws-ec2 v2.5.0` can't observe `SecurityGroupIngressRule`
+>    ("Missing Resource Identity", tf-aws#45303) → Composition uses the classic
+>    `SecurityGroupRule`. (Hub uses direct-Terraform `aws_vpc_security_group_ingress_rule`, unaffected.)
+> 2. crossplane IRSA role lacked `ec2:Authorize/RevokeSecurityGroupIngress` → added in `irsa.tf`.
+>
+> **What's where:** hub = `terraform/management/kube-access.tf` (relay + SG +
+> ingress rule + relay-SG-id into the `cluster-network` EnvironmentConfig) +
+> `irsa.tf` (ec2 perms). All clusters = `crossplane/compositions/platform-cluster.yaml`
+> (`kube-relay-ingress` SecurityGroupRule + read-only `sandbox-access-entry`/`-policy`).
+> Behavioral check: `tests/live/checks/after/sandbox-kubectl-relay.sh` (coverage
+> registry `defended_by` points at it, no longer pending). Helper: `scripts/sandbox-kubeconfig.sh`.
+>
+> **Notes for next session:** the spoke's relay-ingress + access-entry MRs were
+> applied on the hub only inside a paused-auto-sync verification window and then
+> pruned on restore; **on merge of #184, ArgoCD recreates them from main** for
+> every platform cluster automatically. The hub relay + access (terraform) are
+> durable now. Remaining on #184: chainsaw dispatch for HEAD to clear
+> chainsaw-verify, then merge.
+>
+> **⏭ NEXT PHASE: the test-strategy continuation** (the auto-013 CARRIED-FORWARD
+> items below) — finish the P0 spike (`spec.crossplane.resourceRefs` on a live XR
+> + drive-a-claim ⇒ real `AccessDenied`), the jentic workflow-integration capstone
+> (wire `tests/live/run.sh` into the dispatch suite under the scoped role), then
+> P2–P6. Direct kubectl now makes these much easier.
+
 > **[auto-013 — 2026-06-07 — SUPERSEDES auto-012 below.]** Full detail:
 > `overnight-summary.md` (root) + `retrospective/2026-06-07-177/` + PRs #170–#177.
 >
