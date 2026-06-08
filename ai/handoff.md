@@ -89,17 +89,23 @@ last, the current state, and the next concrete steps. Keep it factual
 >
 > **🧪 TEST RESTRUCTURE — make red mean red (owner-directed 2026-06-07, AGENTS §6.36):**
 > the recurring chainsaw red was an eventually-consistent real-AWS assert (one-shot
-> ASM describe) sitting in the per-PR gate — so it flaked and got re-kicked/ignored,
-> which is the antipattern. As part of (or alongside) the flake-fix PR, **keep the
-> same coverage but put each check in the right tier so a red gate is always real:**
+> ASM describe) sitting in the gating suite — so it flaked and got re-kicked/ignored,
+> which is the antipattern. The fix is **DETERMINISM, not re-tiering** — there are NO
+> non-gating tests (ADR-0006). As part of the flake-fix PR:
 > (a) make every gating assert against an eventually-consistent system DETERMINISTIC
 > (bounded poll accepting all valid terminal states) — the claim-deletion-cleanup
-> ASM check is the first; (b) audit the rest of the gating chainsaw set for other
-> one-shot real-AWS/timing asserts (e.g. the composition-drift timeout, OI-2026-05-28-1
-> Issue A/B) and either make them deterministic or move real-AWS-timing assertions
-> into a clearly-labeled non-gating tier (the `CHAINSAW_INCLUDE_REALAWS`/nightly lane
-> already exists); (c) the gate that remains must be one you never re-kick — if it's
-> red, it's a real bug. Do NOT normalize re-kicking.
+> ASM check is the first; it STAYS in the gate (chainsaw is `workflow_dispatch` +
+> `chainsaw-verify` is its fail-closed PR gate, and it has real AWS creds — it is
+> already in the right place, it just must not flake);
+> (b) audit the rest of the gating chainsaw set for other one-shot real-AWS/timing
+> asserts (composition-drift timeout, OI-2026-05-28-1 A/B) and make them deterministic
+> too — do NOT move them to a schedule;
+> (c) the gate that remains is one you NEVER re-kick — red = a real bug.
+> **Do NOT use the `CHAINSAW_INCLUDE_REALAWS`/nightly lane as the home for flaky
+> checks** — that lane is decoupled-from-build + lint-substituted ("gated by
+> render-fixtures + the phase-5 runbook"), which is exactly the antipattern ADR-0006
+> rejects. It is DEBT to migrate INTO the ADR-0006 dispatch-coupled, fail-closed live
+> suite (made deterministic), not a tier to extend.
 >
 > **⏭ NEXT PHASE (after #184 is truly done): the test-strategy continuation** (the auto-013 CARRIED-FORWARD
 > items below) — finish the P0 spike (`spec.crossplane.resourceRefs` on a live XR
