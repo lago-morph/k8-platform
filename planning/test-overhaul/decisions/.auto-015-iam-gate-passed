@@ -1,0 +1,25 @@
+auto-015 IAM Resource:* narrowing — spoke CREATE-path validation OBSERVED (gate CLEARED).
+
+Account 176646220910 (us-east-1), 2026-06-08.
+
+Apply: mgmt apply-and-verify run 27157161037 applied the narrowed policy
+(irsa.tf IAMRoles->role/k8-platform-*, IAMOIDCProviders->oidc-provider/*, +
+verifier iam:SimulatePrincipalPolicy). Plan = "0 add, 2 change, 0 destroy";
+mgmt e2e-verify green.
+
+CREATE-path validation — under the narrowed policy, the hub Crossplane CREATED
+(spoke-access sync, XSpokeAccess platform Synced=True ReconcileSuccess):
+  - spoke OIDC provider oidc.eks.us-east-1.amazonaws.com/id/B58BD65CC9C34658530A45BB69D18D5E
+    (iam:CreateOpenIDConnectProvider + TagOpenIDConnectProvider on oidc-provider/*),
+    crossplane-kind=openidconnectprovider.iam.aws.m.upbound.io.
+  - external-dns Role k8-platform-k8-platform-services-external-dns
+    (iam:CreateRole + TagRole on role/k8-platform-*), crossplane-kind=role.iam.aws.m.upbound.io.
+  - its inline RolePolicy k8-platform-services-external-dns (iam:PutRolePolicy on role/k8-platform-*).
+  - cluster + node roles (k8-platform-cluster/nodegroup-k8-platform-services) reconcile Synced=True under narrowed.
+
+Non-breaking: XPlatformCluster platform Synced=True(ReconcileSuccess); 0 managed
+resources not-Ready after the apply. Structural lint test_iam_resource_scoping.sh 10/0.
+
+Conclusion: the narrowed Crossplane provider IAM policy is proven on a real CREATE
+path (the harder OIDC-provider create + the role create + inline policy all succeed),
+and the cluster reconciles clean under it (§6.35 satisfied). PR may un-draft + merge.
