@@ -1,3 +1,56 @@
+apiVersion: eks.aws.m.upbound.io/v1beta1
+kind: AccessEntry
+metadata:
+  annotations: {}
+  generateName: render-probe-cluster-
+  labels:
+    crossplane.io/composite: render-probe-cluster
+    platform.k8-platform.io/role: sandbox-access-entry
+  name: render-probe-cluster-d1536b589257
+  namespace: default
+spec:
+  forProvider:
+    clusterName: render-probe
+    principalArn: arn:aws:iam::000000000000:user/cloud_user
+    region: us-east-1
+    tags:
+      ManagedBy: crossplane
+      PlatformAbstraction: PlatformCluster
+    type: STANDARD
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
+apiVersion: eks.aws.m.upbound.io/v1beta1
+kind: AccessPolicyAssociation
+metadata:
+  annotations: {}
+  generateName: render-probe-cluster-
+  labels:
+    crossplane.io/composite: render-probe-cluster
+    platform.k8-platform.io/role: sandbox-access-policy
+  name: render-probe-cluster-3ba6f10847d3
+  namespace: default
+spec:
+  forProvider:
+    accessScope:
+      type: cluster
+    clusterName: render-probe
+    policyArn: arn:aws:eks::aws:cluster-access-policy/AmazonEKSAdminViewPolicy
+    principalArn: arn:aws:iam::000000000000:user/cloud_user
+    region: us-east-1
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
 apiVersion: acm.aws.m.upbound.io/v1beta1
 kind: Certificate
 metadata:
@@ -306,6 +359,33 @@ spec:
   providerConfigRef:
     kind: ClusterProviderConfig
     name: default
+apiVersion: ec2.aws.m.upbound.io/v1beta1
+kind: SecurityGroupRule
+metadata:
+  annotations: {}
+  generateName: render-probe-cluster-
+  labels:
+    crossplane.io/composite: render-probe-cluster
+    platform.k8-platform.io/role: kube-relay-ingress
+  name: render-probe-cluster-81ea7144944e
+  namespace: default
+spec:
+  forProvider:
+    description: SSM kube-API relay to cluster API server
+    fromPort: 443
+    protocol: tcp
+    region: us-east-1
+    sourceSecurityGroupId: sg-00000000000000000
+    toPort: 443
+    type: ingress
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
 ---
 apiVersion: platform.k8-platform.io/v1alpha1
 kind: XPlatformCluster
@@ -321,6 +401,15 @@ spec:
       - apiVersion: acm.aws.m.upbound.io/v1beta1
         kind: Certificate
         name: render-probe-cluster-132e67b41d9b
+      - apiVersion: ec2.aws.m.upbound.io/v1beta1
+        kind: SecurityGroupRule
+        name: render-probe-cluster-81ea7144944e
+      - apiVersion: eks.aws.m.upbound.io/v1beta1
+        kind: AccessEntry
+        name: render-probe-cluster-d1536b589257
+      - apiVersion: eks.aws.m.upbound.io/v1beta1
+        kind: AccessPolicyAssociation
+        name: render-probe-cluster-3ba6f10847d3
       - apiVersion: eks.aws.m.upbound.io/v1beta1
         kind: Cluster
         name: render-probe-cluster-69f9d71223c3
@@ -367,7 +456,7 @@ status:
     - reason: ReconcileSuccess
       status: "True"
       type: Synced
-    - message: 'Unready resources: cluster-cert-validation, cluster-cert-validation-record, cluster-certificate, and 8 more'
+    - message: 'Unready resources: cluster-cert-validation, cluster-cert-validation-record, cluster-certificate, and 11 more'
       reason: Creating
       status: "False"
       type: Ready

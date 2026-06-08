@@ -8,6 +8,150 @@ last, the current state, and the next concrete steps. Keep it factual
 
 ## NEW SESSION QUICKSTART (read this first)
 
+> ## ▶ NEXT SESSION — RUN ORDER (clear the testing-debt runway, THEN finish the implementation)
+> **Canonical finite checklist: [`docs/testing-debt-burndown.md`](../docs/testing-debt-burndown.md)** —
+> owner-directed: burn it down BEFORE any new implementation (feature) work.
+> Testing tech debt (a flaky gate + nightly/non-gating lanes) has made every change a
+> minefield. The plan is: make the gate trustworthy → validate & merge the built work
+> → get back to implementation. **Do these in order:**
+> 1. **Bring up the fresh account** — phases 0→1 (account rotates, §8.4; run `scripts/whereami.sh`).
+> 2. **Make the gate trustworthy** (its own PR(s)): fix the OI-2026-05-28-1 flake with a
+>    DETERMINISTIC poll (not a re-kick) **and** excise the nightly/non-gating mechanism
+>    (OI-2026-06-06-4 plan + the "🧹 EXCISE" block below). chainsaw must go green honestly.
+> 3. **⛔ FULLY VALIDATE sandbox-kubectl (#184) ON A CLEAN BUILD — IT IS NOT DONE UNTIL
+>    THIS PASSES (AGENTS §6.35).** On the clean account, sync a platform cluster from
+>    main via ArgoCD with **no paused auto-sync and no manual `kubectl apply`**, then run
+>    `scripts/sandbox-kubeconfig.sh -c <cluster> --exec kubectl get nodes` against BOTH
+>    the hub and that platform cluster and confirm nodes return. Only then merge #184.
+>    (#184 needs no further code — only this fresh-build proof. Detail in the block below.)
+> 4. **THEN resume implementation** — the test-strategy continuation (P0 spike, jentic
+>    capstone, P2–P6). This is the goal; steps 1–3 just clear the runway to it.
+
+> **[sandbox-kubectl — 2026-06-07]** PR **#184** (branch
+> `claude/sandbox-kubectl-access-cmUMQ`).
+>
+> # ⛔ NOT DONE — code is built, but NOT verified on a fresh build (AGENTS §6.35)
+> This feature is **NOT complete**. Its only live proof was on a Terraform-incremental
+> hub and a **manually-modified** spoke (paused ArgoCD + hand-applied branch
+> manifests). **It is not done until a clean from-source bring-up verifies it.** Do
+> not merge #184 or call it done until the fresh-build check below passes.
+>
+> Full rationale:
+> `docs/decisions/0008-sandbox-kubectl-via-ssm-tunnel.md` (ADR-0008, scoped
+> implementation-only). Skill: `.claude/skills/sandbox-kubectl-access`; rule:
+> AGENTS §6.34 (points at ADR-0006 test discipline), §6.35 (clean-build rule).
+>
+> **BUILT — clean-build verification STILL PENDING (AGENTS §6.35).** The sandbox
+> can run kubectl directly against a cluster via an SSM Session Manager
+> port-forward tunnel (gateway accepts the public `ssmmessages` cert; kubectl
+> verifies the REAL cluster CA; no public listener). Use it:
+> `scripts/sandbox-kubeconfig.sh -c <cluster> --exec kubectl get nodes`
+> (read-only: AmazonEKSAdminViewPolicy). ONE shared `t3.nano` relay serves every
+> cluster (9-EC2 cap) from the base VPC; each cluster's SG admits it on 443.
+>
+> **Evidence so far — MECHANISM proven, NOT yet a clean build (account now gone):**
+> - Hub `k8-platform-mgmt`: `kubectl get nodes` via relay → 3 Ready nodes — on a
+>   Terraform/CI-applied (incremental, not from-zero-teardown) build.
+> - Spoke `k8-platform-services`: `kubectl get nodes` via the SAME relay → 2 Ready
+>   nodes — **on a MANUALLY-MODIFIED build** (ArgoCD auto-sync paused + branch
+>   Composition/XRD hand-applied, then reverted). This proves the mechanism, NOT
+>   the GitOps-delivered artifact.
+> **REQUIRED before this is "done" (next session, §6.35):** on a CLEAN build from
+> merged source — phases 0→1, then a platform cluster synced by ArgoCD from main
+> with NO paused-sync and NO manual apply — confirm `kubectl get nodes` works
+> against that cluster through the relay (the committed live check
+> `tests/live/checks/after/sandbox-kubectl-relay.sh` does exactly this).
+>
+> **Two defects ADR-0006 behavioral testing caught (invisible to render/yq):**
+> 1. upjet `provider-aws-ec2 v2.5.0` can't observe `SecurityGroupIngressRule`
+>    ("Missing Resource Identity", tf-aws#45303) → Composition uses the classic
+>    `SecurityGroupRule`. (Hub uses direct-Terraform `aws_vpc_security_group_ingress_rule`, unaffected.)
+> 2. crossplane IRSA role lacked `ec2:Authorize/RevokeSecurityGroupIngress` → added in `irsa.tf`.
+>
+> **What's where:** hub = `terraform/management/kube-access.tf` (relay + SG +
+> ingress rule + relay-SG-id into the `cluster-network` EnvironmentConfig) +
+> `irsa.tf` (ec2 perms). All clusters = `crossplane/compositions/platform-cluster.yaml`
+> (`kube-relay-ingress` SecurityGroupRule + read-only `sandbox-access-entry`/`-policy`).
+> Behavioral check: `tests/live/checks/after/sandbox-kubectl-relay.sh` (coverage
+> registry `defended_by` points at it, no longer pending). Helper: `scripts/sandbox-kubeconfig.sh`.
+>
+> **Notes for next session:** the spoke's relay-ingress + access-entry MRs were
+> applied on the hub only inside a paused-auto-sync verification window and then
+> pruned on restore; **on merge of #184, ArgoCD recreates them from main** for
+> every platform cluster automatically. The hub relay + access (terraform) are
+> durable now.
+>
+> **⚠️ #184 IS BLOCKED ONLY BY A PRE-EXISTING, UNRELATED FLAKE — owner-directed
+> plan (2026-06-07):** `chainsaw-verify` is red because `claim-deletion-cleanup`
+> flaked **3/3** on the OI-2026-05-28-1 ASM-deletion one-shot check (an
+> XPlatformSecret scenario; ALL sandbox-kubectl scenarios pass — `xrd-establishes`
+> incl. the PlatformCluster XRD, `claim-creates-secret`, `claim-rotation`,
+> `xdatabase`). The owner chose **fix the flake in a NEW session as its own PR**
+> (the account that ran #184 timed out, so the fix can't be chainsaw-validated
+> until a fresh account is up). **Exact fix is written up in
+> `docs/open-issues.md` → OI-2026-05-28-1 → "Issue A — resolution plan"** (poll-
+> with-retry on the out-of-band ASM check in
+> `tests/chainsaw/platform-secret/01-claim-deletion-cleanup/chainsaw-test.yaml`,
+> accepting NotFound or `DeletedDate`). Sequence: bring up phases 0→1 on the fresh
+> account → author the flake fix on a new branch → dispatch `chainsaw.yml`, get
+> green → open + merge the flake PR → re-dispatch chainsaw for **#184** HEAD →
+> re-run `chainsaw-verify` → merge **#184**. #184 itself needs no further code, but
+> it is **NOT DONE until the fresh-build check below passes** (AGENTS §6.35).
+>
+> **✅ FRESH-BUILD ACCEPTANCE for #184 (REQUIRED before "done", AGENTS §6.35):** on a
+> clean account after merge, bring up phases 0→1 (hub relay+access via terraform) and
+> sync a platform cluster from main via ArgoCD — **no paused auto-sync, no manual
+> `kubectl apply`** — then run `scripts/sandbox-kubeconfig.sh -c <cluster> --exec
+> kubectl get nodes` against BOTH the hub and that platform cluster and confirm nodes
+> return. Only then mark #184 done. (The committed live check
+> `tests/live/checks/after/sandbox-kubectl-relay.sh` automates this.)
+>
+> **🧪 TEST RESTRUCTURE — make red mean red (owner-directed 2026-06-07, AGENTS §6.36):**
+> the recurring chainsaw red was an eventually-consistent real-AWS assert (one-shot
+> ASM describe) sitting in the gating suite — so it flaked and got re-kicked/ignored,
+> which is the antipattern. The fix is **DETERMINISM, not re-tiering** — there are NO
+> non-gating tests (ADR-0006). As part of the flake-fix PR:
+> (a) make every gating assert against an eventually-consistent system DETERMINISTIC
+> (bounded poll accepting all valid terminal states) — the claim-deletion-cleanup
+> ASM check is the first; it STAYS in the gate (chainsaw is `workflow_dispatch` +
+> `chainsaw-verify` is its fail-closed PR gate, and it has real AWS creds — it is
+> already in the right place, it just must not flake);
+> (b) audit the rest of the gating chainsaw set for other one-shot real-AWS/timing
+> asserts (composition-drift timeout, OI-2026-05-28-1 A/B) and make them deterministic
+> too — do NOT move them to a schedule;
+> (c) the gate that remains is one you NEVER re-kick — red = a real bug.
+> **Do NOT use the `CHAINSAW_INCLUDE_REALAWS`/nightly lane as the home for flaky
+> checks** — that lane is decoupled-from-build + lint-substituted ("gated by
+> render-fixtures + the phase-5 runbook"), which is exactly the antipattern ADR-0006
+> rejects. It is DEBT to migrate INTO the ADR-0006 dispatch-coupled, fail-closed live
+> suite (made deterministic), not a tier to extend.
+>
+> **🧹 EXCISE NIGHTLY / NON-GATING ENTIRELY (owner-directed 2026-06-07; DEFERRED here
+> because it needs test rewrites + a fresh account to validate, AGENTS §6.35).** The
+> LIVE governance was excised this session (AGENTS §6.36 now bans nightly/non-gating;
+> `docs/open-issues.md` OI-2026-06-06-4 REOPENED with the plan). The remaining
+> mechanism is a test rewrite for next session — do it as part of the restructure:
+> 1. Delete the `CHAINSAW_INCLUDE_REALAWS` exclusion block in `tests/chainsaw/run.sh`
+>    (~lines 406-425).
+> 2. Delete the `REAL-AWS / NIGHTLY` headers on `tests/chainsaw/xdatabase/01-claim-
+>    creates-rds` + `02-deletion-cleanup` (and the stale comment in `xdatabase/00`).
+> 3. Delete `tests/unit/test_chainsaw_realaws_gated.sh` (it MANDATES the disease) and
+>    de-enumerate it from `.github/workflows/unit-tests.yml` + `tests/unit/run.sh`.
+> 4. Remove the real-AWS/nightly exemption in `tests/unit/test_chainsaw_golden_files_present.sh`.
+> 5. Move the RDS behavioral coverage to the GATING live suite (`tests/live/`,
+>    fail-closed; registry `rds.aws.m.upbound.io/Instance` is already `pending:P2`) —
+>    a real-AWS check that gates on dispatch, NOT a schedule. Then chainsaw-validate
+>    green on the fresh account. (Search the repo for `nightly`/`non-gating`/
+>    `CHAINSAW_INCLUDE_REALAWS`/`REAL-AWS` to confirm nothing live re-introduces it;
+>    historical `retrospective/`, `planning/test-overhaul/`, `ai/brainstorming/`
+>    mentions are records of the debate — leave them.)
+>
+> **⏭ NEXT PHASE (after #184 is truly done): the test-strategy continuation** (the auto-013 CARRIED-FORWARD
+> items below) — finish the P0 spike (`spec.crossplane.resourceRefs` on a live XR
+> + drive-a-claim ⇒ real `AccessDenied`), the jentic workflow-integration capstone
+> (wire `tests/live/run.sh` into the dispatch suite under the scoped role), then
+> P2–P6. Direct kubectl now makes these much easier.
+
 > **[auto-013 — 2026-06-07 — SUPERSEDES auto-012 below.]** Full detail:
 > `overnight-summary.md` (root) + `retrospective/2026-06-07-177/` + PRs #170–#177.
 >

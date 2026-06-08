@@ -53,6 +53,12 @@ resource "aws_iam_policy" "crossplane_aws" {
           "ec2:CreateRoute", "ec2:DeleteRoute",
           "ec2:AssociateRouteTable", "ec2:DisassociateRouteTable",
           "ec2:CreateTags", "ec2:DeleteTags",
+          # Security-group ingress rules: the platform-cluster Composition's
+          # kube-relay-ingress MR (SecurityGroupRule) admits the shared SSM
+          # relay to each cluster's API SG on 443 (docs/decisions/0008).
+          # Without these the MR fails create with UnauthorizedOperation
+          # (found by the ADR-0006 behavioral test, not any static lint).
+          "ec2:AuthorizeSecurityGroupIngress", "ec2:RevokeSecurityGroupIngress",
         ]
         Resource = "*"
       },

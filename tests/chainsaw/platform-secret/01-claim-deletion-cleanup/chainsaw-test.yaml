@@ -12,8 +12,17 @@ metadata:
 spec:
   timeouts:
     apply: 30s
-    assert: 240s
+    # wait-for-Ready bound: the upbound AWS provider occasionally takes
+    # several minutes to converge a single ASM Secret MR even when sibling
+    # scenarios in the same run create theirs in <60s (intermittent slow
+    # reconcile, not a stuck MR — a genuinely stuck MR still fails at this
+    # bound, so it is not masked). 240s flaked this scenario's readiness
+    # gate on run 27109966256. OI-2026-05-28-1 Issue A.
+    assert: 600s
     delete: 60s
+    # The ASM-deletion check below polls (eventual consistency); give the
+    # script step headroom above the poll window (30 x 5s = 150s). OI-2026-05-28-1.
+    exec: 180s
   steps:
     - name: apply a claim
       try:
@@ -95,23 +104,43 @@ spec:
                 name: scenario01
                 namespace: default
 
-    - name: assert ASM secret is gone (out-of-band aws CLI check)
+    - name: assert ASM secret is gone (out-of-band aws CLI check, bounded poll)
       try:
         - script:
             content: |
-              set -eu
               # chainsaw runs scripts under /bin/sh; pipefail is bash-only.
+              # NOTE: do NOT use `set -e` here: the grep-for-DeletedDate test
+              # legitimately returns non-zero when the field is absent, which
+              # under -e would abort the script mid-poll. OI-2026-05-28-1.
+              set -u
               key=$(cat /tmp/scenario01-asm-key.txt)
-              echo "Checking ASM key is gone: $key"
-              # describe-secret returns 254 (no such secret) — that's success.
-              if aws secretsmanager describe-secret \
-                  --secret-id "$key" \
-                  --region "${AWS_REGION:-us-east-1}" \
-                  >/dev/null 2>&1; then
-                echo "FAIL: ASM secret $key still exists after claim delete"
-                exit 1
-              fi
-              echo "OK: ASM secret $key is gone"
+              echo "Checking ASM key is gone (bounded poll): $key"
+              # ASM deletion is eventually consistent, and a *scheduled* delete
+              # leaves the secret present with a DeletedDate until the recovery
+              # window elapses. Accept EITHER describe-secret returning NotFound
+              # OR the returned JSON carrying a DeletedDate as success; only FAIL
+              # if the secret is still FULLY present (no DeletedDate) after the
+              # poll window. A one-shot describe here raced ASM consistency and
+              # flaked 3/3 on PR #184 (OI-2026-05-28-1 Issue A).
+              i=1
+              while [ "$i" -le 30 ]; do
+                if out=$(aws secretsmanager describe-secret \
+                      --secret-id "$key" \
+                      --region "${AWS_REGION:-us-east-1}" 2>/dev/null); then
+                  if printf '%s' "$out" | grep -q '"DeletedDate"'; then
+                    echo "OK: ASM secret $key scheduled for deletion (DeletedDate present)"
+                    exit 0
+                  fi
+                  echo "  still fully present (attempt $i/30); waiting 5s..."
+                else
+                  echo "OK: ASM secret $key is gone (describe-secret NotFound)"
+                  exit 0
+                fi
+                i=$((i + 1))
+                sleep 5
+              done
+              echo "FAIL: ASM secret $key still fully present after claim delete"
+              exit 1
   # SPEC-A4 canonical catch block — keep in sync with
   # tests/chainsaw/_lib/catch-block.yaml (enforced by
   # tests/unit/test_chainsaw_catch_block.sh).

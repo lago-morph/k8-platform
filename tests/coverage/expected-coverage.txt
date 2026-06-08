@@ -1,5 +1,6 @@
 acm.aws.m.upbound.io/Certificate
 acm.aws.m.upbound.io/CertificateValidation
+ec2.aws.m.upbound.io/SecurityGroupRule
 eks.aws.m.upbound.io/AccessEntry
 eks.aws.m.upbound.io/AccessPolicyAssociation
 eks.aws.m.upbound.io/Cluster

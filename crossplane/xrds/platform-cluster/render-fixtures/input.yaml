@@ -8,9 +8,10 @@
 # XR carries only stable values; spec.dns.subdomain is the per-cluster
 # DNS label.
 #
-# Renders 11 managed resources: 2 IAM roles + 4 RolePolicyAttachments +
-# 1 EKS Cluster + 1 NodeGroup + 1 ACM Certificate + 1 route53 Record +
-# 1 ACM CertificateValidation, all under *.aws.m.upbound.io API groups.
+# Renders 14 managed resources: 2 IAM roles + 4 RolePolicyAttachments +
+# EKS Cluster + NodeGroup + ACM Certificate + route53 Record +
+# ACM CertificateValidation + SecurityGroupRule + AccessEntry +
+# AccessPolicyAssociation, all under *.aws.m.upbound.io API groups.
 #
 # metadata.uid is pinned for deterministic render output (see SPEC-S9
 # §5 "Diff strategy"). The render is fully offline; no real AWS resources

@@ -13,8 +13,16 @@ metadata:
 spec:
   timeouts:
     apply: 30s
-    assert: 240s
+    # wait-for-Ready bound: the upbound AWS provider occasionally takes
+    # several minutes to converge a single ASM Secret MR even when sibling
+    # scenarios in the same run create theirs in <60s (intermittent slow
+    # reconcile, not a stuck MR — a genuinely stuck MR still fails at this
+    # bound, so it is not masked). OI-2026-05-28-1 Issue A.
+    assert: 600s
     delete: 60s
+    # The initial out-of-band put-secret-value below retries (ASM create
+    # read-after-write lag); give the script step headroom. OI-2026-05-28-1.
+    exec: 180s
   steps:
     - name: apply a claim with short refreshInterval
       try:
@@ -77,11 +85,24 @@ spec:
               uid=$(kubectl get xplatformsecret -n default "$xr" -o jsonpath='{.metadata.uid}')
               key="k8-platform/${uid}"
               echo "$key" > /tmp/scenario02-asm-key.txt
-              aws secretsmanager put-secret-value \
-                --secret-id "$key" \
-                --secret-string '{"phase":"initial"}' \
-                --region "${AWS_REGION:-us-east-1}" >/dev/null
-              echo "wrote initial value to $key"
+              # The XR is Ready, but ASM create is eventually consistent, so the
+              # first put can race the secret becoming observable. Retry on a
+              # bounded loop instead of one-shot. OI-2026-05-28-1.
+              i=1
+              while [ "$i" -le 30 ]; do
+                if aws secretsmanager put-secret-value \
+                    --secret-id "$key" \
+                    --secret-string '{"phase":"initial"}' \
+                    --region "${AWS_REGION:-us-east-1}" >/dev/null 2>&1; then
+                  echo "wrote initial value to $key"
+                  exit 0
+                fi
+                echo "  secret not writable yet (attempt $i/30); waiting 5s..."
+                i=$((i + 1))
+                sleep 5
+              done
+              echo "FAIL: could not write initial value to $key"
+              exit 1
             env:
               - name: CLAIM_NAME
                 value: scenario02

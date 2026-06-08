@@ -316,6 +316,44 @@ HEAD SHA `b31cc87`).
 **Re-dispatch:** 2026-05-28, run `26553581065` against the same SHA produced
 a DIFFERENT failure pattern, which is what surfaced Issue B.
 
+### Issue A — resolution plan (NEXT SESSION, own PR — owner-directed 2026-06-07)
+
+**Confirmed flaky 3/3** on PR #184 chainsaw runs (`27103469257`, `27103634369`,
+`27103982795`): `claim-deletion-cleanup` fails with
+`FAIL: ASM secret k8-platform/<uid> still exists after claim delete`. The
+offending step is a **one-shot** check in
+`tests/chainsaw/platform-secret/01-claim-deletion-cleanup/chainsaw-test.yaml`
+(step "assert ASM secret is gone (out-of-band aws CLI check)", ~line 98–114):
+it runs `aws secretsmanager describe-secret` exactly once immediately after the
+XR delete and fails if the secret is still present. AWS Secrets Manager deletion
+is eventually-consistent (and a scheduled delete leaves the secret present with a
+`DeletedDate` until the recovery window elapses), so the one-shot describe
+intermittently still finds it.
+
+**Fix (correct, NOT a weaken — keep the assertion, make it respect eventual
+consistency):** replace the single describe with a bounded poll (~30×5s) that
+treats **either** `describe-secret` returning NotFound **or** the returned JSON
+carrying a `DeletedDate` (scheduled for deletion) as success; only FAIL if the
+secret is still fully present (no `DeletedDate`) after the poll window. Sketch:
+```sh
+set -eu
+key=$(cat /tmp/scenario01-asm-key.txt)
+for i in $(seq 1 30); do
+  out=$(aws secretsmanager describe-secret --secret-id "$key" \
+        --region "${AWS_REGION:-us-east-1}" 2>/dev/null) \
+    || { echo "OK: $key gone (NotFound)"; exit 0; }
+  printf '%s' "$out" | grep -q '"DeletedDate"' \
+    && { echo "OK: $key scheduled for deletion"; exit 0; }
+  echo "  still present (attempt $i/30); waiting..."; sleep 5
+done
+echo "FAIL: ASM secret $key still fully present after claim delete"; exit 1
+```
+Then dispatch `chainsaw.yml` for the fix SHA, confirm green (esp.
+`claim-deletion-cleanup`), open the PR, and — once merged — re-dispatch chainsaw
+for PR #184 HEAD and re-run `chainsaw-verify` so #184's gate clears, then merge
+#184. **Do this in a NEW session: the account that ran #184 timed out and is
+gone, so the fix cannot be chainsaw-validated until a fresh account is up.**
+
 ### Issue B — `composition-drift` cleanup silently fails to restore the mutated Composition
 
 **Status:** **RESOLVED** (verified 2026-05-29, auto-004). The fix already
@@ -824,16 +862,25 @@ SA present, then merge. Decision brief + Round-1 adversarial review in
 <!-- New entries go above this line, newest first. -->
 
 <!-- appended auto-010 -->
-### OI-2026-06-06-4 — phase-5 xdatabase real-AWS chainsaw scenarios are nightly-gated (RESOLVED-config)
-**Status:** resolved (config). The `xdatabase/01-claim-creates-rds` and
-`02-deletion-cleanup` chainsaw scenarios provision a live RDS instance and need
-provider-aws-rds + IRSA the per-PR kind harness does not install. They now carry
-a `REAL-AWS / NIGHTLY` header and `tests/chainsaw/run.sh` excludes them unless
-`CHAINSAW_INCLUDE_REALAWS=1` (run 27072199866 had run them in the kind matrix →
-fast FAIL). Author-time coverage: render-fixtures + `test_xdatabase_rds_composition.sh`.
-Live coverage: the phase-5-live step (sync the `keycloak-db` XR on the spoke and
-verify the RDS Instance), or a nightly real-AWS chainsaw with
-`CHAINSAW_INCLUDE_REALAWS=1`. Guard: `test_chainsaw_realaws_gated.sh`.
+### OI-2026-06-06-4 — phase-5 xdatabase real-AWS chainsaw scenarios were nightly-gated (REOPENED — nightly is the disease, excise it)
+**Status:** REOPENED 2026-06-07 (owner-directed). The previous "resolution" —
+tagging `xdatabase/01-claim-creates-rds` + `02-deletion-cleanup` `REAL-AWS / NIGHTLY`
+and excluding them from the gating run via `CHAINSAW_INCLUDE_REALAWS`, with
+render-fixtures + a unit test standing in for behavioral coverage — **is exactly
+the decoupled-from-build / lint-substituted antipattern ADR-0006 forbids** (and
+AGENTS §6.36: no nightly, no non-gating lane). A nightly nobody blocks on is a
+test everyone ignores. **Excise it** — this requires a test rewrite, so it is a
+**next-session** task (needs a fresh account to chainsaw-validate; AGENTS §6.35):
+- Delete `tests/chainsaw/run.sh`'s `CHAINSAW_INCLUDE_REALAWS` exclusion block
+  (lines ~406-425), the `REAL-AWS / NIGHTLY` headers on the two `xdatabase`
+  scenarios, the `test_chainsaw_realaws_gated.sh` guard, and the real-AWS/nightly
+  exemption in `test_chainsaw_golden_files_present.sh`.
+- The RDS behavioral coverage moves to the **gating** live suite (`tests/live/`,
+  fail-closed, dispatch-coupled — registry already owes it as
+  `rds.aws.m.upbound.io/Instance` `defended_by: pending:P2`), NOT a nightly. Build
+  that live check and confirm it gates green on the fresh account.
+- Net: every behavioral check gates at its proper surface; nothing runs on a
+  schedule that doesn't block. Same coverage, no nightly.
 
 ### OI-2026-05-28-1 recurrence note (auto-010)
 `claim-creates-secret` timed out at 246s again on chainsaw run 27072199866

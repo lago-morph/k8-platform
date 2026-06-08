@@ -479,6 +479,48 @@ instead of the human-readable branch above it showed committed edits as reverted
 
 → Full detail: [`.claude/agents-md/06.33-stacked-pr-base-selection.md`](.claude/agents-md/06.33-stacked-pr-base-selection.md)
 
+### 6.34 Verify behavior coupled to the build, under the real identity (ADR-0006)
+
+A test must prove the thing *works*, not that a manifest *says* it does. Static
+`yq`/`grep` checks are the push/PR floor only — never the oracle. The center of
+verification is driving the real controller under its real IRSA identity and
+checking the real cloud resource, **on by default and coupled to the build**
+(verified when you build it, not on a schedule). Live/cluster work is
+`workflow_dispatch`-only; push/PR stays static. Never weaken a behavioral check
+down to a green lint. Binding architecture: **ADR-0006**.
+
+→ Full detail: [`docs/decisions/0006-test-architecture-build-coupled-behavioral-verification.md`](docs/decisions/0006-test-architecture-build-coupled-behavioral-verification.md)
+
+### 6.35 Never mark work done on a manually-modified build — verify on a clean build
+
+Do not call a feature complete (or "works"/"proven") if the only verification ran
+against a build you hand-modified to make it pass: a paused GitOps auto-sync, a
+manual `kubectl apply` of branch manifests, an out-of-band cloud change, a
+mid-session policy patch. Those prove the *mechanism*, not the *delivered
+artifact*. Completion requires verifying behavior on a build with **no manual
+changes** — a clean bring-up from the committed source (GitOps/CI/Terraform),
+after a teardown to the relevant phase where feasible. If a clean build cannot be
+run yet (e.g. the account is gone), say exactly that and mark the work **"pending
+clean-build verification"** — never "done".
+
+### 6.36 A red gate is real — fix the code or fix the test; never re-kick or rationalize
+
+A gating check that is red is a real signal every time. Do **not** "re-kick until
+green", do not merge around it, do not narrate why it "doesn't really matter" — an
+agent that ignores red half the time has made the gate worthless. Two cases, two
+fixes: if the code is wrong, fix the code; if the check is **non-deterministic**
+(it flakes red for reasons unrelated to the change — eventual consistency,
+ordering, timing), the check itself is the **defect** — make it deterministic (a
+bounded poll on the real condition that accepts every valid terminal state).
+There is **no "nightly" and no "non-gating" lane** to hide a check in: a
+behavioral check either gates (fail-closed, at its proper surface — push/PR static
+or `workflow_dispatch` live, per ADR-0006) or it is fixed/deleted. Relegating a
+flaky or slow check to a schedule decouples it from the build and trains everyone
+to ignore red — the exact disease ADR-0006 forbids; never do it. A test you'd
+re-kick rather than trust does not belong in the gate. (Re-running is legitimate
+only for a genuinely external infra blip, and even then the flaky check gets filed
+and fixed, not normalized.)
+
 ---
 
 ## 7. Testing loops — companion skills
