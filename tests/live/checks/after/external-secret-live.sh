@@ -34,14 +34,43 @@ aws sts get-caller-identity >/dev/null 2>&1 || skip "no usable AWS credentials i
 
 log "driving kubectl get externalsecrets for '$CLUSTER' through the SSM relay"
 
-OUT="$("$HELPER" -c "$CLUSTER" -r "$REGION" --exec kubectl get externalsecrets.external-secrets.io -A -o json 2>/dev/null)" || {
-  skip "kube API not reachable for $CLUSTER (relay/SSM tunnel failed)"
-}
+# The SSM relay tunnel flakes transiently (two relay calls colliding in one wave —
+# auto-014/auto-014-004). A SINGLE failed attempt must NOT be read as "0 found":
+# that silently turns a relay hiccup into a false "ExternalSecret unprovisioned"
+# fact (exactly the auto-014 check gap). So poll the relay (bounded) and only skip
+# after repeated failure, with a LOUD diagnostic that this is a relay failure, not
+# an absence. A reached-but-empty result is a separate, real signal (handled below).
+RELAY_ATTEMPTS="${LIVE_RELAY_ATTEMPTS:-4}"
+RELAY_INTERVAL="${LIVE_RELAY_INTERVAL:-15}"
+OUT=""; relay_ok=0
+for attempt in $(seq 1 "$RELAY_ATTEMPTS"); do
+  OUT="$("$HELPER" -c "$CLUSTER" -r "$REGION" --exec \
+          kubectl get externalsecrets.external-secrets.io -A -o json 2>/dev/null)"
+  # A real success is a parseable list (.items present) — distinguishes an empty
+  # ExternalSecret set ({"items":[]}) from relay garbage / a half-open tunnel.
+  if [ -n "$OUT" ] && printf '%s' "$OUT" | jq -e '.items' >/dev/null 2>&1; then
+    relay_ok=1; break
+  fi
+  log "relay attempt $attempt/$RELAY_ATTEMPTS did not return a parseable list for $CLUSTER; retry in ${RELAY_INTERVAL}s"
+  [ "$attempt" -lt "$RELAY_ATTEMPTS" ] && sleep "$RELAY_INTERVAL"
+done
+
+if [ "$relay_ok" -ne 1 ]; then
+  log "RELAY UNREACHABLE for $CLUSTER after $RELAY_ATTEMPTS attempts."
+  log "  → This is a relay/SSM-tunnel failure, NOT evidence that ExternalSecrets are absent."
+  log "  → Do NOT count it as '0 found'. Investigate the relay (scripts/sandbox-kubeconfig.sh);"
+  log "    the sandbox holds admin AWS and can self-grant cluster access (AGENTS §6.37)."
+  skip "kube API not reachable for $CLUSTER after $RELAY_ATTEMPTS relay attempts (tunnel flake — not an absence)"
+fi
 
 TOTAL="$(printf '%s' "$OUT" | jq '.items | length')"
-log "ExternalSecrets found on $CLUSTER: $TOTAL"
+log "ExternalSecrets found on $CLUSTER (relay reached cleanly): $TOTAL"
 
-[ "${TOTAL:-0}" -gt 0 ] || skip "no ExternalSecrets on $CLUSTER (ESO path is not provisioned on this cluster)"
+# Relay reached + zero ExternalSecrets is a GENUINE absence signal (the ESO path is
+# not provisioned on THIS cluster). The orchestrator promotes this skip to a FAIL
+# iff git declares external-secrets.io/ExternalSecret expect-full for $CLUSTER — so
+# the spoke (Keycloak's XPlatformSecret emits one) cannot read green by absence.
+[ "${TOTAL:-0}" -gt 0 ] || skip "0 ExternalSecrets on $CLUSTER after a CLEAN relay read (ESO path genuinely not provisioned here)"
 
 # Print names and namespaces for audit — never dump .data / .stringData.
 log "ExternalSecret names:"
