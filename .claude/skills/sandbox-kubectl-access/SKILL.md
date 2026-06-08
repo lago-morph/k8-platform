@@ -69,12 +69,32 @@ The following must be present in the shell environment:
 
 ## Access level
 
-kubectl sessions are **read-only**. The sandbox IAM identity (`user/cloud_user`)
-is mapped to `AmazonEKSAdminViewPolicy` via an EKS access entry on every
-cluster. This grants read access to all resources including CRDs (Crossplane
-XRs, ArgoCD Applications, Secrets metadata) but **no write access**. Mutations
-must go through ArgoCD or CI — do not attempt to `kubectl apply` or `kubectl
-delete` from a sandbox session.
+By **default** kubectl sessions are read-only: the sandbox IAM identity
+(`user/cloud_user`) is mapped to `AmazonEKSAdminViewPolicy` via an EKS access
+entry on every cluster, granting read access to all resources including CRDs
+(Crossplane XRs, ArgoCD Applications, Secrets metadata).
+
+**This view-only default is NOT a hard limit — the sandbox has full admin AWS, so
+you can grant yourself write access** (AGENTS.md §6.37). To drive the real
+Crossplane controller (apply a Claim, run the P4/P5 mutating tiers) with `kubectl`,
+self-grant cluster-admin:
+
+```sh
+aws eks associate-access-policy \
+  --cluster-name <cluster> \
+  --principal-arn arn:aws:iam::<account>:user/cloud_user \
+  --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
+  --access-scope type=cluster
+# (if the principal has no access entry yet, `aws eks create-access-entry` first)
+# verify:  scripts/sandbox-kubeconfig.sh -c <cluster> --exec kubectl auth can-i create namespace
+```
+
+Then `kubectl apply`/`delete` work through the relay like any read. Revert with
+`aws eks disassociate-access-policy` when done if you want to restore the view-only
+default. **Do not** defer mutating work claiming the sandbox is "read-only" — test
+it, and self-grant if needed. The genuine constraints are the ADR-0006 NON-GOALs
+(no new AssumeRole principal, no IAM trust widening) and §6.35 (do the *final*
+clean-build verification through GitOps/CI, not a hand-modified cluster).
 
 ## How it works
 

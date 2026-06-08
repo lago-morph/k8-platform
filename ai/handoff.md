@@ -9,7 +9,6 @@ last, the current state, and the next concrete steps. Keep it factual
 ## NEW SESSION QUICKSTART (read this first)
 
 > ## ▶ NEXT SESSION — auto-015, on a **NEW AWS account**
-> **Ready-to-paste prompt: [`ai/next-session-prompt-auto-015.md`](next-session-prompt-auto-015.md).**
 > The prior account (`878302603783`) is gone — assume **zero live resources**; no
 > evidence exists for any SHA, so every live/chainsaw gate starts RED until a
 > bring-up + producer dispatch on the new account.
@@ -39,7 +38,37 @@ last, the current state, and the next concrete steps. Keep it factual
 > open-issue follow-ups. **Access note:** the sandbox has admin AWS + relay kubectl
 > — do NOT assume "read-only"; use `workflow_dispatch` for clean-build validation.
 >
-> **→ Full run order is in [`ai/next-session-prompt-auto-015.md`](next-session-prompt-auto-015.md).**
+> **NEXT SESSION RUN ORDER (new account):**
+> 1. Bring up the substrate: terraform phases 0→1 incl. the **base env**
+>    (VPC / Route53 / **Cognito user pool** — `terraform/base/cognito.tf`), then the
+>    platform cluster via ArgoCD GitOps. Verify hub + spoke reach Ready.
+> 2. Dispatch `terraform-test.yml apply-and-verify` (management) — this applies the
+>    verifier role's +3 read verbs — then `live-verify.yml`; confirm the producer
+>    goes GREEN on the 10-kind `LIVE_EXPECT_FULL`, and a `crossplane/**` PR's
+>    `live-evidence-verify` flips GREEN. Don't green-wash: a declared-but-unprovisioned
+>    kind correctly goes RED.
+> 3. Flip the 4 SKIP kinds as they provision: **manually SYNC `spoke-access`**
+>    (`XSpokeAccess` is MANUAL-SYNC-ONLY) → spoke IRSA OIDC provider + external-dns
+>    inline RolePolicy become real. NOTE: the `iam OIDCProvider` kind is **IRSA**
+>    (EKS-issuer→STS), NOT Cognito — Cognito is the Terraform base-env user pool
+>    that sits *behind Keycloak* (ADR-004/007); the EKS-API-server→Keycloak OIDC
+>    config (`aws_eks_identity_provider_config`) is Iteration-5 and not yet built.
+>    **FIX the ExternalSecret check to cover the SPOKE reliably** — Keycloak's
+>    `XPlatformSecret` emits an ExternalSecret there; the auto-014 SKIP was a check
+>    gap (mgmt-targeted + a flaked relay counted as "0 found").
+> 4. Resume Track B driving the **REAL controller** (GitOps Claim-apply / CI per
+>    §6.35; self-grant kube-admin per §6.37 — do NOT call the sandbox "read-only"):
+>    wire P3 (mutex + reaper) into `tests/live/run.sh`; build P4 (hermetic
+>    instantiate-and-verify on `iam Role` + ASM `Secret`); build P5 (XRD/AppProject/
+>    RBAC/confused-deputy negatives, red-first; Keycloak-DB gate; spoke GitOps watch).
+> 5. Owner follow-ups: **OI-2026-06-08-1** (narrow `Resource:"*"` to
+>    `role/k8-platform-*` + `oidc-provider/*` with a clean bring-up to validate, +
+>    deny test); **OI-2026-06-08-2** (public-NLB curl e2e as a HARD bounded-poll once
+>    `hello.platform.<domain>` resolves).
+> Constraints: ADR-0006 NON-GOALs; zero-wildcard verifier role; `LIVE_MODE=mutating`
+> off by default; instantiate/negative tiers only under `LIVE_PROFILE=full`.
+> (Full narrative: `run-summary-auto-014.md`. Do NOT author a committed
+> "next-session prompt" file — AGENTS.md §6.38.)
 
 > **[sandbox-kubectl — 2026-06-07]** PR **#184** (branch
 > `claude/sandbox-kubectl-access-cmUMQ`).
