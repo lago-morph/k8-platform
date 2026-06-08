@@ -24,6 +24,20 @@ if ! bash "${REPO_DIR}/scripts/sandbox-setup.sh"; then
   echo "session-start: re-run manually with: bash scripts/sandbox-setup.sh" >&2
 fi
 
+# Burndown item 5: surface stale-clone drift. The sandbox clones the repo once
+# at container start, so a session can begin behind main — which has caused ADR
+# number collisions and work based on stale code. Fetch main and warn (only)
+# if the current checkout is behind it; rebase/merge before numbering ADRs or
+# basing new work. Non-blocking — a network hiccup must never fail session start.
+if git -C "$REPO_DIR" rev-parse --git-dir >/dev/null 2>&1 \
+   && git -C "$REPO_DIR" fetch --quiet origin main 2>/dev/null; then
+  behind=$(git -C "$REPO_DIR" rev-list --count HEAD..origin/main 2>/dev/null || echo 0)
+  if [ "${behind:-0}" -gt 0 ]; then
+    echo "session-start: WARNING — this checkout is ${behind} commit(s) behind origin/main." >&2
+    echo "session-start: rebase/merge before numbering ADRs (scripts/next-adr-number.sh) or basing new work." >&2
+  fi
+fi
+
 # Never block session start on a transient install/network hiccup — the
 # agent runs scripts/whereami.sh first (AGENTS §8.1) and will see anything missing.
 exit 0
