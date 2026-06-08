@@ -64,3 +64,32 @@ documented follow-up contingent on brief 004's allowlist/AccessEntry confirmatio
 
 No code/infra change under the Round-1 call. If the owner wants the curl e2e, it
 lands as a self-gating P5 check; revert that check to undo.
+
+---
+
+## Round 2 (revised) — incorporating Round-1 adversarial findings
+
+> Round 1 superseded. Reviewers (coverage-maximalist, infra-realist,
+> determinism-skeptic) moved the decision: the infra-realist's correction is
+> decisive — my Round-1 "defer + pre-stage a self-gating stub" was wrong.
+
+**Revised decision: PURE-defer — do NOT pre-stage a self-gating SKIP stub.**
+
+- **Why no stub (infra-realist):** a SKIP-until-reachable check in `checks/after/`
+  re-introduces the exact "silent skip reads green" disease ADR-0006 kills. The
+  all-skipped⇒RED floor is *suite-level*, not per-check, and a non-`COVERS` SKIP
+  never triggers expect-full promotion — so the stub would sit SKIPping for months
+  while the suite reads green. Deferring with an OI keeps the gap VISIBLE instead.
+- **Pursue first (coverage-maximalist):** the spoke ingress-nginx is an
+  internet-facing NLB; `hello.platform.<domain>` may be curl-reachable over public
+  HTTPS with NO kube-API, NO relay, NO CIDR allowlist — which would make §14.2 and
+  brief 004 moot for the e2e. Investigate this public-NLB path before assuming the
+  curl needs spoke kube reachability.
+- **When built (determinism-skeptic):** a curl against a fresh spoke races NLB
+  warm-up + DNS TTL + ACM issuance + ingress reconcile + pod-ready. It MUST be a
+  bounded poll (`wait_for`, ≥300s, 10–15s interval) on HTTP 200 *with the expected
+  body*, reachability SKIP-gate kept SEPARATE from the service-ready poll, and ship
+  as a HARD check (non-zero on reachable-but-failing), never a silent skip.
+
+Committed this run: **`OI-2026-06-08-2`** records the gap + this plan. **Rewind:**
+revert the OI entry (no code/infra effect).

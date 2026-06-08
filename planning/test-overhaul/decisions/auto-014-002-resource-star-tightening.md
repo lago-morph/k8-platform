@@ -64,3 +64,42 @@ alongside the policy narrowing, each with a red-first firing proof.
 
 No code/infra change under the Round-1 call. If the owner chooses to tighten, it
 lands as its own terraform PR + deny-test PR; revert that PR to restore `*`.
+
+---
+
+## Round 2 (revised) — incorporating Round-1 adversarial findings
+
+> Round 1 superseded. Reviewers (security-hawk, blast-radius-regulator,
+> least-privilege-purist) split: the hawk showed a SAFE partial IAM tightening is
+> available; the regulator + purist accepted the deferral ONLY if it is anchored
+> and guarded. Decision holds (decline tonight) but is now anchored.
+
+**Revised decision: still do NOT tighten the live provider role tonight**
+(unverifiable without a clean bring-up; §6.35), **but make the deferral honest
+and time-bound, and record the safe path the hawk found.**
+
+Committed this run:
+- **`OI-2026-06-08-1`** in `docs/open-issues.md` — the gap, the ruled-in safe
+  narrowing, the next concrete step.
+- **`scripts/derived-arn-inventory.sh`** stub — the concrete first step (derive
+  the real ARN set from the Compositions before narrowing).
+
+Recorded for the implementation (when a teardown-rebuild validation window
+exists):
+- **The hawk's repo-grounded finding:** the IAM statement IS safely narrowable —
+  every role the Compositions create matches `arn:aws:iam::<acct>:role/
+  k8-platform-*`, and OIDC to `oidc-provider/*`. Narrow IAM FIRST; its deny test
+  (`iam:CreateRole` denied for a non-`k8-platform-*` ARN) fires against a static
+  policy condition, no bring-up needed. Leave RDS/EKS/ACM at `*` (non-derivable /
+  Describe not resource-scopeable).
+- **The regulator's guard:** add a regression-guard unit test asserting the
+  *current* broad `Resource:"*"` scope so a future *silent* narrowing is caught —
+  `test_iam_required_actions.sh` checks ACTIONS, not `Resource`, and would not
+  notice a premature scope narrowing. (Recommended; NOT added tonight to avoid
+  editing the live policy file unverified — flagged for the tightening PR.)
+- **The purist's annotation:** `# lpe-justified:` annotations are premature — the
+  FINAL-PLAN §3.3 ceiling-lint that PARSES them is not built yet, so they would be
+  comments no test enforces. Add them WITH that lint.
+
+**Rewind:** revert the OI entry + stub (no infra effect). If the owner chooses to
+tighten, it lands as its own terraform + deny-test PR.

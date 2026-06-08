@@ -70,3 +70,37 @@ spoke relay and the curl e2e.
 No code/infra change under the Round-1 call. If the owner approves expanding
 access, it lands as a terraform/Composition PR; revert that PR to restore the
 current spoke isolation.
+
+---
+
+## Round 2 (revised) — incorporating Round-1 adversarial findings + a read-only diagnosis
+
+> Round 1 superseded. Reviewers (exposure-hawk ACCEPT, GitOps-purist ACCEPT,
+> reachability-advocate CHANGE-to-diagnose). The decline holds; per §6.18 I ran
+> the safe read-only diagnosis the advocate asked for.
+
+**Read-only diagnosis run this session (no exposure change):**
+`aws eks list-access-entries --cluster-name k8-platform-services` →
+`AWSServiceRoleForAmazonEKS`, `k8-platform-nodegroup-k8-platform-services`, and
+**`user/cloud_user`**. The hub has the same shape. **So the spoke is NOT
+deliberately isolated at the access-entry level — `cloud_user` already has a spoke
+AccessEntry.** The earlier spoke-relay failure was therefore most likely
+transient SSM-tunnel contention (two relay calls collided in one wave that run),
+NOT a missing access path or a deliberate hold.
+
+**Revised decision: still do NOT widen the CIDR allowlist or add a new
+AccessEntry autonomously**, for three reinforcing reasons the reviewers sharpened:
+1. The sandbox identity is read-only (`AmazonEKSAdminViewPolicy`) and **cannot**
+   `kubectl apply` / `argocd sync` anyway; doing so would also violate §6.35
+   (no manual changes; verify on a clean build).
+2. The `XSpokeAccess` claim is `MANUAL-SYNC ONLY` by design — some spoke state is
+   deliberately gated; an autonomous run must not override that gate.
+3. An EKS AccessEntry is NOT an IAM trust change (so not literally an ADR-0006
+   NON-GOAL) — but widening *network/identity reach* is owner territory regardless.
+
+**Net:** no allowlist/AccessEntry change is needed for the after-the-fact spoke
+coverage (which works under the scoped AWS role, no kube reachability). The spoke
+IS reachable in principle (cloud_user access entry present); the relay flake is
+transient. The hub→spoke curl e2e (brief 003) should pursue the public-NLB path,
+which needs neither the CIDR allowlist nor an AccessEntry. **Rewind:** none — no
+code/infra change.

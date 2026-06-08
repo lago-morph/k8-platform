@@ -72,3 +72,45 @@ kinds after-the-fact-only. No registry value changes under the Round-1 call.
 The `cost:` values are unchanged by this decision, so there is nothing to revert
 on the live infra. If a move is later adopted it is a one-line registry edit per
 kind; revert that edit to undo.
+
+---
+
+## Round 2 (revised) — incorporating Round-1 adversarial findings
+
+> Round 1 superseded. Three real reviewers (infra-cost-skeptic, isolation-purist,
+> P4-implementer-pragmatist) independently returned CHANGE-TO-X and converged on
+> the SAME two re-tiers, grounded in the actual Compositions.
+
+**Revised decision: move two kinds off `hermetic`, keep the rest, add a P4 note.**
+
+1. **`iam.aws.m.upbound.io/RolePolicyAttachment` → `singleton-coupled`.** The
+   attachment targets a SHARED AWS-managed policy (`AmazonEKSClusterPolicy`,
+   `AmazonEKSWorkerNodePolicy`, `AmazonEKS_CNI_Policy`,
+   `AmazonEC2ContainerRegistryReadOnly`). The tier must be correct *by
+   construction*, not by trusting P4 fixtures to use unique role names: a per-run
+   instantiate that reuses a deterministic role external-name (`k8-platform-
+   cluster-<name>`) would mutate a live cluster role's policy set. Structurally
+   singleton-coupled regardless of the role-name side.
+
+2. **`external-secrets.io/ExternalSecret` → `singleton-coupled`.** ESO does not
+   merely read the `ClusterSecretStore` once; it *continuously reconciles* every
+   live ExternalSecret through that one cluster-wide store (one object, one ESO
+   controller, one IRSA identity, one AWS-API quota) on `refreshInterval`. Per-run
+   instances contend on shared reconciliation bandwidth and can saturate the
+   shared AWS Secrets Manager quota, degrading every ExternalSecret in the
+   cluster. The ASM `secretsmanager Secret` stays `hermetic` (the Composition keys
+   it `k8-platform/<XR-uid>` — genuinely unique, no shared-store expectation).
+
+3. **Keep `iam Role`, `iam RolePolicy`, `secretsmanager Secret` hermetic**, AND
+   add a P4 build note: RolePolicy and RolePolicyAttachment carry a hard
+   foreign-key (`spec.forProvider.role`) on the Role's external-name, so **P4 must
+   instantiate the enclosing XR/Composition as the atomic unit, not individual
+   MRs** (a bare RolePolicy/Attachment MR stays unsynced — no parent Role).
+
+4. **acm Certificate/CertificateValidation stay `slow`** — reviewers confirmed
+   slow-vs-singleton is cosmetic (both forbid per-run instantiation; DNS-validated
+   issuance has no bounded SLA), so the safer `slow` is retained.
+
+**Applied:** `tests/coverage/registry.yaml` re-tiered for the two kinds with the
+rationale inline. **Rewind:** revert the registry hunk to restore both to
+`hermetic`.

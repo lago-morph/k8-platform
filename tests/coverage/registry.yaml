@@ -72,7 +72,11 @@ kinds:
     defended_by: tests/live/checks/after/iam-role-policy-live.sh
   iam.aws.m.upbound.io/RolePolicyAttachment:
     lane: aws
-    cost: hermetic
+    # auto-014-001 (decision brief): NOT hermetic -- attaches a SHARED AWS-managed
+    # policy (e.g. AmazonEKSClusterPolicy); a per-run instantiate with a colliding
+    # role external-name would mutate a live role's policy set. After-the-fact on
+    # the hub; P4 instantiates only via the enclosing XR (foreign-key on the Role).
+    cost: singleton-coupled
     defended_by: tests/live/checks/after/iam-role-policy-attachment-live.sh
   iam.aws.m.upbound.io/OpenIDConnectProvider:
     lane: aws
@@ -92,7 +96,12 @@ kinds:
     defended_by: tests/live/checks/after/secretsmanager-secret-live.sh
   external-secrets.io/ExternalSecret:
     lane: non-aws         # no IAM action to simulate (FINAL-PLAN §4.5)
-    cost: hermetic
+    # auto-014-001 (decision brief): NOT hermetic -- ESO continuously reconciles
+    # every live ExternalSecret through the cluster-wide ClusterSecretStore
+    # singleton (shared IRSA identity + AWS API quota); per-run instances contend
+    # on it. After-the-fact via live PlatformSecret claims; P4 does not instantiate
+    # standalone ExternalSecrets. (The ClusterSecretStore is a bring-up precondition.)
+    cost: singleton-coupled
     defended_by: tests/live/checks/after/external-secret-live.sh
 
 # extra: side-effect resources absent from any Composition's resources[] (a
