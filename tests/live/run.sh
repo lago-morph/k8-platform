@@ -135,6 +135,15 @@ declare -a FAILED=()
 
 run_check() {
   local script="$1"
+  # P3: renew the account lease before each check so a long tier never lets the
+  # lease lapse mid-run. Losing it means another run stole it (ours expired) — we
+  # must stop mutating immediately (fail-closed).
+  if [ "${P3_ENGAGED:-0}" = "1" ]; then
+    mutex_renew "$RUN_ID" || {
+      echo "FAIL: lost the account-mutex lease mid-run (another run stole it); RED by design." >&2
+      exit 1
+    }
+  fi
   echo ""
   echo "──── $script (RUN_ID=$RUN_ID, MODE=$MODE) ────"
   local out rc
@@ -158,6 +167,39 @@ $k"
     *)                     FAIL=$((FAIL+1)); FAILED+=("$script (exit=$rc)") ;;
   esac
 }
+
+# ---- P3: account-mutex + reaper (engage ONLY for the mutating tiers) -------
+# (FINAL-PLAN §8/§14.8) The instantiate + negative tiers MUTATE the shared
+# account, so before they run we (a) reap leaked resources from dead prior runs,
+# then (b) hold the account lease so two mutating runs — or a run and the reaper —
+# never collide. Gated on full+mutating: the after tier is read-only and the
+# default readonly mode never provisions, so neither needs the lease. The libs are
+# sourced through seams (LIVE_MUTEX_LIB / LIVE_REAPER_LIB) so the orchestrator unit
+# test can fake the mutex + reaper and assert the engagement order.
+P3_ENGAGED=0
+if [ "$LIVE_PROFILE" = "full" ] && [ "$MODE" = "mutating" ]; then
+  # shellcheck source=/dev/null
+  . "${LIVE_MUTEX_LIB:-$LIVE_DIR/lib/account-mutex.sh}"
+  # shellcheck source=/dev/null
+  . "${LIVE_REAPER_LIB:-$LIVE_DIR/lib/reaper-run.sh}"
+
+  # Reaper FIRST — clear leaked resources from dead prior runs before we provision.
+  # Live deletes in mutating mode (LIVE_REAPER_DRY_RUN=1 forces observe-only).
+  banner "P3 reaper sweep — clearing leaked resources from dead runs (run_id=$RUN_ID)"
+  REAPER_DRY_RUN="${LIVE_REAPER_DRY_RUN:-0}"   # full+mutating ⇒ live deletes; set 1 to observe
+  reaper_run "$RUN_ID" || true
+
+  # Then hold the account lease for the mutating tiers (fail-closed if we cannot).
+  if mutex_acquire "$RUN_ID"; then
+    P3_ENGAGED=1
+    trap 'mutex_release "$RUN_ID"' EXIT
+    banner "P3 account lease HELD (run_id=$RUN_ID) — mutating tiers may proceed"
+  else
+    echo "FAIL: could not acquire the account-mutex lease (another run holds it); RED by design." >&2
+    echo "      (the mutating tiers must not run two-at-a-time on one account — §8/§14.8)" >&2
+    exit 1
+  fi
+fi
 
 CHECK_COUNT=0
 for tier in $ACTIVE_TIERS; do

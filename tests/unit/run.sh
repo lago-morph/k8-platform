@@ -105,6 +105,8 @@ run_suite tests/unit/test_live_suite_wired.sh
 run_suite tests/unit/test_account_mutex.sh
 # auto-014 P3: reaper friendly-fire-proofing decision logic (no AWS, no deletes)
 run_suite tests/unit/test_reaper_select.sh
+# auto-015 P3: reaper entrypoint (enumerate→decide→dry-run→delete; faked AWS)
+run_suite tests/unit/test_reaper_run.sh
 
 echo ""
 if [ "$OVERALL" -eq 0 ]; then
