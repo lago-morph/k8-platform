@@ -8,40 +8,38 @@ last, the current state, and the next concrete steps. Keep it factual
 
 ## NEW SESSION QUICKSTART (read this first)
 
-> ## ▶ NEXT SESSION — RUN ORDER (testing-debt runway, continued)
-> **Canonical finite checklist: [`docs/testing-debt-burndown.md`](../docs/testing-debt-burndown.md)** —
-> owner-directed: burn it down BEFORE any new implementation (feature) work.
+> ## ▶ NEXT SESSION — auto-015, on a **NEW AWS account**
+> **Ready-to-paste prompt: [`ai/next-session-prompt-auto-015.md`](next-session-prompt-auto-015.md).**
+> The prior account (`878302603783`) is gone — assume **zero live resources**; no
+> evidence exists for any SHA, so every live/chainsaw gate starts RED until a
+> bring-up + producer dispatch on the new account.
 >
-> **DONE 2026-06-08 (burndown items 1 & 3):**
-> 1. ✅ **Gate made honest.** Deterministic bounded polls for the eventual-consistency
->    real-AWS asserts + a widened 600s XR-Ready bound (OI-2026-05-28-1). Chainsaw run
->    `27111014995` green (7/7, no re-kick). Folded into #184; #186 closed.
-> 3. ✅ **sandbox-kubectl (#184) clean-build VERIFIED and MERGED** (merge `bd1d45a`).
->    Built from merged `main`: phases 0→1 via terraform apply-and-verify; spoke
->    `k8-platform-services` created by ArgoCD GitOps sync of the committed XR (no paused
->    sync / no manual apply). `kubectl get nodes` via the relay → hub 3 Ready, spoke 2
->    Ready; committed live check PASSED for both.
+> **DONE 2026-06-08 (auto-014, PRs #191–#199, merged to `main`):**
+> - **STEP 0 confirmed** — the #190 live-evidence round-trip works (producer green,
+>   evidence uploaded).
+> - **Track A: 13 read-only `after`-tier behavioral checks** authored, one per kind
+>   (`tests/live/checks/after/*-live.sh`), selecting the real resource by its
+>   provider `crossplane-kind` stamp. 11 PASS / 4 SKIP / 0 FAIL against the old
+>   account. Registry `defended_by` flipped off `pending:P*`.
+> - **Scoped role +3 read verbs** (`acm:ListTagsForCertificate`, `iam:ListRoles`,
+>   `iam:ListRoleTags`, zero-wildcard) + `LIVE_EXPECT_FULL` broadened to the **10
+>   AWS-describe kinds**. ⚠️ Takes effect only on a `terraform apply` — see step 2
+>   of the prompt.
+> - **Four owner-decision briefs** (two adversarial rounds each):
+>   `planning/test-overhaul/decisions/auto-014-00{1,2,3,4}-*.md`. Cost-tiers
+>   re-tiered (final hermetic set = `iam Role` + `secretsmanager Secret`);
+>   Resource:* tightening deferred (OI-2026-06-08-1); hub→spoke e2e deferred
+>   (OI-2026-06-08-2); spoke confirmed reachable (not isolated).
+> - **P3 isolation libs** authored + unit-tested (mutex also live-validated):
+>   `tests/live/lib/account-mutex.sh`, `tests/live/lib/reaper-select.sh`.
 >
-> **ALL BURNDOWN ITEMS 1–5 ADDRESSED (2026-06-08):** item 2 excised the nightly lane
-> (PR #188, merged); item 5 infra hygiene (PR #189); item 4 live-suite fail-closed
-> gating MECHANISM (PR #190) on the scope-and-grow model. The gate is proven RED on
-> no-evidence (CI) and GREEN on real producer evidence (logic + live producer run).
+> **NOT done (deferred — drive via the REAL controller / CI, not admin-AWS writes;
+> ADR-0006 + §6.35):** wiring P3 into `tests/live/run.sh`; P4 instantiate-and-verify
+> harness; P5 guard-fired negatives + Keycloak-DB gate + spoke GitOps watch; the two
+> open-issue follow-ups. **Access note:** the sandbox has admin AWS + relay kubectl
+> — do NOT assume "read-only"; use `workflow_dispatch` for clean-build validation.
 >
-> **NEXT SESSION — finish item 4's coverage + the one mechanical round-trip, then implement:**
-> 1. **Post-merge:** once #190 is on `main`, `workflow_dispatch` `live-verify.yml` once
->    (GitHub won't dispatch it off a feature branch) to confirm the artifact
->    upload→`live-evidence-gate` API-fetch end-to-end, then confirm a `crossplane/**`
->    PR's `live-evidence-verify` flips GREEN with that fresh evidence.
-> 2. **Author the ~13 remaining per-kind behavioral live checks** (owner-directed) so
->    the gate's coverage grows from `rds Instance` to the full `expected-coverage.txt`
->    set: acm Certificate/CertificateValidation, eks Cluster/NodeGroup/AccessEntry/
->    AccessPolicyAssociation, iam Role/RolePolicy/RolePolicyAttachment/OIDCProvider,
->    route53 Record, secretsmanager Secret, external-secrets ExternalSecret. Flip each
->    registry `defended_by` off `pending:P*`; broaden `LIVE_EXPECT_FULL` in
->    `live-verify-run.sh` accordingly (or land P2's per-cluster git-declaration to
->    derive it automatically).
-> 3. **THEN resume implementation** — the test-strategy continuation (P0 spike, jentic
->    capstone, P2–P6). The testing-debt runway is clear.
+> **→ Full run order is in [`ai/next-session-prompt-auto-015.md`](next-session-prompt-auto-015.md).**
 
 > **[sandbox-kubectl — 2026-06-07]** PR **#184** (branch
 > `claude/sandbox-kubectl-access-cmUMQ`).
