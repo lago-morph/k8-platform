@@ -1,0 +1,65 @@
+# Live behavioral suite — the EVIDENCE PRODUCER (FINAL-PLAN §4; burndown item 4).
+# A dedicated workflow_dispatch (like chainsaw.yml is separate from
+# terraform-test.yml). The logic lives in .github/scripts/live-verify-run.sh
+# (so the wired/gating/scoped lint can assert it); this is the thin runner that
+# checks out the repo, provides yq, runs the producer, and uploads the evidence.
+name: Live verify
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "LIVE_PROFILE (full | verify-only)"
+        required: false
+        default: full
+        type: choice
+        options:
+          - full
+          - verify-only
+
+concurrency:
+  group: live-verify-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # Admin creds are used ONLY to assume the scoped role inside the producer
+  # script; run.sh runs under the assumed verifier/reaper temp creds.
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+
+jobs:
+  live-verify:
+    name: Live behavioral suite (scoped verifier/reaper role)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install yq (run.sh parses the skip-register)
+        run: |
+          set -euo pipefail
+          sudo curl -fsSL \
+            https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64 \
+            -o /usr/local/bin/yq
+          sudo chmod +x /usr/local/bin/yq
+          yq --version
+
+      - name: Run live suite (scoped role) + emit evidence
+        id: live
+        env:
+          LIVE_PROFILE: ${{ inputs.profile || 'full' }}
+          EVIDENCE_DIR: ${{ runner.temp }}/live-evidence
+        run: bash .github/scripts/live-verify-run.sh
+
+      - name: Upload live-evidence
+        if: steps.live.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-evidence
+          path: ${{ runner.temp }}/live-evidence/live-evidence.json
+          retention-days: 90
