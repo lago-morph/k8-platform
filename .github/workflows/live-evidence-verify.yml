@@ -1,0 +1,86 @@
+# Live-evidence gate (FINAL-PLAN §4.3; burndown item 4) — the FAIL-closed
+# push/PR gate that makes "live verification on by default, coupled to the
+# change" MECHANICAL. Mirrors chainsaw-verify.yml: a fast (<5 min) job that
+# does NO live work itself — it only checks that an unforgeable, fresh
+# live-evidence record exists for the deployed (config-SHA x account x
+# cluster x required-profile).
+#
+# A change under crossplane/** or policies/** re-arms `full`: ArgoCD will sync
+# it to the live hub with no apply-and-verify dispatch, so it must be verified.
+# With no fresh evidence the gate is RED ("run the build") — never WARN, never
+# green-by-absence. Evidence is produced ONLY by terraform-test.yml's
+# `[management] live-verify` step on its clean-pass (machine-emitted artifact).
+name: Live evidence verify
+
+on:
+  push:
+    branches-ignore:
+      - main
+    paths:
+      - "crossplane/**"
+      - "policies/**"
+      - "terraform/management/**"
+      - "tests/live/**"
+      - ".github/workflows/live-evidence-verify.yml"
+      - ".github/scripts/live-evidence-gate.sh"
+      - ".github/scripts/required-profile-for-changes.sh"
+  workflow_dispatch:
+
+concurrency:
+  group: live-evidence-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  # Read-only: the gate calls sts:GetCallerIdentity to learn the CURRENT account
+  # id (so account rotation invalidates stale evidence by construction). It does
+  # NOT run the live suite — that is terraform-test.yml under the scoped role.
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+
+jobs:
+  verify:
+    name: Live-evidence gate (fail-closed)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fail-closed live-evidence gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Required profile is a function of the change set (crossplane/** or
+          # policies/** ⇒ full; else verify-only). Diff against main's merge-base.
+          git fetch --quiet origin main || true
+          if git rev-parse origin/main >/dev/null 2>&1; then
+            CHANGED="$(git diff --name-only origin/main...HEAD)"
+          else
+            CHANGED="$(git diff --name-only HEAD~1 HEAD || true)"
+          fi
+          echo "── changed files ──"; printf '%s\n' "$CHANGED"
+          PROFILE="$(printf '%s\n' "$CHANGED" | .github/scripts/required-profile-for-changes.sh -)"
+          echo "required profile: $PROFILE"
+
+          # The management (hub) cluster name — a stable variable default, NOT an
+          # account-derived value (AGENTS §8.1). The producer emits the same name.
+          CLUSTER="k8-platform-mgmt"
+          ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+
+          # fetch_evidence() in the gate script queries the Actions API (GH_TOKEN)
+          # for successful terraform-test.yml runs on this SHA and joins their
+          # live-evidence artifacts. Empty ⇒ RED (fail-closed).
+          .github/scripts/live-evidence-gate.sh \
+            --config-sha   "${GITHUB_SHA}" \
+            --account      "${ACCOUNT}" \
+            --cluster      "${CLUSTER}" \
+            --required-profile "${PROFILE}"

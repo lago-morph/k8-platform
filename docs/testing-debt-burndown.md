@@ -69,23 +69,43 @@ Prerequisite for everything live below: a fresh account with phases 0→1 up
 - [x] Merged **#184** (merge commit `bd1d45a`) — green gate (chainsaw `27111014995`)
       + the clean-build proof above. Owner-directed merge-first, then build-from-main.
 
-### 4. (Deeper) Make the live suite actually gate — the test-overhaul capstone
-- [ ] Wire `tests/live/run.sh` into the dispatch apply-and-verify job under the
-      scoped verifier/reaper role; emit the clean-pass evidence artifact; wire the
-      fail-closed live-evidence gate + the static wired/gating/scoped lints (auto-013
-      CARRIED-FORWARD). This is what makes "behavioral checks gate, fail-closed"
-      real rather than aspirational — the structural cure for the whole class.
-- **Acceptance:** a config reconciled without fresh live evidence goes RED automatically.
+### 4. Make the live suite actually gate — the test-overhaul capstone — ✅ MECHANISM in PR #190 (2026-06-08), scope-and-grow
+- [x] Wired the live suite into a dedicated `workflow_dispatch` producer
+      (`.github/workflows/live-verify.yml` → `.github/scripts/live-verify-run.sh`,
+      like chainsaw.yml is separate from terraform-test.yml) running
+      `tests/live/run.sh` under the **scoped verifier/reaper role** (assume-role +
+      `live-verify` session tag); emits the machine-emitted `live-evidence`
+      artifact on the clean pass.
+- [x] Fail-closed gate `.github/workflows/live-evidence-verify.yml` +
+      `live-evidence-gate.sh` (`fetch_evidence` de-stubbed to join the producer's
+      artifacts) + the static wired/gating/scoped lint
+      `tests/unit/test_live_suite_wired.sh`.
+- [x] Found+fixed a latent bug by spike: `verifier_role.tf` trust required a
+      `live-verify` request tag but didn't grant `sts:TagSession` → tagged
+      assume-role failed AccessDenied. Added `sts:TagSession` (applied via tf).
+- **Acceptance MET:** `live-evidence-verify` went **RED automatically** on this
+      branch's config changes with no fresh evidence (runs `27115041734`,
+      `27115158959`); the producer (run live under the scoped role) emits valid
+      evidence and the gate flips **GREEN** for it (validated: gate GREEN on the
+      real evidence, RED on empty, RED on verify-only-vs-full). The RDS behavioral
+      check passes live. **Pending (mechanical, post-merge):** one CI artifact
+      round-trip — GitHub won't `workflow_dispatch` `live-verify.yml` until it is on
+      `main`, so dispatch it once after #190 merges to confirm the artifact
+      upload→API-fetch end-to-end.
+- **NEXT SESSION (owner-directed):** author the **~13 remaining per-kind
+      behavioral checks** (acm Certificate/Validation, eks Cluster/NodeGroup/
+      AccessEntry/AccessPolicyAssociation, iam Role/RolePolicy/RolePolicyAttachment/
+      OIDCProvider, route53 Record, secretsmanager Secret, ExternalSecret) so the
+      gate's coverage grows from the current `rds Instance` to the full set; flip
+      each registry `defended_by` off `pending:P*` as it lands.
 
-### 5. (Infra hygiene — small, durable) stop the session-start potholes
-- [ ] **ADR numbering collisions** (cost real time this session: `0006` was taken,
-      `0007` too). Either switch committed `docs/decisions/` to hash IDs like the
-      retrospectives already use, or add a one-line "pick the next free number from
-      `ls docs/decisions/` AND open PRs" check. Cheap; stops recurring.
-- [ ] **Stale branch off `main`** — the sandbox clones once at container start, so a
-      session can be behind `main` (it was, by 4 commits incl. the ADRs above).
-      Habit: `git fetch origin main` + rebase/merge at session start before
-      numbering or basing new work.
+### 5. (Infra hygiene — small, durable) stop the session-start potholes — ✅ DONE in PR #189 (2026-06-08)
+- [x] **ADR numbering collisions** — added `tests/unit/test_adr_numbering.sh`
+      (fail-closed duplicate-number lint) + `scripts/next-adr-number.sh` (prints
+      the next free number, reminds to fetch main + check open PRs).
+- [x] **Stale branch off `main`** — `.claude/hooks/session-start.sh` now fetches
+      `origin/main` and WARNs (non-blocking) if the checkout is behind, before any
+      ADR numbering or new work.
 
 ---
 
