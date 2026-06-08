@@ -19,18 +19,21 @@ Prerequisite for everything live below: a fresh account with phases 0→1 up
 
 ## Burndown (do in order)
 
-### 1. Make the chainsaw gate honest — deterministic, no flakes
-- [ ] **1a. `claim-deletion-cleanup` ASM-deletion check → deterministic poll.**
-      One-shot `aws secretsmanager describe-secret` right after XR delete races
-      ASM's eventual consistency → flaked 3/3 on PR #184, got re-kicked (the
-      antipattern). Replace with a bounded poll accepting NotFound **or**
-      `DeletedDate`. Fix written verbatim in `docs/open-issues.md` →
-      OI-2026-05-28-1 → "Issue A — resolution plan". File:
+### 1. Make the chainsaw gate honest — deterministic, no flakes ✅ DONE (2026-06-08)
+- [x] **1a. `claim-deletion-cleanup` ASM-deletion check → deterministic poll.**
+      Replaced the one-shot `describe-secret` with a bounded poll accepting
+      NotFound **or** `DeletedDate`. File:
       `tests/chainsaw/platform-secret/01-claim-deletion-cleanup/chainsaw-test.yaml`.
-- [ ] **1b. `composition-drift` ~245s timeout (OI-2026-05-28-1 A/B).** Audit the
-      rest of the gating chainsaw set for other one-shot real-AWS/timing asserts;
-      make them deterministic too. Do **not** move them to a schedule.
-- **Acceptance:** `chainsaw.yml` for the head SHA goes green *honestly* (no re-kick).
+- [x] **1b. Audited the rest of the gating chainsaw set.** Made deterministic:
+      `00-claim-creates-secret`'s ASM-existence check → bounded poll;
+      `02-data-rotation`'s initial out-of-band `put-secret-value` → bounded retry.
+      Widened the XR-Ready wait bound to 600s on the three secret-provisioning
+      scenarios (intermittent slow ASM converge, OI-2026-05-28-1 Issue A; a stuck
+      MR still fails at the bound, so not masked). `composition-drift` audited —
+      passed green at its existing bound, no one-shot real-AWS assert.
+- **Acceptance MET:** chainsaw run `27111014995` went green *honestly* (7/7, no
+      re-kick) on #184 HEAD `89836cc`. The fix was folded into #184 (the abandoned
+      #186 was closed) so there is a single `main` vs #184 line.
 
 ### 2. Excise the nightly / non-gating lane entirely (OI-2026-06-06-4, REOPENED)
 - [ ] Delete the `CHAINSAW_INCLUDE_REALAWS` exclusion block in
@@ -50,17 +53,21 @@ Prerequisite for everything live below: a fresh account with phases 0→1 up
       / `REAL-AWS` returns **only** historical `retrospective/`, `planning/`,
       `ai/brainstorming/` records — nothing live. Every behavioral check gates.
 
-### 3. ⛔ FULLY VALIDATE sandbox-kubectl (PR #184) ON A CLEAN BUILD, then merge
-- [ ] On the clean account, sync a platform cluster from `main` via ArgoCD with
-      **no paused auto-sync and no manual `kubectl apply`**, then run
-      `scripts/sandbox-kubeconfig.sh -c <cluster> --exec kubectl get nodes`
-      against **both** the hub and that platform cluster; nodes must return.
-      (The committed live check `tests/live/checks/after/sandbox-kubectl-relay.sh`
-      automates exactly this.)
-- [ ] Merge **#184** — green gate + clean-build proof, NOT an override of red.
-- **Why not now:** #184 is mechanism-proven but only on a Terraform-incremental hub
-      + a *manually-modified* spoke; §6.35 says that is not "done". The account that
-      ran it timed out. #184 needs no further code — only this proof.
+### 3. ✅ FULLY VALIDATED sandbox-kubectl (PR #184) ON A CLEAN BUILD, then merged (2026-06-08)
+- [x] Clean build from merged `main`: phase 0 (`base`) + phase 1 (`management`)
+      applied from `main` via `terraform-test.yml apply-and-verify` (runs
+      `27111305299`, `27111334651`). Spoke `k8-platform-services` created by
+      **ArgoCD GitOps** — triggered the committed-source sync of the
+      `platform-cluster-claim` Application (a `kubectl patch … operation.sync
+      revision=main`, i.e. "click Sync"), **no paused auto-sync and no manual
+      `kubectl apply`** of any manifest.
+- [x] `scripts/sandbox-kubeconfig.sh --exec kubectl get nodes` through the shared
+      relay returned: **hub `k8-platform-mgmt` → 3 Ready**, **spoke
+      `k8-platform-services` → 2 Ready**. The committed live check
+      `tests/live/checks/after/sandbox-kubectl-relay.sh` PASSED for both
+      (`COVERS ec2.aws.m.upbound.io/SecurityGroupRule`).
+- [x] Merged **#184** (merge commit `bd1d45a`) — green gate (chainsaw `27111014995`)
+      + the clean-build proof above. Owner-directed merge-first, then build-from-main.
 
 ### 4. (Deeper) Make the live suite actually gate — the test-overhaul capstone
 - [ ] Wire `tests/live/run.sh` into the dispatch apply-and-verify job under the
