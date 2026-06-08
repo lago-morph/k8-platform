@@ -9,6 +9,8 @@ last, the current state, and the next concrete steps. Keep it factual
 ## NEW SESSION QUICKSTART (read this first)
 
 > ## ▶ NEXT SESSION — RUN ORDER (clear the testing-debt runway, THEN finish the implementation)
+> **Canonical finite checklist: [`docs/testing-debt-burndown.md`](../docs/testing-debt-burndown.md)** —
+> owner-directed: burn it down BEFORE any new implementation (feature) work.
 > Testing tech debt (a flaky gate + nightly/non-gating lanes) has made every change a
 > minefield. The plan is: make the gate trustworthy → validate & merge the built work
 > → get back to implementation. **Do these in order:**
