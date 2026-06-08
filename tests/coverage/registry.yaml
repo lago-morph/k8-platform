@@ -13,6 +13,15 @@
 #     that closes it ships in the named phase. When all are real test IDs, the
 #     defended_by check becomes a hard gate (DevX C2).
 #
+# auto-014: all 13 previously-`pending:P*` kinds now have a real read-only
+# "after"-tier behavioral check (one per kind). Each is its kind's ADR-0006
+# oracle: it selects the REAL cloud resource the Crossplane abstraction produced
+# by the Composition's own stamp (the provider tag `crossplane-kind=<kind>` /
+# `PlatformAbstraction`), proves it healthy, and is read-only (safe in full +
+# verify-only). Kinds NOT yet provisioned in a given account SKIP cleanly (the
+# orchestrator promotes a SKIP to a FAIL iff the kind is expect-full). The P4/P5
+# instantiate + negative tiers remain the create-and-verify / guard-fired gates.
+#
 # Fields per entry:
 #   lane:        aws | non-aws   (non-aws kinds have no IAM action to simulate)
 #   cost:        hermetic | singleton-coupled | slow
@@ -20,7 +29,7 @@
 #                 - singleton-coupled:  cheap action but coupled to a singleton (zone/spoke);
 #                                       after-the-fact on the hub, instantiate only in isolation
 #                 - slow:               EKS ~20 min / RDS multi-min — AFTER-THE-FACT only
-#   defended_by: a test ID, or `pending:P<n>` until that phase's behavioral test lands
+#   defended_by: a test ID / path, or `pending:P<n>` until that phase's test lands
 #
 # Cost assignments are policy knobs (FINAL-PLAN §5/§14.5); tune in the handoff.
 
@@ -28,11 +37,11 @@ kinds:
   acm.aws.m.upbound.io/Certificate:
     lane: aws
     cost: slow            # DNS-validated issuance is slow + singleton (one zone)
-    defended_by: pending:P2
+    defended_by: tests/live/checks/after/acm-certificate-live.sh
   acm.aws.m.upbound.io/CertificateValidation:
     lane: aws
     cost: slow
-    defended_by: pending:P2
+    defended_by: tests/live/checks/after/acm-certificate-validation-live.sh
   ec2.aws.m.upbound.io/SecurityGroupRule:
     lane: aws
     cost: singleton-coupled   # admits the shared SSM relay to the cluster API; created with the cluster (docs/decisions/0008)
@@ -40,35 +49,35 @@ kinds:
   eks.aws.m.upbound.io/Cluster:
     lane: aws
     cost: slow            # ~20 min — never recreate (FINAL-PLAN §5)
-    defended_by: pending:P2
+    defended_by: tests/live/checks/after/eks-cluster-live.sh
   eks.aws.m.upbound.io/NodeGroup:
     lane: aws
     cost: slow
-    defended_by: pending:P2
+    defended_by: tests/live/checks/after/eks-nodegroup-live.sh
   eks.aws.m.upbound.io/AccessEntry:
     lane: aws
     cost: singleton-coupled   # coupled to the spoke cluster
-    defended_by: pending:P5
+    defended_by: tests/live/checks/after/eks-access-entry-live.sh
   eks.aws.m.upbound.io/AccessPolicyAssociation:
     lane: aws
     cost: singleton-coupled
-    defended_by: pending:P5
+    defended_by: tests/live/checks/after/eks-access-policy-association-live.sh
   iam.aws.m.upbound.io/Role:
     lane: aws
     cost: hermetic
-    defended_by: pending:P4
+    defended_by: tests/live/checks/after/iam-role-live.sh
   iam.aws.m.upbound.io/RolePolicy:
     lane: aws
     cost: hermetic
-    defended_by: pending:P4
+    defended_by: tests/live/checks/after/iam-role-policy-live.sh
   iam.aws.m.upbound.io/RolePolicyAttachment:
     lane: aws
     cost: hermetic
-    defended_by: pending:P4
+    defended_by: tests/live/checks/after/iam-role-policy-attachment-live.sh
   iam.aws.m.upbound.io/OpenIDConnectProvider:
     lane: aws
     cost: singleton-coupled   # one OIDC provider per spoke
-    defended_by: pending:P5
+    defended_by: tests/live/checks/after/iam-oidc-provider-live.sh
   rds.aws.m.upbound.io/Instance:
     lane: aws
     cost: slow            # multi-minute — AFTER-THE-FACT only
@@ -76,15 +85,15 @@ kinds:
   route53.aws.m.upbound.io/Record:
     lane: aws
     cost: singleton-coupled   # coupled to the singleton hosted zone
-    defended_by: pending:P4
+    defended_by: tests/live/checks/after/route53-record-live.sh
   secretsmanager.aws.m.upbound.io/Secret:
     lane: aws
     cost: hermetic
-    defended_by: pending:P4
+    defended_by: tests/live/checks/after/secretsmanager-secret-live.sh
   external-secrets.io/ExternalSecret:
     lane: non-aws         # no IAM action to simulate (FINAL-PLAN §4.5)
     cost: hermetic
-    defended_by: pending:P4
+    defended_by: tests/live/checks/after/external-secret-live.sh
 
 # extra: side-effect resources absent from any Composition's resources[] (a
 # controller-created NLB, an out-of-band-tagged subnet — blockers #9 and the LB).
