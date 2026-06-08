@@ -43,14 +43,30 @@ RUN ORDER:
    correctly goes RED — provision it or adjust `LIVE_EXPECT_FULL` to reality (do
    NOT green-wash).
 
-3. **Flip the 4 currently-SKIP kinds to PASS as the bring-up provisions them.**
-   ExternalSecret, iam OIDC provider, iam RolePolicy, secretsmanager Secret skip
-   today only because no healthy instance existed. A new-account bring-up that
-   syncs `XSpokeAccess` (OIDC + external-dns inline RolePolicy) and applies a real
-   `PlatformSecret` claim (ASM secret + ExternalSecret) should make all four real;
-   then add them to `LIVE_EXPECT_FULL`. (SecurityGroupRule + ExternalSecret need
-   the relay/kubectl, which a CI runner lacks — keep them out of the CI producer's
-   expect-full unless the runner gains that tooling.)
+3. **Flip the 4 currently-SKIP kinds to PASS — and treat their auto-014 SKIPs as
+   suspect, not settled.** Root cause for 3 of them: **`XSpokeAccess` is
+   `MANUAL-SYNC ONLY`** (`argocd/apps/spoke-access.yaml` has no `syncPolicy.automated`)
+   and was never synced, so the spoke **OIDC provider** (`xspokeaccess.yaml:101–137`,
+   IRSA — trusts the spoke EKS issuer, NOT Cognito) and the **external-dns inline
+   RolePolicy** (`xspokeaccess.yaml:207–278`) never existed. → **Manually sync
+   `spoke-access` after the spoke is Ready + the oidcIssuer overlay is applied**,
+   then both PASS. (There is NO Cognito / Cognito-OIDC in committed source — if the
+   owner expects one, that is a design gap to raise, not a check miss.)
+   - **secretsmanager Secret** skipped because only a value-less chainsaw leftover
+     existed; a real `XPlatformSecret`/`PlatformSecret` claim makes it real.
+   - **ExternalSecret — the auto-014 SKIP was NOT trustworthy (real check gap).**
+     Keycloak's committed `XPlatformSecret` (`platform-services/keycloak/secrets/
+     keycloak-secrets.yaml`, wave 35) emits an ExternalSecret **on the SPOKE**, but
+     the auto-014 check ran against `k8-platform-mgmt` and the spoke relay flaked, so
+     it may have missed a live spoke ExternalSecret. **Fix the check** to cover the
+     spoke reliably (self-grant cluster access per §6.37; do NOT treat a flaked relay
+     as "0 found" — that is a false SKIP). The broad ESO PushSecret→ASM→ExternalSecret
+     baseline (ADR-0005) is still decided-but-unimplemented (OI-2026-06-07-1/-2/-5) —
+     implementing it is what makes mgmt-side ExternalSecrets exist.
+   Then add each kind to `LIVE_EXPECT_FULL` as it becomes real. (SecurityGroupRule +
+   ExternalSecret need the relay/kubectl, which a CI runner lacks — keep them out of
+   the CI producer's expect-full unless the runner gains that tooling, or run them
+   from a self-granted sandbox/relay lane.)
 
 4. **Resume Track B (the deferred work), driving the REAL controller, not admin
    AWS writes** (ADR-0006; validate on a clean build via CI, §6.35):
