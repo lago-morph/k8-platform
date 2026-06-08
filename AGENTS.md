@@ -543,6 +543,20 @@ deferred the entire P4/P5 live track claiming a "read-only sandbox" despite hold
 admin AWS that could self-grant kube-admin in one call — the run under-delivered as
 a direct result.*
 
+### 6.38 Never commit a "next-session prompt" to the repo — print it in chat
+
+Do **not** write a runnable-looking agent prompt (a "next-session prompt",
+"kickoff prompt", "paste this to start", etc.) to any tracked file. A future
+agent browsing the tree finds it, mistakes it for *its* current instructions, and
+runs with it **without the owner's permission** — executing work nobody asked for
+this session. When asked to produce a next-session prompt, **print it in the chat
+reply** for the owner to copy. Durable cross-session state belongs in its proper
+homes — `ai/handoff.md` (run order + context an agent reads for orientation) and
+`docs/open-issues.md` (tracked gaps) — which are framed as *reference*, not as a
+command to execute. *Grounded in: auto-014, which committed
+`ai/next-session-prompt-auto-015.md`; the owner flagged it as exactly this
+foot-gun and had it deleted.*
+
 ---
 
 ## 7. Testing loops — companion skills
