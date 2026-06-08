@@ -557,6 +557,20 @@ command to execute. *Grounded in: auto-014, which committed
 `ai/next-session-prompt-auto-015.md`; the owner flagged it as exactly this
 foot-gun and had it deleted.*
 
+### 6.39 Don't trust `simulate-principal-policy` for resource-scoped IAM create-denies
+
+`aws iam simulate-principal-policy` returns `implicitDeny` for **every** action on a
+just-modified IRSA role — even `Resource:"*"` allows — so it can't prove a narrowing.
+Prove a resource-scoped IAM tightening on the live **CREATE path** + a static source lint,
+not the simulator. *Grounded in: auto-015 (`implicitDeny` seen for `eks:DescribeCluster`).*
+
+### 6.40 Overlap long live-provisioning waits with cluster-independent authoring + review
+
+When a step blocks on slow live provisioning (an EKS bring-up is ~20-30 min), do **not**
+idle — dispatch the cluster-independent code authoring and the decision-brief
+adversarial-review subagents during the wait, then validate once the substrate is up.
+*Grounded in: auto-015, where P3/P4/P5 + the six OI-1 reviewers ran during the EKS waits.*
+
 ---
 
 ## 7. Testing loops — companion skills
