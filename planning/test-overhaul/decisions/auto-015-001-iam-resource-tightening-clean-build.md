@@ -194,6 +194,58 @@ enumeration is a separate concern (action scope, not Resource scope) → its own
 ### Round-2 rewind point + status
 
 The policy hunk + the live deny check + the structural guard land on this branch;
-revert the branch to restore `Resource:"*"`. **Status after Round 2: decision = narrow
-IAM, GATED on spoke validation; awaiting the second adversarial wave on this revised
-brief, then implementation + live validation.**
+revert the branch to restore `Resource:"*"`.
+
+### Round-2 final refinement (post second wave — ACCEPTED)
+
+Second wave (harness-architect [opus], merge-gate-discipline-auditor,
+proportionality/minimalism-critic) — all three CHANGE, all converging on the
+*implementation*, none on the core decision. Folded in; **decision ACCEPTED**:
+
+1. **BLOCKING wiring fix (harness-architect):** the scoped verifier/reaper role has
+   **no `iam:SimulatePrincipalPolicy`** (`policies/verifier-reaper-policy.json.tftpl`
+   lists only Get/List iam reads), and the negative tier runs **under that role**
+   (`.github/scripts/live-verify-run.sh` assumes it before `tests/live/run.sh`). So
+   the deny check would `AccessDenied` on the *caller*. **Fix: add
+   `iam:SimulatePrincipalPolicy` to the `VerifyReadsNoWildcardActions` statement
+   (`Resource:"*"`, not resource-scopeable — same shape + same `apply`-to-take-effect
+   sequence as auto-014's +3 read verbs).** It stays zero-wildcard-*action*. Until the
+   mgmt apply lands the verb, the deny check SKIPs — not "done". Confirmed: `--policy-
+   source-arn <crossplane role>` DOES evaluate the attached `crossplane_aws` policy, so
+   the simulator sees the narrowed Sid and `MatchedStatements` can name it.
+2. **Guard cannot reuse the actions-extractor (harness-architect):**
+   `test_iam_required_actions.sh` flattens all statements and never reads `Resource`.
+   The new guard must be **Sid-anchored** (parse the `Sid = "IAM"`/`"EKS"`/`"EC2Networking"`/`"ACM"`
+   blocks separately) so it asserts the role/OIDC Resources are prefix-scoped AND
+   EKS/EC2/ACM stay `"*"` **without false-matching** Route53/SecretsManager's own
+   Resource lines.
+3. **Add an OIDC control (minimalism-critic):** the deny test pairs **both**
+   `iam:CreateRole` AND `iam:CreateOpenIDConnectProvider` deny-on-foreign-ARN, each
+   with a `k8-platform-*`/`oidc-provider/*` positive control — else the OIDC narrowing
+   has no firing proof.
+4. **Wire the live deny check to a runner (minimalism-critic):** it lands in the
+   `negative` tier (dispatch/live lane per ADR-0006 — it needs live AWS), and the
+   **static** Sid-anchored lint lands in `tests/unit/run.sh` (static push/PR lane,
+   where the live check can't run). Both mechanisms kept; "always-on" is now real, not
+   aspirational. (a)=load-bearing CREATE-path proof, (b)=cheap always-on deny proof,
+   (c)=static source lint — none redundant.
+5. **Merge gate made enforceable (merge-gate-auditor):** prose "held" is unenforceable
+   in a bottom-up merge stack. **Enforcement:** this PR opens as a **DRAFT** (can't be
+   merge-buttoned) carrying a **failing required check** —
+   `tests/unit/test_iam_tightening_gate.sh` exits 1 (`HELD: spoke validation not
+   confirmed`) until a sentinel `planning/test-overhaul/decisions/.auto-015-iam-gate-passed`
+   is committed. The implementing step commits the sentinel **only after** observing
+   the spoke reconcile green under the narrowed policy, **in the same commit** that
+   flips `docs/open-issues.md` to RESOLVED and records the run-ID observation in
+   `ai/handoff.md` (§8.3 durable fact record) — making the OI-flip / merge / live-state
+   atomic. If the run stops before the spoke validates, the draft + failing check + OI
+   stay as-is; the next session validates-then-clears.
+
+**Final mechanism set (ACCEPTED):** narrow IAM role→`role/k8-platform-*`,
+OIDC→`oidc-provider/*`; EKS/EC2/RDS/ACM stay `"*"` (RDS/EC2 filed as sharpened
+follow-ups). `iam:SimulatePrincipalPolicy` added to the scoped role. (a) spoke
+CREATE-path validation gate, (b) live `simulate-principal-policy` deny+positive checks
+(CreateRole + CreateOIDC) in the negative tier, (c) Sid-anchored static source lint in
+the unit suite, (d) DRAFT-PR + sentinel-gated failing check + atomic OI/handoff close.
+**Status: ACCEPTED — implementation on this branch; live validation on the spoke
+CREATE path; PR held DRAFT until that validation is observed.**
