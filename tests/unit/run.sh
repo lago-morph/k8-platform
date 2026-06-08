@@ -105,6 +105,10 @@ run_suite tests/unit/test_live_suite_wired.sh
 run_suite tests/unit/test_account_mutex.sh
 # auto-014 P3: reaper friendly-fire-proofing decision logic (no AWS, no deletes)
 run_suite tests/unit/test_reaper_select.sh
+# auto-015-001 (OI-2026-06-08-1): IAM Resource:* narrowing — Sid-anchored source
+# regression lint + the merge gate (RED until spoke validation commits the sentinel)
+run_suite tests/unit/test_iam_resource_scoping.sh
+run_suite tests/unit/test_iam_tightening_gate.sh
 
 echo ""
 if [ "$OVERALL" -eq 0 ]; then

@@ -63,7 +63,18 @@ resource "aws_iam_policy" "crossplane_aws" {
         Resource = "*"
       },
       {
-        Sid    = "IAM"
+        # auto-015-001 (OI-2026-06-08-1): IAM role actions scoped to the DERIVED
+        # prefix instead of Resource:"*". Every IAM role Crossplane creates or
+        # passes is k8-platform-* — k8-platform-cluster-<name>,
+        # k8-platform-nodegroup-<name>, k8-platform-<cluster>-external-dns
+        # (verified against crossplane/compositions/*.yaml). The mgmt hub roles
+        # are Terraform-created (operator creds), so ONLY the spoke's
+        # Crossplane-created roles exercise this — validated on the spoke
+        # XSpokeAccess CREATE path before this narrowing is called done (§6.35).
+        # The paired firing proof is the live simulate-principal-policy deny
+        # check (tests/live/checks/negative/iam-resource-scope-denied.sh); the
+        # source regression guard is tests/unit/test_iam_resource_scoping.sh.
+        Sid    = "IAMRoles"
         Effect = "Allow"
         Action = [
           "iam:CreateRole", "iam:DeleteRole",
@@ -78,18 +89,29 @@ resource "aws_iam_policy" "crossplane_aws" {
           # "AccessDenied iam:GetRolePolicy" (RolePolicy never created).
           "iam:UpdateAssumeRolePolicy", "iam:GetRolePolicy",
           "iam:GetRole", "iam:ListRolePolicies", "iam:ListAttachedRolePolicies",
-          "iam:CreateOpenIDConnectProvider", "iam:DeleteOpenIDConnectProvider",
-          "iam:GetOpenIDConnectProvider",
-          # The XSpokeAccess Composition tags the spoke OIDC provider
-          # (ManagedBy / PlatformAbstraction / ClusterName). EKS OIDC-provider
-          # create-with-tags fails closed without Tag* (auto-012): observed
-          # "AccessDenied ... iam:TagOpenIDConnectProvider" at spoke-access
-          # sync. Untag pairs with it for managementPolicies Update/Delete.
-          "iam:TagOpenIDConnectProvider", "iam:UntagOpenIDConnectProvider",
           "iam:TagRole", "iam:UntagRole",
+          # PassRole targets are the cluster-role / node-role, both k8-platform-*.
           "iam:PassRole",
         ]
-        Resource = "*"
+        Resource = "arn:aws:iam::${local.account_id}:role/k8-platform-*"
+      },
+      {
+        # auto-015-001: OIDC-provider actions scoped to oidc-provider/* (one IRSA
+        # OIDC provider per spoke). The XSpokeAccess Composition tags it
+        # (ManagedBy / PlatformAbstraction / ClusterName); EKS OIDC-provider
+        # create-with-tags fails closed without Tag* (auto-012): observed
+        # "AccessDenied ... iam:TagOpenIDConnectProvider" at spoke-access sync.
+        # Untag pairs with it for managementPolicies Update/Delete.
+        # CreateOpenIDConnectProvider evaluates the to-be-created provider ARN
+        # against oidc-provider/* (resource-level perms apply at create time).
+        Sid    = "IAMOIDCProviders"
+        Effect = "Allow"
+        Action = [
+          "iam:CreateOpenIDConnectProvider", "iam:DeleteOpenIDConnectProvider",
+          "iam:GetOpenIDConnectProvider",
+          "iam:TagOpenIDConnectProvider", "iam:UntagOpenIDConnectProvider",
+        ]
+        Resource = "arn:aws:iam::${local.account_id}:oidc-provider/*"
       },
       {
         # RDS — the XDatabase Composition (phase 5) provisions an RDS
