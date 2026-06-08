@@ -107,6 +107,52 @@ else
   argocd version --client --short 2>&1 || true
 fi
 
+# --- kubectl — LIVE cluster reads from the sandbox via the SSM relay ----
+# Direct kubectl 503s at the egress gateway (private cluster CA); the supported
+# path is scripts/sandbox-kubeconfig.sh's SSM tunnel (docs/decisions/0008). This
+# was proven working last session — install it so it is never mistaken for
+# "unavailable" (AGENTS.md §6.12).
+if command -v kubectl >/dev/null 2>&1 && kubectl version --client 2>/dev/null | grep -q "${KUBECTL_VERSION}"; then
+  echo "  kubectl: ${KUBECTL_VERSION} already present"
+else
+  echo "  kubectl: installing ${KUBECTL_VERSION}"
+  $SUDO curl -fsSL \
+    "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
+    -o "${BIN}/kubectl"
+  $SUDO chmod +x "${BIN}/kubectl"
+  kubectl version --client 2>&1 | head -1 || true
+fi
+
+# --- session-manager-plugin — the SSM tunnel transport kubectl rides on -
+# Installed as a .deb (AWS does not publish independent version tags the way the
+# pinned tools do); the relay path needs it present, not a specific version.
+if command -v session-manager-plugin >/dev/null 2>&1; then
+  echo "  session-manager-plugin: $(session-manager-plugin --version 2>&1 | head -1) already present"
+else
+  echo "  session-manager-plugin: installing latest .deb"
+  tmp="$(mktemp -d)"
+  if curl -fsSL "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb" \
+       -o "${tmp}/smp.deb"; then
+    $SUDO dpkg -i "${tmp}/smp.deb" >/dev/null 2>&1 || $SUDO apt-get install -f -y >/dev/null 2>&1 || true
+    session-manager-plugin --version 2>&1 | head -1 || true
+  else
+    echo "  session-manager-plugin: download failed (kubectl-via-relay will be unavailable until installed)"
+  fi
+  rm -rf "$tmp"
+fi
+
+# --- Docker daemon — composition-render.sh renders functions in Docker --
+# Installed-but-stopped in this sandbox; start it (AGENTS.md §6.12). Backgrounded
+# and given a few seconds to come up; harmless if already running.
+if docker info >/dev/null 2>&1; then
+  echo "  docker: daemon already running"
+elif command -v dockerd >/dev/null 2>&1; then
+  echo "  docker: starting dockerd (background)"
+  $SUDO sh -c 'dockerd >/tmp/dockerd.log 2>&1 &' || true
+  for _ in 1 2 3 4 5 6 7 8; do docker info >/dev/null 2>&1 && break; sleep 2; done
+  docker info >/dev/null 2>&1 && echo "  docker: daemon up" || echo "  docker: dockerd not ready yet (see /tmp/dockerd.log)"
+else
+  echo "  docker: dockerd not installed"
+fi
+
 echo "== sandbox-setup: done =="
-echo "Note: scripts/composition-render.sh also needs a running Docker daemon"
-echo "      (functions render in Docker). Start it with: sudo dockerd &"
