@@ -114,3 +114,22 @@ kind; revert that edit to undo.
 **Applied:** `tests/coverage/registry.yaml` re-tiered for the two kinds with the
 rationale inline. **Rewind:** revert the registry hunk to restore both to
 `hermetic`.
+
+### Round-2 final refinement (post second wave)
+
+Second-wave reviewer (harness-architect) caught an inconsistency: keeping
+`iam RolePolicy` `hermetic` while requiring "instantiate the enclosing XR as the
+atomic unit" is contradictory — `hermetic` implies per-kind instantiability, but
+RolePolicy carries the SAME mandatory `spec.forProvider.role` foreign-key as
+RolePolicyAttachment and is never a Crossplane object-graph root (verified: both
+`platform-cluster.yaml` and `xspokeaccess.yaml` only ever create RolePolicy/
+Attachment alongside their Role; no standalone XRD). A P4 implementer trusting the
+`hermetic` label would create a bare RolePolicy MR and watch it hang unsynced.
+
+**Applied:** `iam.aws.m.upbound.io/RolePolicy` → `singleton-coupled` too. Final
+hermetic set = {`iam Role`, `secretsmanager Secret`} (both valid standalone
+roots). `iam RolePolicy` + `RolePolicyAttachment` + `external-secrets
+ExternalSecret` → `singleton-coupled`. The two ACCEPTs in the second wave verified
+the RolePolicyAttachment + ExternalSecret re-tiers against the Compositions
+(shared `arn:aws:iam::aws:policy/*` attachments; `ClusterSecretStore aws-secrets-
+manager` + `refreshInterval: 1h`). **Final: ACCEPTED.**

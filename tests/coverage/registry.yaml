@@ -68,7 +68,13 @@ kinds:
     defended_by: tests/live/checks/after/iam-role-live.sh
   iam.aws.m.upbound.io/RolePolicy:
     lane: aws
-    cost: hermetic
+    # auto-014-001 (decision brief, Round-2 final): NOT independently hermetic --
+    # RolePolicy carries a mandatory spec.forProvider.role foreign-key and is never
+    # a Crossplane object-graph root (always created inside a Composition that owns
+    # the Role). Per-kind solo instantiation is structurally invalid; P4 must
+    # instantiate the enclosing XR as the atomic unit. (iam Role stays hermetic --
+    # it IS a valid standalone root.)
+    cost: singleton-coupled
     defended_by: tests/live/checks/after/iam-role-policy-live.sh
   iam.aws.m.upbound.io/RolePolicyAttachment:
     lane: aws

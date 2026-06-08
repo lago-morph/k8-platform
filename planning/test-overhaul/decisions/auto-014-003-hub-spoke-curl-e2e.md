@@ -93,3 +93,28 @@ lands as a self-gating P5 check; revert that check to undo.
 
 Committed this run: **`OI-2026-06-08-2`** records the gap + this plan. **Rewind:**
 revert the OI entry (no code/infra effect).
+
+### Round-2 final refinement (post second wave + a read-only probe)
+
+Second wave: 1 ACCEPT (verified the run.sh silent-skip mechanism exactly), 2
+CHANGE (run the cheap public-NLB probe tonight; don't overstate what a curl
+proves). Both folded in:
+
+1. **Probe RUN this session (read-only, public TLS):**
+   `curl https://hello.platform.878302603783.realhandsonlabs.net` → the host
+   **does not resolve (NXDOMAIN)**; the public hello endpoint is NOT materialized
+   (ExternalDNS record absent / the registration overlay that supplies the
+   ephemeral domain+cert has not run). So the public-NLB path is genuinely not
+   live right now — recorded as evidence in OI-2026-06-08-2 (a fact, not a
+   hypothesis). This *confirms* the deferral and tells the owner the public path
+   needs the spoke app stack + ExternalDNS record before a curl e2e is possible.
+2. **Overstatement corrected** (public-NLB-realist): a successful
+   `curl hello.platform.<domain>` would prove spoke ingress+app LIVENESS, NOT the
+   hub's GitOps role (it can't tell "hub ArgoCD reconciled the spoke App" from "a
+   manual apply"). The eventual e2e MUST pair the curl with a hub-side ArgoCD
+   `spoke-hello` App `Synced/Healthy` assertion to actually exercise hub→spoke.
+   The Round-2 "makes brief 004 moot" line is too strong and is withdrawn.
+
+Note: the spoke kube-API IS reachable via the SSM relay (confirmed this session,
+see brief 004), so a relay-based spoke e2e is also available as a fallback to the
+public-NLB path. **Final: pure-defer ACCEPTED; OI sharpened with real evidence.**

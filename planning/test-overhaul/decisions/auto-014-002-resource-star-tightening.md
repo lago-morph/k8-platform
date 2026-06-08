@@ -103,3 +103,23 @@ exists):
 
 **Rewind:** revert the OI entry + stub (no infra effect). If the owner chooses to
 tighten, it lands as its own terraform + deny-test PR.
+
+### Round-2 final refinement (post second wave)
+
+Second wave: 2 ACCEPT (decline is the required autonomous posture; the anchors are
+real and non-vacuous), 1 CHANGE (a verifiability-auditor argued the IAM-subset
+narrowing is verifiable tonight via `iam:SimulatePrincipalPolicy` — static policy
+eval, no bring-up). Two refinements folded in, decision unchanged:
+
+1. **OI owner/trigger added** (cell-defender): OI-2026-06-08-1 now names the gating
+   condition (a clean `management apply-and-verify` green run from a fresh account)
+   and owner (next account-rebuild session) so it is time-bound, not open-ended.
+2. **Simulation insight recorded, decision unchanged** (verifiability-auditor):
+   `iam:SimulatePrincipalPolicy` verifies the policy's *allow/deny semantics* for
+   KNOWN ARNs, but NOT *provisioning completeness* — it cannot catch a Crossplane
+   IAM action on an UNANTICIPATED ARN that the narrowed policy would now deny,
+   which is exactly the silent-next-bring-up break §6.35 guards against for an
+   unattended run. So simulation is a useful *pre-check* to add in the tightening
+   PR (cheap, static), but it does not replace the clean-bring-up validation, and
+   it does not make tightening the live policy safe to do autonomously tonight.
+   **Final: decline holds (ACCEPTED), now better-anchored.**

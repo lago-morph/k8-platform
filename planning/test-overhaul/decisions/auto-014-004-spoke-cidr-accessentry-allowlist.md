@@ -104,3 +104,24 @@ IS reachable in principle (cloud_user access entry present); the relay flake is
 transient. The hub→spoke curl e2e (brief 003) should pursue the public-NLB path,
 which needs neither the CIDR allowlist nor an AccessEntry. **Rewind:** none — no
 code/infra change.
+
+### Round-2 final refinement (post second wave + a fuller read-only diagnosis)
+
+Second wave: 1 ACCEPT, 1 CHANGE, 1 REJECT — all converged that the DECLINE is
+correct but the "transient" label was overclaimed from a single call (§6.17:
+hypothesis-not-conclusion). I ran the additional read-only checks they specified:
+
+- **AccessPolicyAssociation:** `aws eks list-associated-access-policies
+  --cluster-name k8-platform-services --principal-arn .../user/cloud_user` →
+  `AmazonEKSAdminViewPolicy` IS associated. So the spoke entry is authorized (not
+  an entry-without-policy).
+- **Decisive relay re-test:** `scripts/sandbox-kubeconfig.sh -c k8-platform-services
+  --exec kubectl get nodes` → **SUCCESS, 2 Ready nodes** (k8-platform-services,
+  v1.32). The exact path that failed earlier now works clean.
+
+**So "transient" is now a CONFIRMED conclusion, not a hypothesis** (positive
+re-test + authz verified): the spoke is reachable; the earlier failure was SSM
+tunnel contention from two relay calls colliding in one wave. The decline stands
+(do NOT widen CIDR/AccessEntry — read-only identity + MANUAL-SYNC-ONLY gate +
+§6.35; and per a reviewer, also do NOT open a PR proposing such widening without
+owner approval). **Final: ACCEPTED, with the relay-transience now evidenced.**

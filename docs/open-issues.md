@@ -931,7 +931,16 @@ non-derivable / not resource-scopeable — leave at `*`.
 this run), obtain a teardown-rebuild validation window, narrow the IAM statement to
 the `k8-platform-*` role prefix + `oidc-provider/*`, ship the paired deny test
 (it fires against a static policy condition, no bring-up needed), add the scope
-regression guard.
+regression guard. A cheap PRE-CHECK to add in the tightening PR:
+`iam:SimulatePrincipalPolicy` statically verifies the narrowed policy's allow/deny
+for known ARNs (no bring-up) — but it does NOT prove provisioning completeness
+(an unanticipated ARN the narrowed policy now denies), so still pair with the
+clean bring-up.
+
+**Owner / trigger (so this is time-bound, not open-ended):** next account-rebuild
+session; gating condition = a clean `management apply-and-verify` green run from a
+fresh account is available to validate the narrowing does not break the next
+reconcile.
 
 ---
 
@@ -966,5 +975,21 @@ covering NLB warm-up + DNS TTL + cert issuance + pod-ready — with the reachabi
 SKIP-gate kept SEPARATE from the service-ready poll, and ship as a HARD check
 (expect-full / exit non-zero on a reachable-but-failing curl), never a silent skip.
 
-**Next concrete step:** confirm `hello.platform.<domain>` resolves + serves from a CI
-runner; if so, author the public-ingress bounded-poll curl e2e as a P5 hard check.
+**Evidence (probe run 2026-06-08, auto-014, read-only):**
+`curl https://hello.platform.878302603783.realhandsonlabs.net` → host does NOT
+resolve (**NXDOMAIN**). The public hello endpoint is not materialized — ExternalDNS
+has not created the record (and/or the registration overlay supplying the ephemeral
+domain+cert has not run). So the public-NLB curl path is not yet available; the
+deferral is confirmed by observation, not hypothesis. Separately, the spoke kube-API
+IS reachable via the SSM relay (confirmed: `kubectl get nodes` on k8-platform-services
+→ 2 Ready nodes), so a relay-based spoke e2e is an available fallback.
+
+**Caveat (what a curl proves):** a successful `curl hello.platform.<domain>` proves
+spoke ingress+app LIVENESS only; it does NOT exercise the hub's GitOps role. The
+eventual e2e must pair it with a hub-side ArgoCD `spoke-hello` App Synced/Healthy
+assertion to actually test hub→spoke.
+
+**Next concrete step:** once the spoke app stack + ExternalDNS record exist
+(`hello.platform.<domain>` resolves), author the bounded-poll curl e2e (wait_for,
+≥300s, HTTP 200 + expected body) as a P5 HARD check, paired with the hub ArgoCD App
+status assertion.
