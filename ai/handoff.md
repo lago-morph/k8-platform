@@ -22,15 +22,26 @@ last, the current state, and the next concrete steps. Keep it factual
 >    sync / no manual apply). `kubectl get nodes` via the relay → hub 3 Ready, spoke 2
 >    Ready; committed live check PASSED for both.
 >
-> **STILL OPEN (do in order):**
-> 2. **Excise the nightly / non-gating lane** (OI-2026-06-06-4) — its own PR. Delete the
->    `CHAINSAW_INCLUDE_REALAWS` block + `REAL-AWS / NIGHTLY` tags + `test_chainsaw_realaws_gated.sh`
->    + the golden exemption; move the RDS behavioral coverage to the gating live suite
->    (`tests/live/`). See burndown item 2.
-> 4. **Make the live suite actually gate** (capstone) — burndown item 4.
-> 5. **Infra hygiene** — ADR numbering + stale-branch-off-main (burndown item 5).
-> 6. **THEN resume implementation** — the test-strategy continuation (P0 spike, jentic
->    capstone, P2–P6).
+> **ALL BURNDOWN ITEMS 1–5 ADDRESSED (2026-06-08):** item 2 excised the nightly lane
+> (PR #188, merged); item 5 infra hygiene (PR #189); item 4 live-suite fail-closed
+> gating MECHANISM (PR #190) on the scope-and-grow model. The gate is proven RED on
+> no-evidence (CI) and GREEN on real producer evidence (logic + live producer run).
+>
+> **NEXT SESSION — finish item 4's coverage + the one mechanical round-trip, then implement:**
+> 1. **Post-merge:** once #190 is on `main`, `workflow_dispatch` `live-verify.yml` once
+>    (GitHub won't dispatch it off a feature branch) to confirm the artifact
+>    upload→`live-evidence-gate` API-fetch end-to-end, then confirm a `crossplane/**`
+>    PR's `live-evidence-verify` flips GREEN with that fresh evidence.
+> 2. **Author the ~13 remaining per-kind behavioral live checks** (owner-directed) so
+>    the gate's coverage grows from `rds Instance` to the full `expected-coverage.txt`
+>    set: acm Certificate/CertificateValidation, eks Cluster/NodeGroup/AccessEntry/
+>    AccessPolicyAssociation, iam Role/RolePolicy/RolePolicyAttachment/OIDCProvider,
+>    route53 Record, secretsmanager Secret, external-secrets ExternalSecret. Flip each
+>    registry `defended_by` off `pending:P*`; broaden `LIVE_EXPECT_FULL` in
+>    `live-verify-run.sh` accordingly (or land P2's per-cluster git-declaration to
+>    derive it automatically).
+> 3. **THEN resume implementation** — the test-strategy continuation (P0 spike, jentic
+>    capstone, P2–P6). The testing-debt runway is clear.
 
 > **[sandbox-kubectl — 2026-06-07]** PR **#184** (branch
 > `claude/sandbox-kubectl-access-cmUMQ`).
