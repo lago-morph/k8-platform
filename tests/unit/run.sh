@@ -107,6 +107,11 @@ run_suite tests/unit/test_account_mutex.sh
 run_suite tests/unit/test_reaper_select.sh
 # auto-015 P5: guard-fired negative checks (hermetic, no cluster, no AWS)
 run_suite tests/unit/test_negatives_guard_fired.sh
+# auto-015 P4: instantiate-and-verify engine + the two instantiate checks
+# (fake kubectl + fake aws; no real cluster, no real AWS)
+run_suite tests/unit/test_instantiate_lib.sh
+# auto-015 P3: reaper entrypoint (enumerate→decide→dry-run→delete; faked AWS)
+run_suite tests/unit/test_reaper_run.sh
 
 echo ""
 if [ "$OVERALL" -eq 0 ]; then
