@@ -13,6 +13,9 @@ spec:
   timeouts:
     apply: 30s
     assert: 240s
+    # The ASM-existence check below polls (create read-after-write lag);
+    # give the script step headroom above the poll window. OI-2026-05-28-1.
+    exec: 180s
   steps:
     - name: apply a PlatformSecret claim
       try:
@@ -78,12 +81,12 @@ spec:
         - assert:
             file: expected/external-secret.yaml
 
-    - name: assert ASM secret exists (out-of-band aws CLI check)
+    - name: assert ASM secret exists (out-of-band aws CLI check, bounded poll)
       try:
         - script:
             content: |
-              set -eu
               # chainsaw runs scripts under /bin/sh; pipefail is bash-only.
+              set -u
               # The Composition derives the ASM name from XR UID.
               # In Crossplane v2 the XR is namespaced and its name
               # equals the user-created resource name (no separate
@@ -91,12 +94,26 @@ spec:
               xr="${CLAIM_NAME}"
               uid=$(kubectl get xplatformsecret -n default "$xr" -o jsonpath='{.metadata.uid}')
               key="k8-platform/${uid}"
-              echo "Looking up ASM secret: $key"
-              aws secretsmanager describe-secret \
-                --secret-id "$key" \
-                --region "${AWS_REGION:-us-east-1}" \
-                --output text > /tmp/asm-describe.txt
-              grep -q "$key" /tmp/asm-describe.txt
+              echo "Looking up ASM secret (bounded poll): $key"
+              # ASM create is eventually consistent (read-after-write lag), so a
+              # one-shot describe right after the XR goes Ready can transiently
+              # 404. Poll until the secret is observable; only FAIL after the
+              # window. Same antipattern as the deletion check (OI-2026-05-28-1).
+              i=1
+              while [ "$i" -le 30 ]; do
+                if aws secretsmanager describe-secret \
+                      --secret-id "$key" \
+                      --region "${AWS_REGION:-us-east-1}" \
+                      --output text 2>/dev/null | grep -q "$key"; then
+                  echo "OK: ASM secret $key exists"
+                  exit 0
+                fi
+                echo "  not observable yet (attempt $i/30); waiting 5s..."
+                i=$((i + 1))
+                sleep 5
+              done
+              echo "FAIL: ASM secret $key not observable after claim Ready"
+              exit 1
             env:
               - name: CLAIM_NAME
                 value: scenario00
