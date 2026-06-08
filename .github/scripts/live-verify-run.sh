@@ -41,12 +41,39 @@ AWS_SESSION_TOKEN="$(printf '%s' "$CREDS" | cut -f3)"
 export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
 echo "live suite identity: $(aws sts get-caller-identity --query Arn --output text)"
 
-# Per-bring-up coverage declaration (scope-and-grow, burndown item 4): the hub
-# verifies the hub-resident kinds that have a CI-runnable behavioral check today
-# (rds Instance). The set GROWS as the remaining per-kind checks land (registry
-# defended_by; ~13 pending kinds are the next-session task). Until P2's
-# per-cluster git-declaration automates it, the declaration is explicit here.
-export LIVE_EXPECT_FULL="rds.aws.m.upbound.io/Instance"
+# Per-bring-up coverage declaration (scope-and-grow, burndown item 4): the set of
+# kinds the producer COMMITS to verifying with a passing behavioral check. It
+# GROWS only as fast as the live account actually provisions each kind -- a
+# declared-but-unprovisioned kind correctly goes RED; we do NOT green-wash by
+# narrowing. Until P2's per-cluster git-declaration automates it, it is explicit.
+#
+# auto-014: broadened from {rds} to the 10 AWS-describe kinds whose read-only
+# after-tier check is (a) provisioned + healthy in this account and (b) runnable
+# under the SCOPED verifier/reaper role on a CI runner (pure aws describe/list --
+# no kubectl/relay). Kinds deliberately LEFT OUT and why:
+#   - ec2 SecurityGroupRule, external-secrets ExternalSecret: need kubectl + the
+#     SSM relay, which the CI runner does not have -> they SKIP in CI (correct).
+#   - iam OpenIDConnectProvider, iam RolePolicy, secretsmanager Secret: not yet
+#     provisioned-healthy in this account (only a value-less chainsaw leftover for
+#     the secret; the spoke OIDC/inline-policy path is not yet realized) -> SKIP.
+# These join expect-full the moment they are genuinely provisioned/CI-runnable.
+#
+# REQUIRES: the scoped role's read-verb allowlist must already grant
+# acm:ListTagsForCertificate, iam:ListRoles, iam:ListRoleTags (added alongside
+# this change in terraform/management/policies/verifier-reaper-policy.json.tftpl).
+# That policy takes effect on `terraform apply`; until applied, the acm/iam/
+# route53 checks SKIP under the scoped role and this producer goes RED. Sequence:
+# merge -> terraform apply (mgmt) -> dispatch live-verify -> GREEN.
+export LIVE_EXPECT_FULL="rds.aws.m.upbound.io/Instance
+acm.aws.m.upbound.io/Certificate
+acm.aws.m.upbound.io/CertificateValidation
+eks.aws.m.upbound.io/Cluster
+eks.aws.m.upbound.io/NodeGroup
+eks.aws.m.upbound.io/AccessEntry
+eks.aws.m.upbound.io/AccessPolicyAssociation
+iam.aws.m.upbound.io/Role
+iam.aws.m.upbound.io/RolePolicyAttachment
+route53.aws.m.upbound.io/Record"
 export LIVE_CLUSTER="$CLUSTER"
 export LIVE_PROFILE="$PROFILE"
 
