@@ -129,4 +129,61 @@ echo ""
 echo "── live: unknown profile ⇒ RED ───────────────────────────────"
 assert_eq "unknown profile ⇒ exit 1" 1 "$(run_suite_rc LIVE_PROFILE=bogus LIVE_EXPECT_FULL= )"
 
+echo ""
+echo "── live: P3 — reaper + account-mutex engage ONLY in full+mutating ──"
+# Fake mutex + reaper libs (sourced via the LIVE_MUTEX_LIB / LIVE_REAPER_LIB
+# seams) that record their calls to $TMP/p3.log. acquire_rc controls whether the
+# fake lease acquire succeeds, so we can prove the fail-closed path too.
+make_fake_p3_libs() {
+  local acquire_rc="${1:-0}"
+  cat > "$TMP/fake-mutex.sh" <<EOF
+mutex_acquire() { echo "acquire \$1" >> "$TMP/p3.log"; return $acquire_rc; }
+mutex_renew()   { echo "renew \$1"   >> "$TMP/p3.log"; return 0; }
+mutex_release() { echo "release \$1" >> "$TMP/p3.log"; return 0; }
+EOF
+  cat > "$TMP/fake-reaper.sh" <<EOF
+reaper_run() { echo "reaper_run \$1" >> "$TMP/p3.log"; return 0; }
+EOF
+}
+
+# full + mutating: reaper sweeps FIRST, then the lease is acquired, renewed per
+# check, and released on exit. A passing after-check keeps the suite green.
+reset_checks; mkcheck after a 0 "x/Y"
+make_fake_p3_libs 0; rm -f "$TMP/p3.log"
+rc="$(run_suite_rc LIVE_PROFILE=full LIVE_MODE=mutating \
+        LIVE_MUTEX_LIB="$TMP/fake-mutex.sh" LIVE_REAPER_LIB="$TMP/fake-reaper.sh" \
+        LIVE_EXPECT_FULL=x/Y )"
+assert_eq "full+mutating with lease held ⇒ exit 0" 0 "$rc"
+P3LOG="$(cat "$TMP/p3.log" 2>/dev/null)"
+assert_contains "reaper ran"        "reaper_run" "$P3LOG"
+assert_contains "lease acquired"    "acquire"    "$P3LOG"
+assert_contains "lease renewed"     "renew"      "$P3LOG"
+assert_contains "lease released"    "release"    "$P3LOG"
+# Order: the reaper sweep precedes the lease acquire (reaper runs FIRST).
+assert_eq "reaper_run precedes acquire" "true" \
+  "$([ "$(grep -nE 'reaper_run|acquire' "$TMP/p3.log" | head -1 | grep -c reaper_run)" = "1" ] && echo true || echo false)"
+
+# readonly (default): the mutating engagement is skipped entirely — no reaper, no
+# lease. The fake libs are never even sourced.
+reset_checks; mkcheck after a 0 "x/Y"
+rm -f "$TMP/p3.log"
+rc="$(run_suite_rc LIVE_PROFILE=full LIVE_MODE=readonly \
+        LIVE_MUTEX_LIB="$TMP/fake-mutex.sh" LIVE_REAPER_LIB="$TMP/fake-reaper.sh" \
+        LIVE_EXPECT_FULL=x/Y )"
+assert_eq "full+readonly ⇒ exit 0 (after tier only)" 0 "$rc"
+assert_eq "readonly ⇒ P3 never engaged (no p3.log)" "true" \
+  "$([ ! -s "$TMP/p3.log" ] && echo true || echo false)"
+
+# fail-closed: if the lease cannot be acquired, the suite is RED (exit 1) and the
+# mutating tiers never run.
+reset_checks; mkcheck after a 0 "x/Y"
+make_fake_p3_libs 1; rm -f "$TMP/p3.log"   # acquire returns non-zero
+rc="$(run_suite_rc LIVE_PROFILE=full LIVE_MODE=mutating \
+        LIVE_MUTEX_LIB="$TMP/fake-mutex.sh" LIVE_REAPER_LIB="$TMP/fake-reaper.sh" \
+        LIVE_EXPECT_FULL=x/Y )"
+assert_eq "lease NOT acquired ⇒ exit 1 (fail-closed)" 1 "$rc"
+assert_contains "reaper still ran before the failed acquire" "reaper_run" "$(cat "$TMP/p3.log")"
+assert_eq "no release after a failed acquire" "true" \
+  "$(grep -q release "$TMP/p3.log" && echo false || echo true)"
+
 assert_summary
