@@ -25,6 +25,8 @@ is the sequence number for that date.
 | OI-2026-06-07-6 | **static assertions masquerade as tests; built resources never verified live** | **HIGH PRIORITY — being addressed by the test overhaul (auto-013 P1 scaffold, #170–#176)** |
 | OI-2026-06-07-7 | test-overhaul P0-spike: `spec.crossplane.resourceRefs` on a *live* v2 XR + drive-a-claim⇒AccessDenied not yet confirmed | identity spine confirmed live (run 27085946167); needs a provisioned XR. See run-summary-auto-013.md |
 | OI-2026-06-07-8 | test-overhaul jentic workflow-integration capstone deferred (wire tests/live/run.sh into terraform-test.yml + evidence emission + push gates) | DEFERRED — must be dispatch-validated before merge; scripts ready (#171–#176). First task next session |
+| OI-2026-06-08-1 | Crossplane provider role `Resource:"*"` (IAM/RDS/EKS/EC2/ACM) not tightened; §14.3 deny tests deferred | DEFERRED (auto-014-002 brief) — can't verify a tightening without a clean bring-up (§6.35); anchor = `scripts/derived-arn-inventory.sh`; narrow IAM to `role/k8-platform-*` + `oidc-provider/*` first |
+| OI-2026-06-08-2 | hub→spoke end-to-end (real request reaches a spoke workload) not behaviorally tested | DEFERRED (auto-014-003 brief) — spoke covered after-the-fact; ship LATER as a HARD bounded-poll check (not a self-gating SKIP stub); investigate the public-NLB path first |
 | OI-2026-06-06-3 | XDatabase `<xr>-master` secret not GC'd on delete | open, low-severity cleanup |
 | OI-2026-06-05-6 | can't create/modify `.github/workflows` here | environmental; workaround = jentic Contents-PUT |
 | OI-2026-06-05-2 | `charts.crossplane.io` 403 on the runner | mitigated (vendored); root cause still hypothesis |
@@ -887,3 +889,107 @@ test everyone ignores. **Excise it** — this requires a test rewrite, so it is 
 (ASM `CannotCreateExternalResource` / "asm-secret not yet ready" — the known
 flake). Established remedy: re-kick. Durable fix still pending per the existing
 OI-2026-05-28-1 entry (external-name change).
+
+---
+
+## OI-2026-06-08-1 — Crossplane provider role `Resource:"*"` not tightened (§14.3 deny tests deferred)
+
+**Surfaced:** 2026-06-08, auto-014, decision brief
+`planning/test-overhaul/decisions/auto-014-002-resource-star-tightening.md`.
+
+**What:** `terraform/management/irsa.tf` grants the Crossplane provider role
+`Resource = "*"` on the EKS, EC2Networking, IAM, RDS, ACM, and Route53Read
+statements. FINAL-PLAN §3.3/§14.3 recommends tightening toward derived per-ARN
+lists and shipping deny tests (negatives that prove a now-forbidden action is
+denied).
+
+**Decision (deferred, reviewed — two adversarial rounds):** do NOT tighten in
+auto-014. Rationale: a too-tight policy fails the *next* bring-up's reconcile, not
+at apply time — a high-blast-radius, slow-to-surface failure on the real platform.
+The sandbox cannot run a clean `terraform apply` + teardown-rebuild to verify a
+tightening still provisions, and AGENTS.md §6.35 forbids marking such a change
+done without clean-build verification. A deny test for a denial that isn't
+configured would be a test that "can't fire" (FINAL-PLAN §7).
+
+**What we ruled in (adversarial Round 1, security-hawk, repo-grounded):** the IAM
+statement IS safely narrowable when a validation window exists — every IAM role
+the Compositions create matches `arn:aws:iam::<acct>:role/k8-platform-*`
+(`k8-platform-cluster-<name>`, `k8-platform-nodegroup-<name>`,
+`k8-platform-<clusterName>-external-dns`), and OIDC providers to
+`arn:aws:iam::<acct>:oidc-provider/*`. RDS/EKS/ACM Describe ARNs are
+non-derivable / not resource-scopeable — leave at `*`.
+
+**Recommended guards when the tightening is taken up (Round-1 reviewers):**
+1. A regression-guard unit test asserting the *current* broad scope, so a future
+   *silent* narrowing is caught (today nothing asserts resource scope —
+   `test_iam_required_actions.sh` checks ACTIONS, not `Resource`).
+2. `# lpe-justified: OI-2026-06-08-1 expires:<date>` annotations on each retained
+   wildcard — but only once the FINAL-PLAN §3.3 ceiling-lint that PARSES them is
+   built (it is not yet), else the annotation is a comment no test enforces.
+
+**Next concrete step:** implement `scripts/derived-arn-inventory.sh` (stub committed
+this run), obtain a teardown-rebuild validation window, narrow the IAM statement to
+the `k8-platform-*` role prefix + `oidc-provider/*`, ship the paired deny test
+(it fires against a static policy condition, no bring-up needed), add the scope
+regression guard. A cheap PRE-CHECK to add in the tightening PR:
+`iam:SimulatePrincipalPolicy` statically verifies the narrowed policy's allow/deny
+for known ARNs (no bring-up) — but it does NOT prove provisioning completeness
+(an unanticipated ARN the narrowed policy now denies), so still pair with the
+clean bring-up.
+
+**Owner / trigger (so this is time-bound, not open-ended):** next account-rebuild
+session; gating condition = a clean `management apply-and-verify` green run from a
+fresh account is available to validate the narrowing does not break the next
+reconcile.
+
+---
+
+## OI-2026-06-08-2 — hub→spoke end-to-end (real request to a spoke workload) not behaviorally tested
+
+**Surfaced:** 2026-06-08, auto-014, decision brief
+`planning/test-overhaul/decisions/auto-014-003-hub-spoke-curl-e2e.md`.
+
+**What:** spoke (`k8-platform-services`) resources are verified after-the-fact via
+read-only AWS describes (eks Cluster/NodeGroup/AccessEntry/AccessPolicyAssociation
+all PASS). The actual data path — a real request reaching a spoke workload through
+ingress — is NOT behaviorally tested.
+
+**Decision (deferred, reviewed — two adversarial rounds):** pure-defer; do NOT
+ship a self-gating SKIP-until-reachable stub. An adversarial reviewer (infra-realist)
+showed a self-gating stub re-introduces the exact "silent skip reads green" disease
+ADR-0006 kills: it sits in `checks/after/` SKIPping for months while the suite reads
+green on other checks (the all-skipped⇒RED floor is suite-level, not per-check, and a
+non-`COVERS` SKIP never triggers expect-full promotion). Deferring keeps the gap
+*visible* (this OI) rather than masked by a rotting stub.
+
+**Valuable finding to pursue first (Round-1 coverage-maximalist):** the spoke's
+ingress-nginx is an internet-facing NLB; `hello.platform.<domain>` (ExternalDNS +
+ACM) may be reachable by a plain public HTTPS `curl` with NO kube-API access, NO SSM
+relay, and NO CIDR allowlist — making the §14.2 preconditions (and brief 004) moot
+for the e2e. Investigate this public-NLB path before assuming the curl e2e needs
+spoke kube reachability.
+
+**When built, it MUST (Round-1 determinism-skeptic):** be a bounded poll (reuse
+`wait_for`, ≥300s, interval 10–15s) on HTTP 200 *with the expected response body* —
+covering NLB warm-up + DNS TTL + cert issuance + pod-ready — with the reachability
+SKIP-gate kept SEPARATE from the service-ready poll, and ship as a HARD check
+(expect-full / exit non-zero on a reachable-but-failing curl), never a silent skip.
+
+**Evidence (probe run 2026-06-08, auto-014, read-only):**
+`curl https://hello.platform.878302603783.realhandsonlabs.net` → host does NOT
+resolve (**NXDOMAIN**). The public hello endpoint is not materialized — ExternalDNS
+has not created the record (and/or the registration overlay supplying the ephemeral
+domain+cert has not run). So the public-NLB curl path is not yet available; the
+deferral is confirmed by observation, not hypothesis. Separately, the spoke kube-API
+IS reachable via the SSM relay (confirmed: `kubectl get nodes` on k8-platform-services
+→ 2 Ready nodes), so a relay-based spoke e2e is an available fallback.
+
+**Caveat (what a curl proves):** a successful `curl hello.platform.<domain>` proves
+spoke ingress+app LIVENESS only; it does NOT exercise the hub's GitOps role. The
+eventual e2e must pair it with a hub-side ArgoCD `spoke-hello` App Synced/Healthy
+assertion to actually test hub→spoke.
+
+**Next concrete step:** once the spoke app stack + ExternalDNS record exist
+(`hello.platform.<domain>` resolves), author the bounded-poll curl e2e (wait_for,
+≥300s, HTTP 200 + expected body) as a P5 HARD check, paired with the hub ArgoCD App
+status assertion.
