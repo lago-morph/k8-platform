@@ -13,7 +13,12 @@ metadata:
 spec:
   timeouts:
     apply: 30s
-    assert: 240s
+    # wait-for-Ready bound: the upbound AWS provider occasionally takes
+    # several minutes to converge a single ASM Secret MR even when sibling
+    # scenarios in the same run create theirs in <60s (intermittent slow
+    # reconcile, not a stuck MR — a genuinely stuck MR still fails at this
+    # bound, so it is not masked). OI-2026-05-28-1 Issue A.
+    assert: 600s
     delete: 60s
     # The initial out-of-band put-secret-value below retries (ASM create
     # read-after-write lag); give the script step headroom. OI-2026-05-28-1.

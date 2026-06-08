@@ -12,7 +12,13 @@ metadata:
 spec:
   timeouts:
     apply: 30s
-    assert: 240s
+    # wait-for-Ready bound: the upbound AWS provider occasionally takes
+    # several minutes to converge a single ASM Secret MR even when sibling
+    # scenarios in the same run create theirs in <60s (intermittent slow
+    # reconcile, not a stuck MR — a genuinely stuck MR still fails at this
+    # bound, so it is not masked). 240s flaked claim-deletion-cleanup's
+    # readiness gate on run 27109966256. OI-2026-05-28-1 Issue A.
+    assert: 600s
     # The ASM-existence check below polls (create read-after-write lag);
     # give the script step headroom above the poll window. OI-2026-05-28-1.
     exec: 180s
