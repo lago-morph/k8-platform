@@ -68,6 +68,9 @@ run_suite tests/unit/test_runbook_apply_zero_resources.sh
 run_suite tests/unit/test_wait_for_claim.sh
 run_suite tests/unit/test_crossplane_trace.sh
 run_suite tests/unit/test_kubeconform_manifests.sh
+# burndown item 5: ADR-number collision backstop (pairs with the
+# session-start fetch-and-warn + scripts/next-adr-number.sh)
+run_suite tests/unit/test_adr_numbering.sh
 # phase-3 spoke foundation (auto-007)
 run_suite tests/unit/test_platform_spoke_appproject.sh
 run_suite tests/unit/test_external_dns_disjoint_filters.sh
