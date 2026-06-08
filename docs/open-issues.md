@@ -862,16 +862,25 @@ SA present, then merge. Decision brief + Round-1 adversarial review in
 <!-- New entries go above this line, newest first. -->
 
 <!-- appended auto-010 -->
-### OI-2026-06-06-4 — phase-5 xdatabase real-AWS chainsaw scenarios are nightly-gated (RESOLVED-config)
-**Status:** resolved (config). The `xdatabase/01-claim-creates-rds` and
-`02-deletion-cleanup` chainsaw scenarios provision a live RDS instance and need
-provider-aws-rds + IRSA the per-PR kind harness does not install. They now carry
-a `REAL-AWS / NIGHTLY` header and `tests/chainsaw/run.sh` excludes them unless
-`CHAINSAW_INCLUDE_REALAWS=1` (run 27072199866 had run them in the kind matrix →
-fast FAIL). Author-time coverage: render-fixtures + `test_xdatabase_rds_composition.sh`.
-Live coverage: the phase-5-live step (sync the `keycloak-db` XR on the spoke and
-verify the RDS Instance), or a nightly real-AWS chainsaw with
-`CHAINSAW_INCLUDE_REALAWS=1`. Guard: `test_chainsaw_realaws_gated.sh`.
+### OI-2026-06-06-4 — phase-5 xdatabase real-AWS chainsaw scenarios were nightly-gated (REOPENED — nightly is the disease, excise it)
+**Status:** REOPENED 2026-06-07 (owner-directed). The previous "resolution" —
+tagging `xdatabase/01-claim-creates-rds` + `02-deletion-cleanup` `REAL-AWS / NIGHTLY`
+and excluding them from the gating run via `CHAINSAW_INCLUDE_REALAWS`, with
+render-fixtures + a unit test standing in for behavioral coverage — **is exactly
+the decoupled-from-build / lint-substituted antipattern ADR-0006 forbids** (and
+AGENTS §6.36: no nightly, no non-gating lane). A nightly nobody blocks on is a
+test everyone ignores. **Excise it** — this requires a test rewrite, so it is a
+**next-session** task (needs a fresh account to chainsaw-validate; AGENTS §6.35):
+- Delete `tests/chainsaw/run.sh`'s `CHAINSAW_INCLUDE_REALAWS` exclusion block
+  (lines ~406-425), the `REAL-AWS / NIGHTLY` headers on the two `xdatabase`
+  scenarios, the `test_chainsaw_realaws_gated.sh` guard, and the real-AWS/nightly
+  exemption in `test_chainsaw_golden_files_present.sh`.
+- The RDS behavioral coverage moves to the **gating** live suite (`tests/live/`,
+  fail-closed, dispatch-coupled — registry already owes it as
+  `rds.aws.m.upbound.io/Instance` `defended_by: pending:P2`), NOT a nightly. Build
+  that live check and confirm it gates green on the fresh account.
+- Net: every behavioral check gates at its proper surface; nothing runs on a
+  schedule that doesn't block. Same coverage, no nightly.
 
 ### OI-2026-05-28-1 recurrence note (auto-010)
 `claim-creates-secret` timed out at 246s again on chainsaw run 27072199866

@@ -511,11 +511,15 @@ agent that ignores red half the time has made the gate worthless. Two cases, two
 fixes: if the code is wrong, fix the code; if the check is **non-deterministic**
 (it flakes red for reasons unrelated to the change — eventual consistency,
 ordering, timing), the check itself is the **defect** — make it deterministic (a
-bounded poll on the real condition that accepts every valid terminal state) or
-move it out of the gating set into a clearly-labeled non-gating tier. Same
-coverage, correct tier. A test you'd re-kick rather than trust does not belong in
-the gate. (Re-running is legitimate only for a genuinely external infra blip, and
-even then the flaky check gets filed and fixed, not normalized.)
+bounded poll on the real condition that accepts every valid terminal state).
+There is **no "nightly" and no "non-gating" lane** to hide a check in: a
+behavioral check either gates (fail-closed, at its proper surface — push/PR static
+or `workflow_dispatch` live, per ADR-0006) or it is fixed/deleted. Relegating a
+flaky or slow check to a schedule decouples it from the build and trains everyone
+to ignore red — the exact disease ADR-0006 forbids; never do it. A test you'd
+re-kick rather than trust does not belong in the gate. (Re-running is legitimate
+only for a genuinely external infra blip, and even then the flaky check gets filed
+and fixed, not normalized.)
 
 ---
 
