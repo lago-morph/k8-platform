@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Static "wired / gating / scoped" lint over .github/workflows/terraform-test.yml
-# (FINAL-PLAN §4.2 auto-013; burndown item 4). The live behavioral suite is only
-# valuable if CI actually RUNS it, lets its exit code FAIL the build, and runs it
-# under the scoped verifier/reaper role (not the admin job creds). This lint makes
-# all three mechanical so a future edit can't silently un-wire / neuter / privilege
-# the live step without going RED here (the push/PR floor; ADR-0006).
+# Static "wired / gating / scoped" lint over the live-suite producer workflow
+# .github/workflows/live-verify.yml (FINAL-PLAN §4.2 auto-013; burndown item 4).
+# The live behavioral suite is only valuable if CI actually RUNS it, lets its
+# exit code FAIL the build, and runs it under the scoped verifier/reaper role
+# (not the admin job creds). This lint makes all three mechanical so a future
+# edit can't silently un-wire / neuter / privilege the producer without going RED
+# here (the push/PR floor; ADR-0006). The producer is a dedicated workflow (like
+# chainsaw.yml is separate from terraform-test.yml).
 
 set -uo pipefail
 cd "$(dirname "$0")/../.."   # repo root
@@ -12,7 +14,7 @@ cd "$(dirname "$0")/../.."   # repo root
 # shellcheck disable=SC1091
 . tests/lib/assert.sh
 
-WF=".github/workflows/terraform-test.yml"
+WF=".github/workflows/live-verify.yml"
 
 if [ ! -f "$WF" ]; then
   _fail "workflow_present" "missing $WF"
@@ -23,9 +25,9 @@ WF_TEXT="$(cat "$WF")"
 
 # 1. WIRED — the apply-and-verify path invokes the live orchestrator.
 if printf '%s' "$WF_TEXT" | grep -qE 'tests/live/run\.sh'; then
-  _pass "wired (terraform-test.yml invokes tests/live/run.sh)"
+  _pass "wired ($WF invokes tests/live/run.sh)"
 else
-  _fail "wired" "terraform-test.yml does not invoke tests/live/run.sh — the live suite is not run in CI"
+  _fail "wired" "$WF does not invoke tests/live/run.sh — the live suite is not run in CI"
 fi
 
 # 2. GATING — build success is a function of run.sh's exit code.
