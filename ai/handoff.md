@@ -8,7 +8,68 @@ last, the current state, and the next concrete steps. Keep it factual
 
 ## NEW SESSION QUICKSTART (read this first)
 
-> ## ▶ NEXT SESSION — auto-015, on a **NEW AWS account**
+> ## ▶ NEXT SESSION — auto-016 (account may have rotated; re-verify per §8.1)
+> **DONE 2026-06-08 (auto-015, PRs #201–#207).** Full narrative: `run-summary-auto-015.md`.
+> Account this ran on: `176646220910` (us-east-1) — may rotate; confirm with
+> `aws sts get-caller-identity` before trusting any live state below.
+>
+> **Substrate brought up live + verified:** terraform base + management via CI
+> `apply-and-verify` (green); the platform **spoke** via ArgoCD GitOps (synced
+> `platform-cluster-claim` on committed `main`). Hub `k8-platform-mgmt` 3 Ready,
+> spoke `k8-platform-services` ACTIVE 2 Ready, `*.platform.<acct>...` ACM ISSUED.
+> `cloud_user` self-grant of `AmazonEKSClusterAdminPolicy` on the hub was a no-op
+> (the mgmt terraform already grants it) — full kubectl write via the relay.
+>
+> **OI-2026-06-08-1 (IAM `Resource:*`) — IAM RESOLVED + VALIDATED LIVE (#203).**
+> Narrowed the Crossplane provider role: role actions→`role/k8-platform-*`,
+> OIDC→`oidc-provider/*` (EKS/EC2/RDS/ACM stay `*`). 2 adversarial rounds (6 real
+> reviewers). Applied (run 27157161037) then **proven on the spoke CREATE path** —
+> the hub Crossplane created the spoke OIDC provider + external-dns Role + inline
+> RolePolicy under the narrowed policy (all crossplane-tagged), cluster stayed
+> Synced=True, 0 MRs not-Ready. ⚠️ **The live policy is now NARROWER than `main`** —
+> merge #203 to align (else a future mgmt apply from `main` reverts to the broad
+> superset, which is safe). Live FINDING: `aws iam simulate-principal-policy` returns
+> `implicitDeny` for *every* action on a freshly-modified IRSA role (even `*`-scoped
+> ones), so the simulate-based deny check **skips** when the simulator is unusable —
+> the authoritative proof is the CREATE path + the Sid-anchored lint.
+>
+> **Track B shipped (hermetic, off-by-default; live mutating runs are the remaining step):**
+> P3 mutex+reaper wired into `tests/live/run.sh` (#202); P4 instantiate-and-verify
+> harness for `iam Role` + `secretsmanager Secret` (#204, bare ASM Secret MR — not
+> XPlatformSecret, which couples to the ClusterSecretStore); P5 three guard-fired
+> negatives — AppProject sourceRepo/destination + crossplane-SA RBAC (#206; the
+> Kyverno guard was correctly rejected — all policies are Audit, not Enforce).
+> ExternalSecret check hardened against relay flake (#205).
+>
+> **Iteration-5 OIDC federation AUDITED — NO BUG.** Cognito is brokered *behind*
+> Keycloak (Keycloak = relying party); AWS IAM/STS never trusts Cognito directly, so
+> the absent `aws_iam_openid_connect_provider` for Cognito is correct.
+> `aws_eks_identity_provider_config` is genuinely unbuilt (Iteration 5), not a bug.
+>
+> **NOT done (carried forward):**
+> 1. **Flip the last 2 SKIP kinds** — `secretsmanager Secret` + `ExternalSecret` need
+>    Keycloak's `XPlatformSecret` claim, which provisions with the spoke **app stack**
+>    (ingress-nginx → external-dns → keycloak → hello), not yet synced this run. (The
+>    OIDC provider + inline RolePolicy SKIPs ARE flipped — real + crossplane-tagged.)
+> 2. **STEP 0 full 10-kind producer** — needs the spoke app stack provisioned. The
+>    pipeline is unchanged + working; this is a provisioning gap.
+> 3. **Live-validate P4/P5 in mutating mode** — `LIVE_PROFILE=full LIVE_MODE=mutating`
+>    against the hub/spoke (create→verify→cleanup; apply-forbidden→assert-denied).
+> 4. **OI-2026-06-08-2 hub→spoke curl e2e** — still deferred; `hello.platform.<acct>...`
+>    does NOT resolve yet (spoke app stack + external-dns record not up). Build the
+>    HARD bounded-poll public-NLB curl once it resolves (no self-gating SKIP stub).
+> 5. **RDS/EC2 IAM narrowing follow-up** (OI-2026-06-08-1) — RDS IS derivable
+>    (`xdatabase.yaml` pins external-name to the XR name ⇒ `db:<xr-name>`); EC2 has an
+>    `ec2:Vpc` condition key. Each gated on the provision that exercises it.
+> 6. Sync the spoke **app stack** (the spoke-access AccessEntry is now created, so
+>    ArgoCD can reach the spoke) → then 1/2/4 above unblock.
+>
+> ⚠️ **TOOLING INCIDENT (retro):** a worktree-isolated subagent's `git checkout -B`
+> moved the MAIN worktree's HEAD; one commit (the OI-1 impl) landed on the wrong
+> branch. Caught + recovered via cherry-pick (no work lost). Verify `git branch
+> --show-current` before every commit when background worktree subagents are running.
+
+> ## ▶ [SUPERSEDED by auto-015 above] NEXT SESSION — auto-015, on a **NEW AWS account**
 > The prior account (`878302603783`) is gone — assume **zero live resources**; no
 > evidence exists for any SHA, so every live/chainsaw gate starts RED until a
 > bring-up + producer dispatch on the new account.
