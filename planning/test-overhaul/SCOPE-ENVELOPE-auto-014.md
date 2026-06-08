@@ -10,14 +10,27 @@
 
 ## 0. Sandbox reality (governs what "done" can mean tonight)
 
+> **Correction (owner, mid-run):** my first draft wrongly called `kubectl` and
+> Docker absent. AGENTS.md §6.12 already covers this; I should have installed
+> them. Both now work and are wired into `scripts/sandbox-setup.sh` so no future
+> session repeats the mistake. Envelope re-authored accordingly.
+
 - **AWS creds work** (account `878302603783`) → the read-only *after*-tier
-  checks are **genuinely exercisable** against the real account here.
-- **`kubectl` and Docker are absent** → I **cannot** drive the real Crossplane
-  controller, render compositions, or reach a kube-API in this sandbox. Per
-  AGENTS.md §6.35, anything needing a live cluster lands **red-first / "pending
-  clean-build verification"**, never "done". The instantiate (P4) and negative
-  (P5) tiers are authored + unit-validated here; their live validation is a
-  flagged morning item, run via `workflow_dispatch` against a real cluster.
+  checks are **genuinely exercisable** against the real account here, and I have
+  already done so while authoring.
+- **`kubectl` works** against both live clusters (`k8-platform-mgmt` hub,
+  `k8-platform-services` spoke) through the SSM relay
+  (`scripts/sandbox-kubeconfig.sh`), proven this run. It is **read-only** — the
+  sandbox identity is mapped to `AmazonEKSAdminViewPolicy`; mutations go through
+  ArgoCD/CI only. So I can read live XR/MR conditions and the ExternalSecret
+  `Ready` state, but I **cannot** `kubectl apply`/`delete`.
+- **Docker works** (`sudo dockerd &`) → `composition-render.sh` is available.
+- **What this means for "done":** the read-only after-tier (Track A) is fully
+  validatable here. The **mutating** instantiate (P4) and negative (P5) tiers
+  *create/delete* resources, which the read-only sandbox identity cannot do;
+  their live validation runs through CI/ArgoCD, so per AGENTS.md §6.35 they land
+  **red-first / "pending clean-build verification"**, never "done", with the
+  live run flagged as a morning item.
 
 ## 1. What I plan to do
 
