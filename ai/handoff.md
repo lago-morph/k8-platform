@@ -8,6 +8,23 @@ last, the current state, and the next concrete steps. Keep it factual
 
 ## NEW SESSION QUICKSTART (read this first)
 
+> ## ▶ NEXT SESSION — RUN ORDER (clear the testing-debt runway, THEN finish the implementation)
+> Testing tech debt (a flaky gate + nightly/non-gating lanes) has made every change a
+> minefield. The plan is: make the gate trustworthy → validate & merge the built work
+> → get back to implementation. **Do these in order:**
+> 1. **Bring up the fresh account** — phases 0→1 (account rotates, §8.4; run `scripts/whereami.sh`).
+> 2. **Make the gate trustworthy** (its own PR(s)): fix the OI-2026-05-28-1 flake with a
+>    DETERMINISTIC poll (not a re-kick) **and** excise the nightly/non-gating mechanism
+>    (OI-2026-06-06-4 plan + the "🧹 EXCISE" block below). chainsaw must go green honestly.
+> 3. **⛔ FULLY VALIDATE sandbox-kubectl (#184) ON A CLEAN BUILD — IT IS NOT DONE UNTIL
+>    THIS PASSES (AGENTS §6.35).** On the clean account, sync a platform cluster from
+>    main via ArgoCD with **no paused auto-sync and no manual `kubectl apply`**, then run
+>    `scripts/sandbox-kubeconfig.sh -c <cluster> --exec kubectl get nodes` against BOTH
+>    the hub and that platform cluster and confirm nodes return. Only then merge #184.
+>    (#184 needs no further code — only this fresh-build proof. Detail in the block below.)
+> 4. **THEN resume implementation** — the test-strategy continuation (P0 spike, jentic
+>    capstone, P2–P6). This is the goal; steps 1–3 just clear the runway to it.
+
 > **[sandbox-kubectl — 2026-06-07]** PR **#184** (branch
 > `claude/sandbox-kubectl-access-cmUMQ`).
 >
