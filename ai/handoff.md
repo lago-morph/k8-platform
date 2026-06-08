@@ -93,25 +93,18 @@ last, the current state, and the next concrete steps. Keep it factual
 > bounded poll accepting all valid terminal states) is satisfied for the
 > platform-secret suite.
 >
-> **🧹 EXCISE NIGHTLY / NON-GATING ENTIRELY (owner-directed 2026-06-07; DEFERRED here
-> because it needs test rewrites + a fresh account to validate, AGENTS §6.35).** The
-> LIVE governance was excised this session (AGENTS §6.36 now bans nightly/non-gating;
-> `docs/open-issues.md` OI-2026-06-06-4 REOPENED with the plan). The remaining
-> mechanism is a test rewrite for next session — do it as part of the restructure:
-> 1. Delete the `CHAINSAW_INCLUDE_REALAWS` exclusion block in `tests/chainsaw/run.sh`
->    (~lines 406-425).
-> 2. Delete the `REAL-AWS / NIGHTLY` headers on `tests/chainsaw/xdatabase/01-claim-
->    creates-rds` + `02-deletion-cleanup` (and the stale comment in `xdatabase/00`).
-> 3. Delete `tests/unit/test_chainsaw_realaws_gated.sh` (it MANDATES the disease) and
->    de-enumerate it from `.github/workflows/unit-tests.yml` + `tests/unit/run.sh`.
-> 4. Remove the real-AWS/nightly exemption in `tests/unit/test_chainsaw_golden_files_present.sh`.
-> 5. Move the RDS behavioral coverage to the GATING live suite (`tests/live/`,
->    fail-closed; registry `rds.aws.m.upbound.io/Instance` is already `pending:P2`) —
->    a real-AWS check that gates on dispatch, NOT a schedule. Then chainsaw-validate
->    green on the fresh account. (Search the repo for `nightly`/`non-gating`/
->    `CHAINSAW_INCLUDE_REALAWS`/`REAL-AWS` to confirm nothing live re-introduces it;
->    historical `retrospective/`, `planning/test-overhaul/`, `ai/brainstorming/`
->    mentions are records of the debate — leave them.)
+> **🧹 EXCISE NIGHTLY / NON-GATING — ✅ MECHANISM EXCISED (PR #188, 2026-06-08).**
+> Deleted: the `CHAINSAW_INCLUDE_REALAWS` exclusion block in `tests/chainsaw/run.sh`;
+> the two `REAL-AWS / NIGHTLY` scenarios `xdatabase/{01-claim-creates-rds,02-deletion-cleanup}`;
+> `tests/unit/test_chainsaw_realaws_gated.sh` (de-enumerated from `tests/unit/run.sh`);
+> the real-AWS/nightly exemption in `test_chainsaw_golden_files_present.sh`; and the
+> stale "nightly" comments in both `00-xrd-establishes` scenarios. Chainsaw
+> `27112866450` green with the exclusion removed. Repo grep for the mechanism now
+> returns only historical / ADR-0009 records.
+> **REMAINING (carried to the live-suite capstone below):** add the GATING RDS
+> behavioral live check to `tests/live/` (registry owes `rds.aws.m.upbound.io/Instance`).
+> It can only *gate* once the live suite is wired fail-closed — until then it would be
+> a non-gating lane, the very thing just excised — so it lands with that capstone.
 >
 > **⏭ NEXT PHASE (after #184 is truly done): the test-strategy continuation** (the auto-013 CARRIED-FORWARD
 > items below) — finish the P0 spike (`spec.crossplane.resourceRefs` on a live XR

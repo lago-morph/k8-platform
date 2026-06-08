@@ -35,23 +35,23 @@ Prerequisite for everything live below: a fresh account with phases 0→1 up
       re-kick) on #184 HEAD `89836cc`. The fix was folded into #184 (the abandoned
       #186 was closed) so there is a single `main` vs #184 line.
 
-### 2. Excise the nightly / non-gating lane entirely (OI-2026-06-06-4, REOPENED)
-- [ ] Delete the `CHAINSAW_INCLUDE_REALAWS` exclusion block in
-      `tests/chainsaw/run.sh` (~lines 406-425).
-- [ ] Delete the `REAL-AWS / NIGHTLY` headers on
-      `tests/chainsaw/xdatabase/01-claim-creates-rds` + `02-deletion-cleanup`
-      (and the stale comment in `xdatabase/00-xrd-establishes`).
-- [ ] Delete `tests/unit/test_chainsaw_realaws_gated.sh` (it *mandates* the disease);
-      de-enumerate from `.github/workflows/unit-tests.yml` + `tests/unit/run.sh`.
-- [ ] Remove the real-AWS/nightly exemption in
+### 2. Excise the nightly / non-gating lane entirely (OI-2026-06-06-4) — ✅ mechanism excised in PR #188 (2026-06-08)
+- [x] Deleted the `CHAINSAW_INCLUDE_REALAWS` exclusion block in `tests/chainsaw/run.sh`.
+- [x] Deleted the two `REAL-AWS / NIGHTLY` scenarios
+      `tests/chainsaw/xdatabase/{01-claim-creates-rds,02-deletion-cleanup}` and
+      refreshed the stale "nightly" comments in both `00-xrd-establishes` scenarios.
+- [x] Deleted `tests/unit/test_chainsaw_realaws_gated.sh` and de-enumerated it from
+      `tests/unit/run.sh` (it was not enumerated in `.github/workflows/unit-tests.yml`).
+- [x] Removed the real-AWS/nightly exemption in
       `tests/unit/test_chainsaw_golden_files_present.sh`.
-- [ ] Move the RDS behavioral coverage to the **gating** live suite
-      (`tests/live/`, fail-closed; registry already owes it as
-      `rds.aws.m.upbound.io/Instance: pending:P2`) — a real-AWS check that gates
-      on dispatch, NOT a schedule.
-- **Acceptance:** repo grep for `nightly` / `non-gating` / `CHAINSAW_INCLUDE_REALAWS`
-      / `REAL-AWS` returns **only** historical `retrospective/`, `planning/`,
-      `ai/brainstorming/` records — nothing live. Every behavioral check gates.
+- [ ] **(carried to item 4)** Move the RDS behavioral coverage to the **gating** live
+      suite (`tests/live/`, fail-closed; registry owes `rds.aws.m.upbound.io/Instance`).
+      Deferred because a real-AWS check can only *gate* once the live suite is wired
+      fail-closed (item 4) — until then it would be a non-gating lane, the very thing
+      excised. Tracked with the capstone.
+- **Acceptance (mechanism):** chainsaw `27112866450` green with the exclusion removed;
+      repo grep for the nightly mechanism returns only historical / ADR-0009 records.
+      The additive gating RDS live check lands with item 4.
 
 ### 3. ✅ FULLY VALIDATED sandbox-kubectl (PR #184) ON A CLEAN BUILD, then merged (2026-06-08)
 - [x] Clean build from merged `main`: phase 0 (`base`) + phase 1 (`management`)
