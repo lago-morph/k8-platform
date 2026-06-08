@@ -1,0 +1,9 @@
+# agent instruction
+
+**Hold a live-policy-mutating PR as a sentinel-gated draft until validated on a CREATE path.** "A PR that mutates a LIVE cloud IAM/policy applied from a branch before merge must open as a DRAFT carrying a failing required check (a committed sentinel-file gate) that stays RED until a session OBSERVES the tightened policy working on a real CREATE path; clear it by committing the sentinel — with the validating run-id — ATOMICALLY with the open-issue RESOLVED flip and the handoff record. Never rely on a prose 'do not merge' note."
+
+*Grounded in: auto-015 OI-2026-06-08-1, where the IAM narrowing shipped as a draft + `test_iam_tightening_gate.sh` sentinel and was un-drafted only after the spoke CREATE-path validation was observed.*
+
+# justification
+
+An autonomous run that tightens a live cloud permission faces a timing hazard: the change is applied to the live account from a branch (to validate it), but the code is not yet on `main`. A prose "HELD — do not merge" line in the PR description is unenforceable — a morning reviewer doing a bottom-up merge sees a green-looking PR with no blocking check and merges it by reflex, possibly before the validation completed. auto-015 made the hold machine-enforced: the PR opened as a GitHub draft (cannot be merge-buttoned) carrying a unit test that exits non-zero until a sentinel file is committed; the sentinel was committed only after the run *observed* the hub create the spoke's OIDC provider and external-dns role under the narrowed policy, and that commit *also* flipped the open issue to RESOLVED and recorded the validating run-id — so the merge-readiness, the issue state, and the durable evidence are one atomic unit. The marginal cost is a ~30-line gate test plus opening the PR as a draft; the cost of skipping it is an unvalidated live-policy change merged to `main` by mistake, with a slow-to-surface blast radius on the next reconcile.
