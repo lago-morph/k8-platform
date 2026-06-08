@@ -521,6 +521,28 @@ re-kick rather than trust does not belong in the gate. (Re-running is legitimate
 only for a genuinely external infra blip, and even then the flaky check gets filed
 and fixed, not normalized.)
 
+### 6.37 You have full admin AWS in the sandbox — self-grant access; never call the sandbox "read-only"
+
+The sandbox identity holds **full admin AWS API** credentials. A downstream access
+limit is therefore almost never a real blocker — if it lives in AWS, you own it.
+If the relay `kubectl` is view-only (the EKS access entry maps the sandbox user to
+`AmazonEKSAdminViewPolicy`), **grant yourself cluster-admin and use it**:
+`aws eks associate-access-policy --cluster-name <c> --principal-arn <sandbox-user-arn>
+--policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy
+--access-scope type=cluster` (create the access entry first if absent), then drive
+the real Crossplane controller with `kubectl apply`. The same goes for a scoped
+role missing a verb (extend the policy), an absent resource (create it), or any
+"I can't, X is read-only" — **test your write access before claiming you lack it**
+(this is §6.12 applied to permissions). **Never call the sandbox "read-only", and
+never defer controller-driving or mutating work on that basis.** The only real
+constraints are the explicit NON-GOALs (ADR-0006: no new AssumeRole principal, no
+IAM trust widening, no probe pod) and the clean-build discipline (§6.35: do the
+*final* mutating verification through GitOps/CI so it lands on an unmodified build)
+— neither of which means "read-only". *Grounded in: auto-014, where the agent
+deferred the entire P4/P5 live track claiming a "read-only sandbox" despite holding
+admin AWS that could self-grant kube-admin in one call — the run under-delivered as
+a direct result.*
+
 ---
 
 ## 7. Testing loops — companion skills
