@@ -96,6 +96,8 @@ run_suite tests/unit/test_live_orchestrator.sh
 run_suite tests/unit/test_live_evidence_gate.sh
 run_suite tests/unit/test_verifier_role_no_wildcards.sh
 run_suite tests/unit/test_skip_register.sh
+# burndown item 4: the live suite is WIRED/GATING/SCOPED into terraform-test.yml
+run_suite tests/unit/test_live_suite_wired.sh
 
 echo ""
 if [ "$OVERALL" -eq 0 ]; then
