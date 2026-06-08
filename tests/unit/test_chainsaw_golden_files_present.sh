@@ -49,25 +49,15 @@ while IFS= read -r f; do
   # xdatabase/00-xrd-establishes is the same shape (dry-run XRD/admission
   # contract, no live render), so it is exempt for the same reason.
   #
-  # xdatabase/01-claim-creates-rds and 02-deletion-cleanup are REAL-AWS /
-  # nightly scenarios (see their file headers). Their contract is asserted
-  # against LIVE state — the 3 v2 XR conditions, the published connection
-  # Secret, status.endpoint/port, and out-of-band `aws rds describe-db-
-  # instances` — not against a SPEC-C4 render-shape golden. A rendered RDS
-  # Instance MR carries too many provider-defaulted, non-deterministic
-  # fields (engineVersion resolution, parameter groups, az placement) to
-  # pin as a stable byte-for-byte golden the way the deterministic ASM
-  # Secret / ExternalSecret goldens are pinned; the author-time render
-  # contract for this Composition is instead enforced by
-  # crossplane/xrds/xdatabase/render-fixtures/ (SPEC-S9) +
-  # tests/unit/test_xdatabase_rds_composition.sh. Exempt here accordingly.
+  # (The former xdatabase/01-claim-creates-rds and 02-deletion-cleanup
+  # real-AWS scenarios were excised — AGENTS §6.36, OI-2026-06-06-4 — along
+  # with the nightly/non-gating lane. The XDatabase render contract is still
+  # enforced by crossplane/xrds/xdatabase/render-fixtures/ (SPEC-S9) +
+  # tests/unit/test_xdatabase_rds_composition.sh; its gating live behavioral
+  # coverage moves to tests/live/ with the live-suite capstone.)
   case "$dir" in
     *platform-cluster/00-xrd-establishes*|*xdatabase/00-xrd-establishes*)
       _pass "golden_exempt_${scenario_name} (XRD-establishment, no live render)"
-      continue
-      ;;
-    *xdatabase/01-claim-creates-rds*|*xdatabase/02-deletion-cleanup*)
-      _pass "golden_exempt_${scenario_name} (real-AWS/nightly: live-state asserts, SPEC-S9 render-fixtures pin the render contract)"
       continue
       ;;
   esac
