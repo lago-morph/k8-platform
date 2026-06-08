@@ -68,14 +68,43 @@ fetch_evidence() {
     cat "$LIVE_EVIDENCE_FIXTURE"
     return
   fi
-  # CI path (lands with the jentic workflow edit): query the Actions API for
-  # apply-and-verify runs of terraform-test.yml on this SHA, then join each run's
-  # machine-emitted `live-evidence` artifact (account,cluster,profile — uploaded
-  # only on the §4.4 clean-pass exit code). The artifact join is the unforgeable
-  # half: a hand-written run_id has no matching successful run + artifact. Until
-  # that adapter lands, the CI path returns the empty set, which is correctly RED
-  # (never green-by-absence). The LOGIC below is what this PR delivers + tests.
-  echo '[]'
+  # CI path: query the Actions API for successful runs of terraform-test.yml on
+  # this SHA, download each run's machine-emitted `live-evidence` artifact
+  # (account,cluster,profile,conclusion,created_at — uploaded ONLY on the §4.4
+  # clean-pass exit code), and join the records. The artifact join is the
+  # unforgeable half: a hand-written run_id has no matching successful run +
+  # artifact. Any missing token / failed call / absent artifact yields the empty
+  # set, which is correctly RED (fail-closed, never green-by-absence).
+  : "${GH_TOKEN:=${GITHUB_TOKEN:-}}"
+  if [ -z "${GH_TOKEN:-}" ] || [ -z "${GITHUB_REPOSITORY:-}" ]; then
+    echo '[]'; return
+  fi
+  _gh_api() {
+    curl -fsSL \
+      -H "Authorization: Bearer $GH_TOKEN" \
+      -H "Accept: application/vnd.github+json" \
+      -H "X-GitHub-Api-Version: 2022-11-28" "$@"
+  }
+  local base="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+  local runs_json run_ids tmp out rid arts aid zip ef
+  runs_json="$(_gh_api "${base}/actions/workflows/terraform-test.yml/runs?head_sha=${CONFIG_SHA}&per_page=50" 2>/dev/null)" \
+    || { echo '[]'; return; }
+  run_ids="$(printf '%s' "$runs_json" | jq -r '.workflow_runs[]? | select(.conclusion=="success") | .id' 2>/dev/null)"
+  tmp="$(mktemp -d)"; out="${tmp}/records.ndjson"; : > "$out"
+  for rid in $run_ids; do
+    arts="$(_gh_api "${base}/actions/runs/${rid}/artifacts" 2>/dev/null)" || continue
+    aid="$(printf '%s' "$arts" | jq -r '.artifacts[]? | select(.name=="live-evidence") | .id' 2>/dev/null | head -1)"
+    { [ -n "$aid" ] && [ "$aid" != "null" ]; } || continue
+    zip="${tmp}/${aid}.zip"
+    curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+      "${base}/actions/artifacts/${aid}/zip" -o "$zip" 2>/dev/null || continue
+    unzip -o -q "$zip" -d "${tmp}/${aid}" 2>/dev/null || continue
+    ef="$(find "${tmp}/${aid}" -type f -name '*.json' 2>/dev/null | head -1)"
+    [ -n "$ef" ] || continue
+    jq -c '.' "$ef" >> "$out" 2>/dev/null || true
+  done
+  jq -s '.' "$out" 2>/dev/null || echo '[]'
+  rm -rf "$tmp"
 }
 
 # The LOGIC — identical in test and CI. Evidence is passed via env (not stdin),

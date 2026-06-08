@@ -30,8 +30,15 @@ locals {
 
 data "aws_iam_policy_document" "verifier_reaper_trust" {
   statement {
-    effect  = "Allow"
-    actions = ["sts:AssumeRole"]
+    effect = "Allow"
+    # sts:TagSession is REQUIRED alongside AssumeRole: the condition below
+    # demands a live-verify *request tag*, and a request tag can only be set by
+    # passing --tags at assume time, which triggers an sts:TagSession permission
+    # check. Granting only sts:AssumeRole makes the tagged assume fail closed
+    # with "not authorized to perform: sts:TagSession" (verified by spike
+    # 2026-06-08 before this CI wiring) — so the role could never be assumed the
+    # one way the trust policy allows. Both actions share the same tag guard.
+    actions = ["sts:AssumeRole", "sts:TagSession"]
     principals {
       type        = "AWS"
       identifiers = ["arn:aws:iam::${local.account_id}:root"]

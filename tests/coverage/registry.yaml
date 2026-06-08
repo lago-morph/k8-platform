@@ -72,7 +72,7 @@ kinds:
   rds.aws.m.upbound.io/Instance:
     lane: aws
     cost: slow            # multi-minute — AFTER-THE-FACT only
-    defended_by: pending:P2
+    defended_by: tests/live/checks/after/rds-instance-live.sh
   route53.aws.m.upbound.io/Record:
     lane: aws
     cost: singleton-coupled   # coupled to the singleton hosted zone
