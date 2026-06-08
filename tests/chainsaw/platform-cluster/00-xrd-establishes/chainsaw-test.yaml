@@ -14,9 +14,9 @@
 #      strictness assertion referenced in adversarial-reviewer A
 #      finding 14).
 #
-# Live EKS provisioning is exercised by phase 3 (Iteration 3 platform
-# services cluster bring-up) and a separate nightly chainsaw scenario
-# (out of scope for phase 2b — that scenario will land in phase 3).
+# Live EKS provisioning is exercised by the gating live suite
+# (tests/live/, fail-closed) — NOT a nightly lane (AGENTS §6.36). This
+# kind-only scenario covers just the XRD/admission contract.
 apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
 metadata:

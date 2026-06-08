@@ -1,8 +1,9 @@
 # XRD establishment + schema validation for XDatabase (phase 5).
 #
-# Real RDS provisioning takes 5-10 minutes and is impractical for per-PR
-# chainsaw runs (that flow is the real-AWS/nightly 01 + 02 scenarios). This
-# kind-only scenario asserts the *contract*:
+# Real RDS provisioning takes 5-10 minutes and cannot run on the kind
+# harness (no provider-aws-rds); that behavioral coverage belongs in the
+# gating live suite (tests/live/), NOT a nightly lane (AGENTS §6.36,
+# OI-2026-06-06-4). This kind-only scenario asserts the *contract*:
 #
 #   1. The XDatabase XRD is Established (the CRD installed cleanly).
 #   2. The XR CRD (xdatabases.platform.k8-platform.io) lands in the cluster.
