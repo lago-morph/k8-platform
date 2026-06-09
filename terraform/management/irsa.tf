@@ -113,22 +113,60 @@ resource "aws_iam_policy" "crossplane_aws" {
         ]
         Resource = "arn:aws:iam::${local.account_id}:oidc-provider/*"
       },
+      # RDS — the XDatabase Composition (phase 5) provisions an RDS Postgres
+      # Instance for Keycloak. auto-016-001 (OI-2026-06-08-1 follow-up) narrows
+      # the former single Resource:"*" `RDS` Sid into three Sids. The narrowing
+      # was decided across two adversarial review rounds (6 real reviewers) —
+      # planning/test-overhaul/decisions/auto-016-001-*. Do NOT rename these
+      # Sids without updating tests/unit/test_iam_resource_scoping.sh (the
+      # Sid-anchored source lint keys off these exact names).
       {
-        # RDS — the XDatabase Composition (phase 5) provisions an RDS
-        # Postgres Instance for Keycloak via the AWS provider. The crossplane
-        # policy carried no rds:* actions at all, so the Instance MR failed
-        # closed at create (auto-012, same class as the OIDC-provider perms).
-        # DB instance/subnet-group identifiers are not known ahead of create,
-        # so management actions are account-wide; these are control-plane
-        # operations, not in-database data access.
-        Sid    = "RDS"
+        # RDSWrite — create + tag, plus the (today-unexercised) subnet-group
+        # mutations. UNCONDITIONED on purpose: the Upbound provider may apply
+        # the ManagedBy tag in the CreateDBInstance request OR a later
+        # AddTagsToResource pass; a create-time aws:RequestTag/ResourceTag
+        # condition would deny the very call that establishes the tag
+        # (chicken-and-egg) — a fail-closed trap the reviewers flagged. We scope
+        # by ARN *type* instead (db:* / subgrp:* in this account+region), which
+        # is the meaningful narrowing vs Resource:"*". The XDatabase Composition
+        # composes no DBSubnetGroup MR, so the subnet-group mutates are never
+        # exercised today (left here for a future explicit subnet-group MR).
+        Sid    = "RDSWrite"
         Effect = "Allow"
         Action = [
-          "rds:CreateDBInstance", "rds:DeleteDBInstance", "rds:ModifyDBInstance",
-          "rds:RebootDBInstance", "rds:DescribeDBInstances",
-          "rds:CreateDBSubnetGroup", "rds:DeleteDBSubnetGroup",
-          "rds:ModifyDBSubnetGroup", "rds:DescribeDBSubnetGroups",
+          "rds:CreateDBInstance",
           "rds:AddTagsToResource", "rds:RemoveTagsFromResource",
+          "rds:CreateDBSubnetGroup", "rds:ModifyDBSubnetGroup",
+          "rds:DeleteDBSubnetGroup",
+        ]
+        Resource = [
+          "arn:aws:rds:${local.region}:${local.account_id}:db:*",
+          "arn:aws:rds:${local.region}:${local.account_id}:subgrp:*",
+        ]
+      },
+      {
+        # RDSModifyInstance — the destructive post-create instance ops, gated on
+        # the RDS-native tag key rds:db-tag/ManagedBy=crossplane (NOT the global
+        # aws:ResourceTag, which the RDS SAR does not list for these actions —
+        # an absent key with StringEquals = deny). These only fire on an
+        # already-created, already-tagged Instance, so the condition is always
+        # satisfied for our MRs and denies anyone else's untagged DB instance.
+        Sid    = "RDSModifyInstance"
+        Effect = "Allow"
+        Action = [
+          "rds:ModifyDBInstance", "rds:DeleteDBInstance", "rds:RebootDBInstance",
+        ]
+        Resource  = "arn:aws:rds:${local.region}:${local.account_id}:db:*"
+        Condition = { StringEquals = { "rds:db-tag/ManagedBy" = "crossplane" } }
+      },
+      {
+        # RDSDescribe — list/observe operations are list-shaped (no resource-level
+        # ARN), so they stay Resource:"*". This is an INTENTIONAL wildcard, not a
+        # lazy one (the lint allow-lists this Sid in the must-stay-"*" group).
+        Sid    = "RDSDescribe"
+        Effect = "Allow"
+        Action = [
+          "rds:DescribeDBInstances", "rds:DescribeDBSubnetGroups",
           "rds:ListTagsForResource",
         ]
         Resource = "*"
