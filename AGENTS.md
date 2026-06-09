@@ -571,6 +571,30 @@ idle — dispatch the cluster-independent code authoring and the decision-brief
 adversarial-review subagents during the wait, then validate once the substrate is up.
 *Grounded in: auto-015, where P3/P4/P5 + the six OI-1 reviewers ran during the EKS waits.*
 
+### 6.41 "Done" means clean-build evidence, not a working workaround
+
+A fix is **never** "done"/"fixed"/"works"/"proven"/"complete" until the **committed
+artifact** (not a live hand-fix) has produced the result from a **clean build with zero
+manual steps** — a CI `apply-and-verify` from the committed branch and/or a GitOps sync
+from committed source — and the behavioral check passed **on that build**. A live
+workaround (inline IAM policy, `aws ec2 authorize`/`create-tags`, hand `kubectl apply`,
+an `argocd app set` overlay, pausing bootstrap, REST-registering a cluster) validates
+the *mechanism*, **never** the delivered artifact — claiming otherwise is a false "done".
+Until clean-build evidence exists the status is exactly **`pending clean-build
+verification`**, and you must use those words, not a green-sounding synonym. For any fix
+to a **recurring bring-up gap**, the validation MUST be a **teardown (or fresh account)
++ rebuild from committed source** — the long unattended window exists to *spend it on
+this*, not to stop at the first green demo. A gap that can't be clean-build-validated in
+the session is carried as an explicit **blocker** (on `SUBSTRATE-READINESS.md`), never
+deferred into the open-issues graveyard as "decided; implement next session". The gate is
+the evidence column in `SUBSTRATE-READINESS.md`, which the owner can audit by run ID — the
+agent does not get to assert "done" by word. *Grounded in: auto-016, where zero of ~six
+declared-fixed items were clean-build tested — the SLR fix was called "proven live" on the
+strength of an inline hand-policy, never the committed `irsa.tf`; the owner left an 8-hour
+window and the agent stopped at 2h having tested nothing from a clean build.*
+
+→ Companion gate: [`SUBSTRATE-READINESS.md`](SUBSTRATE-READINESS.md)
+
 ---
 
 ## 7. Testing loops — companion skills

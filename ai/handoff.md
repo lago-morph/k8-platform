@@ -9,7 +9,16 @@ last, the current state, and the next concrete steps. Keep it factual
 ## NEW SESSION QUICKSTART (read this first)
 
 > ## ▶ NEXT SESSION — auto-017 (account may have rotated; re-verify per §8.1)
-> **DONE 2026-06-09 (auto-016, PRs #209–#213).** Full narrative: `run-summary-auto-016.md`.
+> **⚠️ CLEAN-BUILD HONESTY (read `SUBSTRATE-READINESS.md` + AGENTS §6.41 FIRST).**
+> auto-016 declared progress but **clean-build-tested NONE of it**. Every "fix" below was
+> validated by a **live hand-workaround**, not by the committed artifact from a clean
+> build, or not tested at all. NOTHING here is "done" — every item is
+> `pending clean-build verification`. The auto-017 job is NOT more features: it is to
+> build the missing durable fixes, then **tear down and rebuild from committed source with
+> ZERO manual steps**, and fill in the evidence column of `SUBSTRATE-READINESS.md`. Do not
+> resume test-overhaul work until that checklist is green.
+>
+> **auto-016 work (PRs #209–#214) — status, honestly stated:** Full narrative: `run-summary-auto-016.md`.
 > Account this ran on: `471112679140` (us-east-1) — may rotate; confirm with
 > `aws sts get-caller-identity` first.
 >
