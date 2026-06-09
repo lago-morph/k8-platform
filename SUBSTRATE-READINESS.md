@@ -50,7 +50,7 @@ A live hand-fix is **NOT** evidence. It validates the *mechanism*, never the *ar
 
 | # | Item / known gap | Durable fix | Clean-build evidence | Status |
 |---|---|---|---|---|
-| 1 | EKS service-linked-role `iam:GetRole` (zero-node spoke) | PR #213 (committed `irsa.tf`) | — (only the inline hand-policy was tested) | **pending clean-build verification** |
+| 1 | EKS service-linked-role `iam:GetRole` (zero-node spoke) | PR #213 (committed `irsa.tf`) | **CI apply run `27183306322` (committed Sid → managed policy v3); inline workaround `crossplane-eks-slr-getrole` DELETED (role inline policies `[]`); nodegroup torn down + recreated `CREATING`→`ACTIVE` 04:21→04:23 UTC under committed policy ALONE** | **VALIDATED — create-path, committed code, workaround removed.** (Not yet proven in a full zero-step bring-up from `main`; the SLR-specific claim is proven.) |
 | 2 | Hub→spoke EKS-API SG 443 (OI-2026-06-07-4) | **not built** (live `authorize-sg-ingress` only) | — | **blocker — durable fix not built** |
 | 3 | Shared ELB subnet tags (OI-2026-06-07-3) | **not built** (live `create-tags` only) | — | **blocker — durable fix not built** |
 | 4 | Placeholder overlays vs bootstrap selfHeal (OI-2026-06-07-2, ADR-0005 cluster-facts ConfigMap) | **not built** — THE keystone; blocks hello | — | **blocker — durable fix not built** |
