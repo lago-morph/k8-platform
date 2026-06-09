@@ -7,6 +7,30 @@ superset on the next mgmt apply from `main` (safe).
 
 ---
 
+## WAVE-2 corrections — the FINAL implemented shape (supersedes the Round-2 sketch below)
+
+A second adversarial wave (3 fresh reviewers on the revised brief) found two more
+precise, AWS-SAR-sourced defects that the implemented PRs (#211 RDS, #212 EC2) fix:
+
+- **RDS uses `rds:db-tag/ManagedBy`, NOT `aws:ResourceTag/ManagedBy`.** The RDS
+  Service Authorization Reference does not list the global key for
+  `Modify/Delete/RebootDBInstance`; an absent key under `StringEquals` = deny.
+  Implemented Sids: `RDSWrite` (create+tag, unconditioned, `db:*`+`subgrp:*`),
+  `RDSModifyInstance` (`db:*` + `rds:db-tag/ManagedBy=crossplane`), `RDSDescribe`
+  (`*`). Create is unconditioned to avoid the tags-on-create chicken-and-egg.
+- **`DeleteSubnet` + `ModifySubnetAttribute` do NOT carry `ec2:Vpc`** (only
+  `ec2:Region`) — they moved to `EC2Unconditioned`. Final `EC2VpcScoped` = exactly
+  `CreateSubnet`, `CreateRouteTable`, `Authorize/RevokeSecurityGroupIngress`.
+- **Lint** gained a `block_for_sid` helper asserting the `rds:db-tag` and `ec2:Vpc`
+  conditions (Resource-line inspection can't see them); passes 23/0.
+- **One reviewer recommended ship-RDS-defer-EC2** (the IRSA trust boundary already
+  bounds blast radius; EC2's gain is modest, its per-action `ec2:Vpc` subtleties
+  risky). Decision: ship both as **sentinel-gated drafts** and let the live spoke
+  CREATE path judge EC2 — recorded as a morning-review alternative (close #212 to
+  take the defer). Both PRs stay DRAFT until the live CREATE-path proof passes.
+
+---
+
 ## ROUND 2 — revised decision (after wave-1: 3 real reviewers, unanimous)
 
 Wave-1 (IAM-correctness + fail-closed-regulator + tree-fact-checker) **converged
