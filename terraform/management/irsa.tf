@@ -114,6 +114,30 @@ resource "aws_iam_policy" "crossplane_aws" {
         Resource = "arn:aws:iam::${local.account_id}:oidc-provider/*"
       },
       {
+        # auto-016 — EKS service-linked roles. When Crossplane creates the
+        # SPOKE EKS NodeGroup, EKS's CreateNodegroup validates (and, first time,
+        # creates) the service-linked role AWSServiceRoleForAmazonEKSNodegroup,
+        # which requires iam:GetRole on that SLR. The auto-015 IAMRoles Sid
+        # narrowed iam:GetRole to role/k8-platform-*, which does NOT cover the
+        # SLR path role/aws-service-role/eks-nodegroup.amazonaws.com/* — so a
+        # fresh-account spoke bring-up under the narrowed policy fails closed:
+        #   InvalidRequestException: Failed to validate if SLR:
+        #   AWSServiceRoleForAmazonEKSNodegroup already exists due to missing
+        #   permissions for 'iam:GetRole'
+        # (found live on the spoke nodegroup CREATE path, auto-016 — NOT a lint;
+        # auto-015 only validated the spoke-access path, where the nodegroup SLR
+        # is not exercised). Scope GetRole + CreateServiceLinkedRole to the EKS
+        # service-linked-role path only. Keep this Sid name in sync with
+        # tests/unit/test_iam_resource_scoping.sh.
+        Sid    = "EKSServiceLinkedRoles"
+        Effect = "Allow"
+        Action = [
+          "iam:GetRole",
+          "iam:CreateServiceLinkedRole",
+        ]
+        Resource = "arn:aws:iam::${local.account_id}:role/aws-service-role/eks*.amazonaws.com/*"
+      },
+      {
         # RDS — the XDatabase Composition (phase 5) provisions an RDS
         # Postgres Instance for Keycloak via the AWS provider. The crossplane
         # policy carried no rds:* actions at all, so the Instance MR failed
