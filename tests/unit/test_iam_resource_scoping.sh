@@ -58,13 +58,26 @@ assert_eq "IAMOIDCProviders is NOT a bare wildcard" "false" \
 
 # (2) the deliberately-broad statements must STAY "*" (catches a premature
 # over-narrow that would silently break the next bring-up). EKS/ACM are opaque
-# ARNs; EC2Networking is still "*" until the EC2 narrowing lands; RDSDescribe is
+# ARNs; EC2VpcScoped/EC2Unconditioned keep Resource:"*" (the EC2 narrowing is in
+# the ec2:Vpc CONDITION, not the Resource ARN — asserted in (2c)); RDSDescribe is
 # list-shaped (no resource-level ARN) so it is INTENTIONALLY "*".
-for sid in EKS EC2Networking ACM RDSDescribe; do
+for sid in EKS EC2VpcScoped EC2Unconditioned ACM RDSDescribe; do
   res="$(resource_for_sid "$sid")"
-  assert_eq "$sid Resource stays \"*\" (non-derivable/list-shaped; intentional wildcard)" "true" \
+  assert_eq "$sid Resource stays \"*\" (non-derivable/list-shaped/condition-scoped; intentional wildcard)" "true" \
     "$(printf '%s' "$res" | grep -Eq 'Resource[[:space:]]*=[[:space:]]*"\*"' && echo true || echo false)"
 done
+
+# (2c) auto-016-001 — EC2VpcScoped narrows by CONDITION, not Resource: it must
+# carry an ec2:Vpc StringEquals condition pinned to a real VPC ARN. Without this
+# a future edit could drop the condition while keeping Resource:"*" and the
+# wildcard-only checks above would stay green (the gap the lint reviewer flagged).
+EC2VPC_BLOCK="$(block_for_sid EC2VpcScoped)"
+assert_contains "EC2VpcScoped carries an ec2:Vpc condition" 'ec2:Vpc' "$EC2VPC_BLOCK"
+assert_contains "EC2VpcScoped pins a VPC ARN" ':vpc/' "$EC2VPC_BLOCK"
+assert_eq "EC2VpcScoped statement present" "true" \
+  "$([ -n "$(resource_for_sid EC2VpcScoped)" ] && echo true || echo false)"
+assert_eq "EC2Unconditioned statement present" "true" \
+  "$([ -n "$(resource_for_sid EC2Unconditioned)" ] && echo true || echo false)"
 
 # (2b) auto-016-001 — the narrowed RDS write/modify statements must NOT be bare
 # wildcards, must be ARN-type-scoped to db:*/subgrp:*, and the destructive
