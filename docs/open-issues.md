@@ -49,6 +49,47 @@ is the sequence number for that date.
 
 ---
 
+## auto-016 update (2026-06-09) — fresh-account bring-up surfaced 1 regression + 3 recurrences
+
+A clean fresh-account bring-up with the auto-015 narrowed Crossplane policy applied
+**from the start** (account `471112679140`) brought base + hub + spoke EKS up and
+**re-validated OI-2026-06-08-1's identity narrowing on the CREATE path** (spoke OIDC
+provider + Roles + RolePolicy + AccessEntries + AccessPolicyAssociations all
+`Ready=True` under the narrowed policy). It also surfaced:
+
+- **OI-2026-06-09-1 (NEW, FIXED) — narrowed `iam:GetRole` broke EKS nodegroup
+  create.** `iam:GetRole` was scoped to `role/k8-platform-*`, but EKS
+  `CreateNodegroup` validates the SLR `AWSServiceRoleForAmazonEKSNodegroup` via
+  `iam:GetRole` on `role/aws-service-role/eks-nodegroup.amazonaws.com/*` → fail-closed,
+  spoke came up with **0 nodes**. auto-015 only validated the spoke-*access* path
+  (no nodegroup SLR). Fixed: PR #213 adds an `EKSServiceLinkedRoles` Sid scoped to
+  the EKS SLR path; proven live (nodegroup ACTIVE immediately after). Merge #213.
+- **OI-2026-06-08-1 RDS/EC2 follow-up** — RDS narrowed (PR #211, applied live, clean
+  plan diff, ongoing-reconcile green under it; pristine CREATE proof deferred — the
+  Instance pre-existed the narrowing). EC2 narrowed (PR #212, draft; one reviewer
+  recommends defer). Both sentinel-gated drafts.
+- **OI-2026-06-07-4 (hub→spoke SG) — RECURRED.** Composition only admits the SSM
+  relay to the spoke API, NOT the hub nodes → ArgoCD `dial tcp …:443 i/o timeout`.
+  Live-fixed (authorized 443 hub-SG + VPC-CIDR → spoke cluster SG). **Durable
+  Composition fix still owed.**
+- **OI-2026-06-07-3 (ELB subnet tags) — RECURRED.** Shared ELB subnets not tagged
+  `kubernetes.io/cluster/k8-platform-services=shared` → NLB "could not find any
+  suitable subnets". Live-fixed (tagged 6 subnets). **Durable base-terraform fix still owed.**
+- **OI-2026-06-07-2 (overlay vs bootstrap) — RECURRED, now BLOCKING.** Spoke apps
+  carry placeholders (`domain`, `aws-load-balancer-ssl-cert` = `PLACEHOLDER_…`)
+  meant to be overlaid at registration, but `bootstrap` self-heal reverts the
+  overlays. Hand-overlaying domain + cert did NOT stick → the spoke NLB never gets a
+  valid cert → `hello.platform.<domain>` unreachable. **This blocks the OI-2026-06-08-2
+  hello e2e from a clean-build validation.** Needs the ADR-0005 cluster-facts
+  ConfigMap solution (not another hand-overlay).
+- **OI-2026-06-08-2 (hello e2e)** — the HARD bounded-poll check is authored + merge-ready
+  (PR #210), but CANNOT be clean-build-validated until OI-2026-06-07-2 is fixed
+  (placeholders won't overlay durably). Also a transient: a Kyverno webhook blip
+  (`kyverno-svc: no endpoints`) briefly errored the xdatabase XR reconcile (not a
+  code bug; the RDS Instance itself is `Ready`).
+
+---
+
 ## OI-2026-06-07-1 — spoke ArgoCD cluster Secret has no durable (GitOps) form
 
 **Status:** open — DECISION MADE (2026-06-07); implement in a new session (AWS account expired). See ADR `docs/decisions/0005-*` + `ai/handoff.md` task 3.
