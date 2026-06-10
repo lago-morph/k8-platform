@@ -8,7 +8,76 @@ last, the current state, and the next concrete steps. Keep it factual
 
 ## NEW SESSION QUICKSTART (read this first)
 
-> ## ▶ NEXT SESSION — auto-016 (account may have rotated; re-verify per §8.1)
+> ## ▶ NEXT SESSION — auto-017 (account may have rotated; re-verify per §8.1)
+> **⚠️ CLEAN-BUILD HONESTY (read `SUBSTRATE-READINESS.md` + AGENTS §6.41 FIRST).**
+> auto-016 declared progress but **clean-build-tested NONE of it**. Every "fix" below was
+> validated by a **live hand-workaround**, not by the committed artifact from a clean
+> build, or not tested at all. NOTHING here is "done" — every item is
+> `pending clean-build verification`. The auto-017 job is NOT more features: it is to
+> build the missing durable fixes, then **tear down and rebuild from committed source with
+> ZERO manual steps**, and fill in the evidence column of `SUBSTRATE-READINESS.md`. Do not
+> resume test-overhaul work until that checklist is green.
+>
+> **auto-016 work (PRs #209–#214) — status, honestly stated:** Full narrative: `run-summary-auto-016.md`.
+> Account this ran on: `471112679140` (us-east-1) — may rotate; confirm with
+> `aws sts get-caller-identity` first.
+>
+> **Substrate brought up fresh + the auto-015 IAM narrowing RE-VALIDATED on the
+> CREATE path.** base + management via CI `apply-and-verify` (runs `27174339355`,
+> `27174531578`, green); the spoke via ArgoCD GitOps (synced `platform-cluster-claim`
+> on committed `main`). Hub `k8-platform-mgmt` 3 Ready, spoke `k8-platform-services`
+> ACTIVE 2 Ready. The narrowed Crossplane policy was applied **from the start**: the
+> spoke OIDC provider + 3 Roles + RolePolicy + 2 AccessEntries + 2 AccessPolicyAssociations
+> all reached `Ready=True` under it (re-validates OI-2026-06-08-1's identity narrowing).
+>
+> **⚠️ FOUND + FIXED a real fail-closed regression (OI-2026-06-09-1, PR #213).** The
+> auto-015 narrowing scoped `iam:GetRole` to `role/k8-platform-*`, which broke EKS
+> `CreateNodegroup` (it validates the SLR `AWSServiceRoleForAmazonEKSNodegroup` via
+> `iam:GetRole`) → **the spoke came up with 0 nodes**. Fixed by an `EKSServiceLinkedRoles`
+> Sid scoped to `role/aws-service-role/eks*.amazonaws.com/*`; proven live (nodegroup
+> ACTIVE immediately after). **Merge #213 first** — a fresh-account spoke bring-up is
+> broken under `main` without it.
+>
+> **RDS/EC2 narrowing (OI-2026-06-08-1 follow-up): drafts.** RDS PR #211 (applied live
+> via mgmt apply on the branch, run `27176069142`; ongoing reconcile green; pristine
+> CREATE proof deferred — the Instance pre-existed the narrowing). EC2 PR #212 (draft,
+> stacked on #211; one reviewer recommends defer — close #212 to take it). Brief:
+> `planning/test-overhaul/decisions/auto-016-001-*` (2 rounds, 6 reviewers).
+>
+> **OI-2026-06-08-2 hello e2e: check authored (PR #210), NOT live-validated.** It is a
+> HARD bounded-poll (no self-gating skip). Blocked from a clean-build validation by
+> the overlay gap below.
+>
+> **3 recurring gaps bit again; live-fixed, durable fixes STILL OWED:**
+> 1. **OI-2026-06-07-4** hub→spoke API SG 443 (ArgoCD couldn't reach the spoke) —
+>    authorized live; durable Composition `SecurityGroupRule` (mgmt SG → spoke API)
+>    owed.
+> 2. **OI-2026-06-07-3** shared ELB subnet tags (NLB "no suitable subnets") — tagged
+>    live; durable base-terraform tag owed.
+> 3. **OI-2026-06-07-2** placeholder overlays vs bootstrap selfHeal — **NOW BLOCKING.**
+>    The spoke apps' `domain` + `aws-load-balancer-ssl-cert` placeholders won't stay
+>    overlaid (selfHeal reverts), so the spoke NLB never gets a valid cert and
+>    `hello.platform.<domain>` is unreachable. Needs the ADR-0005 cluster-facts
+>    ConfigMap (not another hand-overlay).
+>
+> **NEXT SESSION RUN ORDER (auto-017):**
+> 1. Merge #213 (regression fix). Bring up base→hub→spoke from `main` (the SLR fix +
+>    the live SG/subnet fixes recur — apply them, or ship the durable fixes first).
+> 2. **Implement OI-2026-06-07-2** (cluster-facts ConfigMap, ADR-0005) — this unblocks
+>    the hello app stack AND the 2 SKIP flips. Then ship durable OI-2026-06-07-3/-4.
+> 3. With overlays working: sync the spoke app stack → `hello.platform.<domain>` 200 →
+>    **live-validate PR #210** (run `tests/live/checks/after/hello-e2e-live.sh`).
+> 4. Once Keycloak's `XPlatformSecret` provisions: flip the last 2 SKIP kinds
+>    (`secretsmanager Secret` + `ExternalSecret`) into `LIVE_EXPECT_FULL`.
+> 5. STEP 0 producer (live-verify.yml) green on the 10-kind set; live-evidence-verify
+>    flips GREEN on a trivial `crossplane/**` PR.
+> 6. Track B mutating (P4/P5) + pristine RDS CREATE proof (delete+recreate keycloak-db
+>    under the narrowed policy) to flip #211 ready; decide #212 (ship/defer EC2).
+> Constraints unchanged (ADR-0006 NON-GOALs; zero-wildcard verifier role; LIVE_MODE
+> mutating off by default; §6.35 clean-build; §6.37 self-grant — do NOT call the
+> sandbox read-only). Do NOT author a committed next-session prompt (§6.38).
+
+> ## ▶ [SUPERSEDED by auto-016 results above] ORIGINAL auto-016 BRIEF (account may have rotated; re-verify per §8.1)
 > **DONE 2026-06-08 (auto-015, PRs #201–#207).** Full narrative: `run-summary-auto-015.md`.
 > Account this ran on: `176646220910` (us-east-1) — may rotate; confirm with
 > `aws sts get-caller-identity` before trusting any live state below.

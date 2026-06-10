@@ -31,6 +31,21 @@ file) is authored from a canonical template in `resources/`:
 `template-adr-draft.md`, `template-agents-md-rule.md`. Freehand
 authoring is an anti-pattern.
 
+> **NEVER delegate the retrospective to a subagent.** The lead agent
+> authors every artifact — especially the main report's Part 1 narrative,
+> the §3.4 mishaps, and the §3.7 runtime discoveries — **from its own
+> context window**. The entire value of a retrospective is harvesting the
+> knowledge the lead agent accumulated *in this session*: the dead-ends,
+> the exact diagnostic sequence, the judgment calls, the things that only
+> make sense if you lived them. A subagent has none of that — it works
+> from a brief, which is a lossy compression of the very context the retro
+> exists to preserve. Delegating the retro defeats its purpose and
+> produces a hollow, generic artifact. This holds even under context-budget
+> pressure: that is precisely *why* the skill says to write the retro early
+> (the autonomous-run skill's ~70%-budget rule), not to hand it off. If you
+> are tempted to delegate the retro to save context, you have already
+> waited too long — write it now, yourself.
+
 The skill has two modes:
 
 - **Forward mode** (default) — generate a retrospective for the current
@@ -883,6 +898,14 @@ the path. The inline summary should fit in ~20 lines.
 
 ## Anti-patterns (never do these)
 
+- **Delegating the retrospective to a subagent.** The lead agent authors
+  the retro from its own context window — never spawn a subagent to write
+  the main report, the per-rule files, or the ADR drafts. A subagent works
+  from a brief, which is a lossy compression of the lead's session context;
+  the retro's whole job is to preserve that context (the dead-ends, the
+  diagnostic sequence, the mishaps), so a delegated retro is hollow by
+  construction. Budget pressure is not an exception — it is the signal to
+  write the retro *now*, yourself, per the early-write rule.
 - **Trusting the model's notion of today's date.** Always verify via a
   tool call (`date -u`, Python `datetime.UTC`, Node `new Date().toISOString()`).
   Date drift in filenames silently breaks the date-grouping of retros
