@@ -10,9 +10,11 @@ set -uo pipefail
 cd "$(dirname "$0")/../.."   # repo root
 
 OVERALL=0
+RUN_SCRIPTS=()   # every script run_suite executed — input to the completeness guard at the bottom
 
 run_suite() {
   local script="$1"
+  RUN_SCRIPTS+=("$script")
   echo ""
   echo "════════════════════════════════════════════════════════════"
   echo "  $script"
@@ -25,6 +27,8 @@ run_suite() {
   fi
 }
 
+# L31: cross-file version-pin pairs held equal (argo chart/app pin etc.)
+run_suite tests/unit/test_version_pin_consistency.sh
 run_suite tests/unit/test_compute_gates.sh
 run_suite tests/unit/test_irsa_helm_linkage.sh
 run_suite tests/unit/test_argocd_controller_irsa.sh
@@ -124,6 +128,28 @@ run_suite tests/unit/test_reaper_run.sh
 run_suite tests/unit/test_no_account_id_hardcoded.sh
 run_suite tests/unit/test_no_next_session_prompt_files.sh
 run_suite tests/unit/test_root_file_allowlist.sh
+
+# ── completeness guard (fail-closed) ─────────────────────────────────────
+# unit-tests.yml calls this runner the "catch-all … source of truth for
+# completeness": a test file absent from the run_suite list above is gated
+# NOWHERE — it exists, reads as coverage, and never runs (L30; retro
+# 2026-06-10-218: test_cluster_facts_contract.sh passed locally and ran
+# zero times in the suite until enumerated). A deliberate exclusion must
+# carry a `# run_suite-exempt: <reason>` line in its header.
+for f in tests/unit/test_*.sh; do
+  ran=0
+  for s in "${RUN_SCRIPTS[@]}"; do [ "$s" = "$f" ] && { ran=1; break; }; done
+  [ "$ran" -eq 1 ] && continue
+  if grep -q '^# run_suite-exempt: ..*' "$f"; then
+    echo "NOTICE: $f not enumerated — $(grep -m1 '^# run_suite-exempt:' "$f")"
+    continue
+  fi
+  echo "FAIL: $f exists but is not enumerated in tests/unit/run.sh."
+  echo "      A test that never runs is silent non-coverage. Add"
+  echo "      'run_suite $f' above, or a '# run_suite-exempt: <reason>'"
+  echo "      line to the file's header if the exclusion is deliberate."
+  OVERALL=1
+done
 
 echo ""
 if [ "$OVERALL" -eq 0 ]; then

@@ -103,6 +103,8 @@ forensics IDs, not restated.
 | L23 | Every layer boundary in a spec needs a *contract*: the exact artifact (Secret/ConfigMap/tag/rule), its producer, its consumer, and its verification. "X takes over" is a hole, not a sentence. | D1, H4 — all 4 standing blockers | collection: `forensics/FORMALIZATION-COLLECTION.md`; fixes = S3 |
 | L24 | Pin versions of every external moving part at scaffold time; an unpinned provider cost ~4 days (v1/v2 crisis). | D2 | `versions.env` for tooling; policy doc pending formalization |
 | L25 | One authoritative home per document class; parallel trees and root clutter create contradictory belief states. | D3, D10 | **ENFORCED** (new files): root allowlist lint; full cleanup = S6 |
+| L30 | A test file that exists but is not enumerated by the runner is silent non-coverage — worse than no test, it reads as coverage. The runner fails closed on un-enumerated `tests/unit/test_*.sh` (deliberate exclusions carry an in-file `# run_suite-exempt: <reason>`). | retro 2026-06-10-218 (contract lint ran 0× until enumerated) | **ENFORCED**: completeness guard in `tests/unit/run.sh` (PR #219) |
+| L31 | Version pins that must move together live adjacent in `versions.env` as the single source; consumers interpolate it, and any unavoidable duplicate (e.g. a terraform variable default) is held equal by lint. | retro 2026-06-10-218 (kubeconform argo store at v2.13.1 vs deployed v2.10.4 for its entire life) | **ENFORCED**: `test_version_pin_consistency.sh` + fetch script sources `versions.env` (PR #219) |
 
 ### Meta (the optimization process itself)
 
