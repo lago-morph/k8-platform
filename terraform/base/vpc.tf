@@ -22,11 +22,17 @@ resource "aws_subnet" "public" {
   availability_zone       = var.availability_zones[count.index]
   map_public_ip_on_launch = true
 
-  tags = {
-    Name                                              = "${local.name_prefix}-public-${var.availability_zones[count.index]}"
-    "kubernetes.io/role/elb"                          = "1"
-    "kubernetes.io/cluster/${local.name_prefix}-mgmt" = "shared"
-  }
+  # Every cluster hosted in this shared VPC needs its own
+  # kubernetes.io/cluster/<name>=shared tag here, or its cloud provider
+  # excludes these subnets when placing ELBs/NLBs (OI-2026-06-07-3).
+  tags = merge(
+    {
+      Name                                              = "${local.name_prefix}-public-${var.availability_zones[count.index]}"
+      "kubernetes.io/role/elb"                          = "1"
+      "kubernetes.io/cluster/${local.name_prefix}-mgmt" = "shared"
+    },
+    { for c in var.hosted_cluster_names : "kubernetes.io/cluster/${c}" => "shared" }
+  )
 }
 
 resource "aws_route_table" "public" {
@@ -76,11 +82,16 @@ resource "aws_subnet" "private" {
   cidr_block        = local.private_subnet_cidrs[count.index]
   availability_zone = var.availability_zones[count.index]
 
-  tags = {
-    Name                                              = "${local.name_prefix}-private-${var.availability_zones[count.index]}"
-    "kubernetes.io/role/internal-elb"                 = "1"
-    "kubernetes.io/cluster/${local.name_prefix}-mgmt" = "shared"
-  }
+  # Same per-hosted-cluster tagging as the public subnets above
+  # (OI-2026-06-07-3) — internal ELBs/NLBs need it too.
+  tags = merge(
+    {
+      Name                                              = "${local.name_prefix}-private-${var.availability_zones[count.index]}"
+      "kubernetes.io/role/internal-elb"                 = "1"
+      "kubernetes.io/cluster/${local.name_prefix}-mgmt" = "shared"
+    },
+    { for c in var.hosted_cluster_names : "kubernetes.io/cluster/${c}" => "shared" }
+  )
 }
 
 resource "aws_route_table" "private" {

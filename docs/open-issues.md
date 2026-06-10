@@ -19,7 +19,7 @@ is the sequence number for that date.
 |----|----------|------|
 | OI-2026-06-07-2 | placeholder overlays fought by bootstrap selfHeal | consumer half IMPLEMENTED 2026-06-10 (**ADR-0010**: spoke apps → ApplicationSets templating cluster-Secret fact annotations; supersedes ADR-0005's ConfigMap corollary). Remaining: the producer (labeled registration Secret = OI-2026-06-07-1) + clean-build evidence |
 | OI-2026-06-07-1 | spoke ArgoCD cluster Secret has no GitOps form | durable producer BUILT 2026-06-10 (ADR-0010 PR-2: provider-kubernetes Objects in the xspokeaccess Composition) — `pending clean-build verification` |
-| OI-2026-06-07-3 | shared-VPC ELB subnet tags | **RECURRED auto-016** (NLB couldn't place) — live-fixed; durable base-terraform fix owed |
+| OI-2026-06-07-3 | shared-VPC ELB subnet tags | durable base-terraform tags BUILT 2026-06-10 (`hosted_cluster_names` var) — `pending clean-build verification` |
 | OI-2026-06-07-4 | hub→spoke EKS-API SG rule | durable Composition rule BUILT 2026-06-10 (`hub-eks-api-ingress`, classic SecurityGroupRule) — `pending clean-build verification` |
 | OI-2026-06-07-5 | cross-cluster Keycloak DB secret | open; Keycloak not yet booted against RDS |
 | OI-2026-06-07-6 | **static assertions masquerade as tests** | umbrella — the test overhaul executes against this; not a single bug |
@@ -180,7 +180,7 @@ committed to satisfy bootstrap. This is the auto-008 "finalize live" gap.
 
 ## OI-2026-06-07-3 — shared-VPC subnets not tagged for the spoke cluster (LB + general)
 
-**Status:** open — DECISION MADE (2026-06-07, concur with recommendation); implement in a new session. See `ai/handoff.md` task 5. (The live tag is gone with the expired account.)
+**Status:** durable form BUILT 2026-06-10 — **`pending clean-build verification`** (SUBSTRATE row 3; recurred live in both auto-012 and auto-016 before this).
 **Surfaced:** 2026-06-07, auto-012, spoke ingress-nginx NLB never provisioned.
 
 **What happened:** mgmt + spoke share VPC `vpc-…`. The ELB-role subnets are tagged
@@ -193,11 +193,17 @@ public ELB subnets were never tagged for the spoke.
 **Fix applied live:** `aws ec2 create-tags … Key=kubernetes.io/cluster/k8-platform-services,Value=shared`
 on the public (role/elb) and internal-elb subnets.
 
-**Durable form:** terraform/base should tag the shared ELB subnets `shared` for
-every EKS cluster the VPC hosts (or the platform-cluster Composition should add the
-spoke tag). Base does not currently know spoke cluster names — a small list/var.
+**Durable form (implemented):** `terraform/base` merges
+`kubernetes.io/cluster/<name>=shared` onto the public (role/elb) and private
+(role/internal-elb) subnets for every name in the new `hosted_cluster_names`
+variable (default: every committed XPlatformCluster spec.name —
+`k8-platform-services`, `k8-platform-workload1`).
+`tests/unit/test_base_subnet_cluster_tags.sh` cross-checks the default
+against every XPlatformCluster XR under `clusters/` so a new hosted cluster
+cannot silently miss the tag (the lint caught workload1 on its first run).
 
-**Next step:** add the spoke cluster tag to terraform/base subnet tagging.
+**Next step:** clean-build verification — a fresh bring-up must place the
+spoke ingress NLB with zero `create-tags` hand-fixes.
 
 ---
 
