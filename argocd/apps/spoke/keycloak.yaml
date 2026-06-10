@@ -1,61 +1,78 @@
-# ArgoCD Application — Keycloak on the platform (spoke) cluster (REQ-AUTH-01).
+# ArgoCD ApplicationSet — Keycloak on the platform spoke (REQ-AUTH-01,
+# ADR-0010). Replaces the plain spoke-keycloak Application. PLATFORM-ONLY:
+# the generator selector additionally pins short-name=spoke — the auth layer
+# runs on the platform services cluster, not on workload spokes.
 #
-# Same shape as argocd/apps/spoke/ingress-nginx.yaml (auto-008): PLAIN per-service
-# Application (not an ApplicationSet — only one spoke exists; the ApplicationSet
-# refactor lands in phase 6), targeting the spoke by NAME (destination.name:
-# platform-spoke, the ArgoCD cluster Secret created at registration), under the
-# platform-spoke AppProject.
+# Multi-source: the upstream Bitnami chart (PINNED 21.4.4 → Keycloak 24.0.x;
+# repo allowlisted EXACT in argocd/projects/platform-spoke.yaml) + this repo's
+# static values (platform-services/keycloak/values.yaml). The cluster-facts
+# contract (docs/decisions/0010) templates ingress.hostname :=
+# auth.<subdomain>.<domain> from the spoke's cluster Secret.
 #
-# Multi-source: the upstream Bitnami chart (PINNED 21.4.4 → Keycloak 24.0.x; the
-# repo URL is allowlisted EXACT in argocd/projects/platform-spoke.yaml) + this
-# repo's static values (platform-services/keycloak/values.yaml).
+# The DB endpoint (externalDatabase.host/port) is deliberately NOT a cluster
+# fact — it is database connection data from the XDatabase XR and travels the
+# keycloak-db connection-Secret path (ADR-0010 "out of contract"; wired in
+# PR-2 alongside the registration Secret). Until then the committed
+# PLACEHOLDER_DB_HOST stands.
 #
-# OVERLAID-AT-REGISTRATION (ephemeral, AGENTS §8.1): the live registration step
-# patches helm.valuesObject with the real domain (ingress.hostname :=
-# auth.platform.${domain}, externalDatabase.host if account-specific). Kept as
-# PLACEHOLDER_* in git and CI-gated by tests/unit/test_spoke_values_no_ephemeral.sh.
-# INERT until the spoke is registered.
+# Admin + OIDC client secrets are NOT here — they are provisioned by the
+# XPlatformSecret XRs in platform-services/keycloak/secrets/ and consumed via
+# existingSecret.
 #
-# Admin + OIDC client secrets are NOT in this Application — they are provisioned
-# by the XPlatformSecret XRs in platform-services/keycloak/secrets/ (synced by a
-# separate Application/overlay) and consumed by the chart via existingSecret.
+# INERT until a labeled cluster Secret exists; producer = OI-2026-06-07-1.
 apiVersion: argoproj.io/v1alpha1
-kind: Application
+kind: ApplicationSet
 metadata:
-  name: spoke-keycloak
+  name: keycloak
   namespace: argocd
-  annotations:
-    # After ingress-nginx + external-dns (wave 20); the auth layer for the
-    # platform sits above the base add-ons (REQ-AUTH-06 reaches Keycloak through
-    # the spoke's nginx/NLB).
-    argocd.argoproj.io/sync-wave: "40"
 spec:
-  project: platform-spoke
-  sources:
-    - repoURL: https://charts.bitnami.com/bitnami
-      chart: keycloak
-      targetRevision: 21.4.4
-      helm:
-        valueFiles:
-          - $values/platform-services/keycloak/values.yaml
-        # OVERLAID-AT-REGISTRATION: the live registration step patches
-        # valuesObject with the real domain. Kept absent in git (ephemeral).
-    - repoURL: https://github.com/lago-morph/k8-platform.git
-      targetRevision: main
-      ref: values
-  destination:
-    name: platform-spoke
-    namespace: keycloak
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-      - ServerSideApply=true
-    retry:
-      limit: 5
-      backoff:
-        duration: 10s
-        factor: 2
-        maxDuration: 5m
+    preserveResourcesOnDeletion: true
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            k8-platform.io/cluster-role: spoke
+            k8-platform.io/short-name: spoke
+  template:
+    metadata:
+      name: '{{index .metadata.labels "k8-platform.io/short-name"}}-keycloak'
+      annotations:
+        # After ingress-nginx + external-dns (wave 20); the auth layer sits
+        # above the base add-ons (REQ-AUTH-06 reaches Keycloak through the
+        # spoke's nginx/NLB).
+        argocd.argoproj.io/sync-wave: "40"
+    spec:
+      project: platform-spoke
+      sources:
+        - repoURL: https://charts.bitnami.com/bitnami
+          chart: keycloak
+          targetRevision: 21.4.4
+          helm:
+            valueFiles:
+              - $values/platform-services/keycloak/values.yaml
+            # Cluster-facts contract (ADR-0010).
+            valuesObject:
+              ingress:
+                hostname: 'auth.{{index .metadata.annotations "k8-platform.io/subdomain"}}.{{index .metadata.annotations "k8-platform.io/domain"}}'
+        - repoURL: https://github.com/lago-morph/k8-platform.git
+          targetRevision: main
+          ref: values
+      destination:
+        name: '{{.name}}'
+        namespace: keycloak
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 5m

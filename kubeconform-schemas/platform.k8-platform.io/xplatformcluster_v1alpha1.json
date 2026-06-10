@@ -129,6 +129,14 @@
         "certValidationRecordFqdn": {
           "type": "string",
           "description": "FQDN of the created validation record, fed to CertificateValidation."
+        },
+        "clusterSecurityGroupId": {
+          "type": "string",
+          "description": "EKS-managed cluster security group id (provider-emitted). Routed through the XR so the kube-relay-ingress rule can target it \u2014 admitting the ONE shared SSM relay (in the base VPC) to this cluster's private API endpoint on 443. The account's 9-instance cap rules out a per-cluster relay."
+        },
+        "sandboxAccessEntryArn": {
+          "type": "string",
+          "description": "ARN of the read-only EKS access entry for the sandbox identity."
         }
       },
       "additionalProperties": false

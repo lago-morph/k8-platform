@@ -1,47 +1,81 @@
-# ArgoCD Application — ExternalDNS on the platform (spoke) cluster.
+# ArgoCD ApplicationSet — ExternalDNS on every spoke cluster (ADR-0010).
 #
-# Scoped to platform.<domain> with a distinct txt-owner-id/prefix so it never
-# collides with the hub's external-dns in the shared zone (auto-008 §6 / S3).
-# Plain per-service Application targeting the spoke by name (see ingress-nginx
-# Application header for the auto-008 rationale). INERT until the spoke is
-# registered.
+# Replaces the per-spoke plain Applications (spoke-external-dns +
+# workload1-external-dns). The cluster generator selects every registered
+# spoke's cluster Secret (k8-platform.io/cluster-role: spoke) and templates the
+# cluster-facts contract (docs/decisions/0010) into helm values:
+#   - domainFilters[0] := <subdomain>.<domain>  (each spoke scoped to ITS OWN
+#     subdomain of the shared account zone — auto-008 §6 / S3)
+#   - serviceAccount role-arn := that spoke's external-dns IRSA role
+#     (XSpokeAccess status.externalDnsRoleArn)
+#   - env AWS_REGION := the account region
 #
-# OVERLAID-AT-REGISTRATION (ephemeral, AGENTS §8.1): domainFilters[0] :=
-# platform.${domain}, env AWS_REGION, and serviceAccount role-arn := the spoke
-# external-dns IRSA role created by the XSpokeAccess Composition. Patched into
-# helm.valuesObject at registration; absent in git.
+# The stable per-cluster TXT-registry identity (txtOwnerId / txtPrefix /
+# zone-match flags — DISJOINT across hub/platform/workload1, gated by
+# tests/unit/test_external_dns_disjoint_filters.sh + test_workload1_apps.sh)
+# stays in the committed per-cluster values file, selected by the short-name
+# label: platform-services/external-dns/<short-name>-values.yaml.
+#
+# INERT until a labeled cluster Secret exists; producer = OI-2026-06-07-1
+# (ADR-0010 PR-2). missingkey=error fails generation loudly on a Secret
+# missing a contract key; preserveResourcesOnDeletion guards live workloads.
 apiVersion: argoproj.io/v1alpha1
-kind: Application
+kind: ApplicationSet
 metadata:
-  name: spoke-external-dns
+  name: external-dns
   namespace: argocd
-  annotations:
-    argocd.argoproj.io/sync-wave: "20"
 spec:
-  project: platform-spoke
-  sources:
-    - repoURL: https://kubernetes-sigs.github.io/external-dns/
-      chart: external-dns
-      targetRevision: 1.15.0
-      helm:
-        valueFiles:
-          - $values/platform-services/external-dns/values.yaml
-    - repoURL: https://github.com/lago-morph/k8-platform.git
-      targetRevision: main
-      ref: values
-  destination:
-    name: platform-spoke
-    namespace: external-dns
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-      - ServerSideApply=true
-    retry:
-      limit: 5
-      backoff:
-        duration: 10s
-        factor: 2
-        maxDuration: 5m
+    preserveResourcesOnDeletion: true
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            k8-platform.io/cluster-role: spoke
+  template:
+    metadata:
+      name: '{{index .metadata.labels "k8-platform.io/short-name"}}-external-dns'
+      annotations:
+        argocd.argoproj.io/sync-wave: "20"
+    spec:
+      project: platform-spoke
+      sources:
+        - repoURL: https://kubernetes-sigs.github.io/external-dns/
+          chart: external-dns
+          targetRevision: 1.15.0
+          helm:
+            valueFiles:
+              - '$values/platform-services/external-dns/{{index .metadata.labels "k8-platform.io/short-name"}}-values.yaml'
+            # Cluster-facts contract (ADR-0010). These override the render
+            # placeholders in the committed values file (helm: valuesObject
+            # wins; the env/domainFilters lists are replaced wholesale).
+            valuesObject:
+              domainFilters:
+                - '{{index .metadata.annotations "k8-platform.io/subdomain"}}.{{index .metadata.annotations "k8-platform.io/domain"}}'
+              serviceAccount:
+                annotations:
+                  eks.amazonaws.com/role-arn: '{{index .metadata.annotations "k8-platform.io/external-dns-role-arn"}}'
+              env:
+                - name: AWS_REGION
+                  value: '{{index .metadata.annotations "k8-platform.io/region"}}'
+        - repoURL: https://github.com/lago-morph/k8-platform.git
+          targetRevision: main
+          ref: values
+      destination:
+        name: '{{.name}}'
+        namespace: external-dns
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 5m

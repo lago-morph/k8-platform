@@ -1,41 +1,61 @@
-# ArgoCD Application — the phase-3 "hello" demo app on the platform (spoke)
-# cluster (REQ-PLAT-06). Single in-repo Helm chart (platform-services/hello).
-# Reachable at hello.platform.<domain> over TLS once ingress-nginx + ExternalDNS
-# converge. Plain per-service Application; INERT until the spoke is registered.
+# ArgoCD ApplicationSet — the "hello" demo app on every spoke cluster
+# (REQ-PLAT-06 / REQ-WL-05, ADR-0010). Replaces the per-spoke plain
+# Applications (spoke-hello + workload1-hello). One in-repo chart
+# (platform-services/hello) serves every spoke; the cluster generator templates
+# domain + subdomain from the spoke's cluster Secret (cluster-facts contract,
+# docs/decisions/0010), so each spoke publishes hello.<subdomain>.<domain>
+# on its own wildcard cert — disjoint hostnames, zero committed account values.
 #
-# OVERLAID-AT-REGISTRATION (ephemeral, AGENTS §8.1): helm.valuesObject.domain :=
-# the live root domain. subdomain (platform) is stable and committed.
+# The workload app stays cloud-agnostic by design: domain + subdomain are the
+# ONLY facts it receives — no ARNs, no region, no provider knowledge.
+#
+# INERT until a labeled cluster Secret exists; producer = OI-2026-06-07-1
+# (ADR-0010 PR-2).
 apiVersion: argoproj.io/v1alpha1
-kind: Application
+kind: ApplicationSet
 metadata:
-  name: spoke-hello
+  name: hello
   namespace: argocd
-  annotations:
-    # After ingress-nginx + external-dns (wave 20) are Healthy.
-    argocd.argoproj.io/sync-wave: "30"
 spec:
-  project: platform-spoke
-  source:
-    repoURL: https://github.com/lago-morph/k8-platform.git
-    targetRevision: main
-    path: platform-services/hello
-    helm:
-      # domain overlaid at registration; subdomain is stable.
-      valuesObject:
-        subdomain: platform
-  destination:
-    name: platform-spoke
-    namespace: hello
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-      - ServerSideApply=true
-    retry:
-      limit: 5
-      backoff:
-        duration: 10s
-        factor: 2
-        maxDuration: 5m
+    preserveResourcesOnDeletion: true
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            k8-platform.io/cluster-role: spoke
+  template:
+    metadata:
+      name: '{{index .metadata.labels "k8-platform.io/short-name"}}-hello'
+      annotations:
+        # After ingress-nginx + external-dns (wave 20) are Healthy.
+        argocd.argoproj.io/sync-wave: "30"
+    spec:
+      project: platform-spoke
+      source:
+        repoURL: https://github.com/lago-morph/k8-platform.git
+        targetRevision: main
+        path: platform-services/hello
+        helm:
+          # Cluster-facts contract (ADR-0010): cloud-agnostic facts only.
+          valuesObject:
+            domain: '{{index .metadata.annotations "k8-platform.io/domain"}}'
+            subdomain: '{{index .metadata.annotations "k8-platform.io/subdomain"}}'
+      destination:
+        name: '{{.name}}'
+        namespace: hello
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 5m

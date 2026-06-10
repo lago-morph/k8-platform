@@ -1,47 +1,62 @@
-# ArgoCD Application — Loki on the platform (spoke) cluster. The CENTRAL log
-# store (REQ-OBS-01/05), queried by Grafana (kube-prometheus-stack, same
-# cluster) and written to by the hub Alloy agent. Plain per-service Application
-# targeting the spoke by NAME under the platform-spoke AppProject (see
-# ingress-nginx.yaml header for the auto-008 rationale). INERT until the spoke is
-# registered.
+# ArgoCD ApplicationSet — Loki on the platform spoke (REQ-OBS-01/05,
+# ADR-0010). The CENTRAL log store, queried by Grafana (kube-prometheus-stack,
+# same cluster) and written to by the hub Alloy agent. Replaces the plain
+# spoke-observability-loki Application. PLATFORM-ONLY (selector pins
+# short-name=spoke).
 #
-# Multi-source: the upstream chart + this repo's static values
-# (platform-services/observability/loki/values.yaml). Single-binary, filesystem
-# storage — no account-ephemeral values to overlay (no S3 bucket / domain), so
-# unlike kube-prometheus-stack there is no valuesObject patch at registration.
+# Single-binary, filesystem storage — no account-ephemeral values, so unlike
+# its siblings this template injects NO cluster facts (no valuesObject). It is
+# converted to an ApplicationSet anyway so every app under argocd/apps/spoke/
+# has one uniform shape and one uniform inertness story (ADR-0010).
+#
+# INERT until a labeled cluster Secret exists; producer = OI-2026-06-07-1.
 apiVersion: argoproj.io/v1alpha1
-kind: Application
+kind: ApplicationSet
 metadata:
-  name: spoke-observability-loki
+  name: observability-loki
   namespace: argocd
-  annotations:
-    # Wave 40 (phase-4 observability band), same as kube-prometheus-stack.
-    argocd.argoproj.io/sync-wave: "40"
 spec:
-  project: platform-spoke
-  sources:
-    - repoURL: https://grafana.github.io/helm-charts
-      chart: loki
-      targetRevision: 6.55.0
-      helm:
-        valueFiles:
-          - $values/platform-services/observability/loki/values.yaml
-    - repoURL: https://github.com/lago-morph/k8-platform.git
-      targetRevision: main
-      ref: values
-  destination:
-    name: platform-spoke
-    namespace: monitoring
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-      - ServerSideApply=true
-    retry:
-      limit: 5
-      backoff:
-        duration: 10s
-        factor: 2
-        maxDuration: 5m
+    preserveResourcesOnDeletion: true
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            k8-platform.io/cluster-role: spoke
+            k8-platform.io/short-name: spoke
+  template:
+    metadata:
+      name: '{{index .metadata.labels "k8-platform.io/short-name"}}-observability-loki'
+      annotations:
+        # Wave 40 (phase-4 observability band), same as kube-prometheus-stack.
+        argocd.argoproj.io/sync-wave: "40"
+    spec:
+      project: platform-spoke
+      sources:
+        - repoURL: https://grafana.github.io/helm-charts
+          chart: loki
+          targetRevision: 6.55.0
+          helm:
+            valueFiles:
+              - $values/platform-services/observability/loki/values.yaml
+        - repoURL: https://github.com/lago-morph/k8-platform.git
+          targetRevision: main
+          ref: values
+      destination:
+        name: '{{.name}}'
+        namespace: monitoring
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 5m

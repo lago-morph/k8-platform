@@ -7,8 +7,10 @@
 # targets the SPOKE. The spoke Prometheus/Loki are reached over the spoke
 # ingress (grafana/prometheus/loki hostnames under platform.<domain>) — an
 # in-cluster-svc-via-spoke endpoint. Both endpoints are account-ephemeral
-# (depend on <domain>) and are therefore PLACEHOLDERs here, overlaid at
-# registration by the Application's valuesObject (AGENTS §8.1; CI-gated by
+# (depend on <domain>) and are NEVER committed: the river config reads them
+# from env vars via sys.env(), injected as alloy.extraEnv by the
+# ApplicationSet template from the spoke cluster Secret's cluster-facts
+# annotations (ADR-0010; CI-gated by
 # tests/unit/test_spoke_values_no_ephemeral.sh).
 #
 # Deployed by the hub ArgoCD as argocd/apps/spoke/observability-alloy-mgmt.yaml,
@@ -30,10 +32,13 @@ alloy:
   # then remote_writes to the spoke Prometheus. It also tails pod logs and
   # pushes them to the spoke Loki.
   #
-  # PLACEHOLDER_SPOKE_PROMETHEUS_REMOTE_WRITE_URL and
-  # PLACEHOLDER_SPOKE_LOKI_PUSH_URL are overlaid at registration with the real
-  # spoke endpoints (e.g. https://prometheus.platform.<domain>/api/v1/write and
-  # https://loki.platform.<domain>/loki/api/v1/push). Never real in git.
+  # SPOKE_PROMETHEUS_REMOTE_WRITE_URL and SPOKE_LOKI_PUSH_URL are env vars
+  # injected by the ApplicationSet template (alloy.extraEnv) from the spoke's
+  # cluster-facts annotations (ADR-0010) — e.g.
+  # https://prometheus.platform.<domain>/api/v1/write and
+  # https://loki.platform.<domain>/loki/api/v1/push. Env indirection because
+  # helm values cannot patch inside this config string; sys.env() is the
+  # Alloy stdlib lookup. Never real URLs in git.
   configMap:
     content: |-
       // ── metrics: annotation-driven scrape of hub pods ──────────────────
@@ -83,7 +88,7 @@ alloy:
       // remote_write management-cluster metrics to the SPOKE Prometheus.
       prometheus.remote_write "spoke" {
         endpoint {
-          url = "PLACEHOLDER_SPOKE_PROMETHEUS_REMOTE_WRITE_URL"
+          url = sys.env("SPOKE_PROMETHEUS_REMOTE_WRITE_URL")
         }
         external_labels = {
           cluster = "management",
@@ -102,7 +107,7 @@ alloy:
 
       loki.write "spoke" {
         endpoint {
-          url = "PLACEHOLDER_SPOKE_LOKI_PUSH_URL"
+          url = sys.env("SPOKE_LOKI_PUSH_URL")
         }
         external_labels = {
           cluster = "management",

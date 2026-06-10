@@ -49,10 +49,11 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
-      # The AppProject needs to be created before any Application that
-      # references it; Argo's sync-wave annotation on each child
-      # Application + the SyncWaves option enforces that.
-      - SyncWaves=true
+      # The AppProject needs to be created before any child that references
+      # it; the argocd.argoproj.io/sync-wave annotation on each child
+      # resource enforces that. (Sync waves are always-on in ArgoCD — the
+      # former `SyncWaves=true` entry here was not a real syncOption and was
+      # silently ignored; removed by ADR-0010's review.)
     retry:
       limit: 5
       backoff:

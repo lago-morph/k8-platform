@@ -133,8 +133,16 @@ CRD_URLS=(
   "https://raw.githubusercontent.com/crossplane/crossplane/v2.3.0/cluster/crds/apiextensions.crossplane.io_compositions.yaml"
   "https://raw.githubusercontent.com/crossplane/crossplane/v2.3.0/cluster/crds/apiextensions.crossplane.io_compositeresourcedefinitions.yaml"
   "https://raw.githubusercontent.com/external-secrets/external-secrets/v0.10.4/deploy/crds/bundle.yaml"
-  "https://raw.githubusercontent.com/argoproj/argo-cd/v2.13.1/manifests/crds/application-crd.yaml"
-  "https://raw.githubusercontent.com/argoproj/argo-cd/v2.13.1/manifests/crds/appproject-crd.yaml"
+  # ArgoCD CRDs pinned to the DEPLOYED version: argo-cd helm chart 6.7.3
+  # (terraform/management/variables.tf argocd_version) → ArgoCD v2.10.4.
+  # Previously pinned v2.13.1 — a skew vs the deployed controller that
+  # ADR-0010's review flagged; the schemas must validate what 2.10 admits.
+  # applicationset-crd.yaml added by ADR-0010 (the spoke apps are now
+  # ApplicationSets; without this schema kubeconform silently SKIPS them
+  # via --ignore-missing-schemas and validates nothing).
+  "https://raw.githubusercontent.com/argoproj/argo-cd/v2.10.4/manifests/crds/application-crd.yaml"
+  "https://raw.githubusercontent.com/argoproj/argo-cd/v2.10.4/manifests/crds/appproject-crd.yaml"
+  "https://raw.githubusercontent.com/argoproj/argo-cd/v2.10.4/manifests/crds/applicationset-crd.yaml"
   "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/secretsmanager.aws.m.upbound.io_secrets.yaml"
   "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/ec2.aws.m.upbound.io_vpcs.yaml"
   "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/ec2.aws.m.upbound.io_subnets.yaml"
