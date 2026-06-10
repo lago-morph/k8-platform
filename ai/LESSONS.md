@@ -246,7 +246,7 @@ aggressive rulebook archive (executed round 2).
 | S4 | **PR-trigger the static surface** (no workflow has a `pull_request:` trigger; merges can ride on push-time signals alone). Cheap, closes part of D4. | — | NOT BUILT |
 | S5 | **Session shape**: short, scoped, attended sessions with machine-verified exit conditions until the S1 gate is green twice; then re-expand autonomy gradually. | D7 protocol | IN FORCE by owner direction |
 | S6 | **Structure cleanup** (D3/D10): single decisions tree, authoritative spec home, archive root session artifacts (currently grandfathered in the root lint), reconcile burndown-vs-handoff contradiction. | — | PARTIAL (lint blocks new clutter; burndown banner added round 2) |
-| S7 | Lint backlog: `\|\| true` in cleanup paths; FQDN-embedded account IDs (SPEC-B5.1); XR-terminology check scoped to new docs. | §6.19 etc. | NOT BUILT |
+| S7 | Lint backlog: `\|\| true` in cleanup paths; FQDN-embedded account IDs (SPEC-B5.1); XR-terminology check scoped to new docs. Plus one removal trigger: the SPEC-B5 lint carries a file-scoped exemption for `tests/live/checks/after/route53-record-live.sh` (comment-example account ID; the file sits on the live-evidence-gated surface and can't be touched without producing live evidence) — fix the comment and delete the exemption in the first PR that legitimately changes `tests/live/`. | §6.19 etc. | NOT BUILT |
 
 ## 6. Update protocol for this file
 
