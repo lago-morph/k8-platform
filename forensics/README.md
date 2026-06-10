@@ -28,7 +28,13 @@ external controls can.
 The owner then commissioned what you're looking at: a fresh AI session, explicitly
 permitted to ignore the accumulated rulebook, examining the full record — git history,
 45 retrospectives, the rule and skill corpus, CI configuration — like a forensic
-accountant. Facts, evidence pointers, no blame. This is round 1.
+accountant. Facts, evidence pointers, no blame. That was round 1. **Round 2** (same
+day, owner-scoped) turned the findings into action: the lessons were distilled into a
+machine-usable register ([`../ai/LESSONS.md`](../ai/LESSONS.md)) and a human-facing
+account ([`../docs/lessons.md`](../docs/lessons.md)), the 748-line rulebook was replaced
+by a ~140-line operating agreement with the mechanical rules converted to CI checks, and
+half the skill library was archived. The record of that restructure is in
+[`rounds/`](rounds/).
 
 ## Where to start
 
@@ -44,7 +50,9 @@ flowchart LR
    the five eras, what genuinely went well, and the three traps the project fell into.
 2. **[`TURNAROUND-OUTLINE.md`](TURNAROUND-OUTLINE.md)** — the proposed path to
    completion, and the decisions already settled with the owner.
-3. One primary exhibit, worth reading raw:
+3. **[`../docs/lessons.md`](../docs/lessons.md)** — the lessons themselves, in plain
+   language: what failed, what worked, and what changed on 2026-06-10.
+4. One primary exhibit, worth reading raw:
    [`../retrospective/2026-06-09-214-a.md`](../retrospective/2026-06-09-214-a.md) —
    the accountability retrospective, written by the agent about itself.
 
@@ -72,6 +80,8 @@ flowchart LR
 | `HYPOTHESES.md` | AI agents | the owner's five starting hypotheses, each scored against evidence |
 | `OPEN-QUESTIONS.md` | AI agents | unresolved questions queued for later rounds |
 | `evidence/` (6 files) | AI agents | the fact base: git timeline, retrospectives, instruction surface, spec/structure, testing, autonomous runs |
+| `rounds/` | AI agents | per-round records of what each later round changed and which open questions it resolved |
+| `FORMALIZATION-COLLECTION.md` | AI agents | raw material being collected for the future formal pieces (spec theory, document formats), to be built once the turnaround shows what works |
 
 The agent-facing files are readable by humans but deliberately dense: every claim is
 tagged `[FACT]` / `[INFERENCE]` / `[OPEN]` and carries a commit hash or file pointer,

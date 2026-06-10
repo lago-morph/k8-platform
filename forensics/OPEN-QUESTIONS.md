@@ -26,12 +26,16 @@ evidence) into that round's file and strike it here with a dated note.
 
 ## Unverified states at HEAD
 
-- **Q6.** Is the 17-of-39 unit-test wiring gap (handoff-followups-2026-05-28) actually
-  closed by the catch-all step? One grep + workflow read settles it.
+- ~~**Q6.** Is the 17-of-39 unit-test wiring gap (handoff-followups-2026-05-28) actually
+  closed by the catch-all step? One grep + workflow read settles it.~~
+  **RESOLVED 2026-06-10 (round 2): yes** — see `rounds/ROUND-2-lessons-and-instruction-surface.md`.
 - **Q7.** `run-summary.md` (unlabeled, = auto-007) sits beside numbered summaries — is
   anything treating it as canonical? Candidate for D10 cleanup inventory.
-- **Q8.** §6.28 has no detail file in `.claude/agents-md/` while §6.29+ do — gap or
-  intentional (rule is self-contained)? [evidence/instruction-surface.md §5]
+- ~~**Q8.** §6.28 has no detail file in `.claude/agents-md/` while §6.29+ do — gap or
+  intentional (rule is self-contained)? [evidence/instruction-surface.md §5]~~
+  **RESOLVED 2026-06-10 (round 2): intentional/self-contained; no missing content** —
+  see `rounds/ROUND-2-lessons-and-instruction-surface.md`. (Detail files now archived
+  at `docs/archive/agents-v1/agents-md/`.)
 - **Q8a.** Item B (SEG-4 PR-T2 render-fixture goldens) disappears from summaries after
   auto-005 — resolved, absorbed, or dropped? [evidence/autonomous-runs.md §3]
 

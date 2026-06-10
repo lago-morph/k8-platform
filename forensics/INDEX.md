@@ -27,6 +27,8 @@ must not be back-edited into evidence files.
 | `REPORT.md` | Condensed synthesis: progression, what went well, mistakes (user + agent), structural-defect introduction points | round 1 |
 | `HYPOTHESES.md` | Owner's hypotheses, each scored against evidence | round 1 |
 | `OPEN-QUESTIONS.md` | Consolidated unresolved questions for future rounds | living |
+| `rounds/ROUND-2-lessons-and-instruction-surface.md` | Round-2 record: deliverables, intent supersessions, resolved OPEN items (Q6, Q8) | round 2 |
+| `FORMALIZATION-COLLECTION.md` | Collection point for the deferred formal pieces (spec theory, document formats, portable discipline) + running worked/didn't log | living |
 | `evidence/timeline.md` | Git-history reconstruction: phases, churn, rework signatures | round 1 |
 | `evidence/retrospectives.md` | The 45-retro corpus: register, lesson-recurrence matrix | round 1 |
 | `evidence/instruction-surface.md` | AGENTS.md / skills / hooks accretion record | round 1 |
@@ -45,6 +47,7 @@ must not be back-edited into evidence files.
 | Round | Closed | Checkpoint commit | Scope |
 |---|---|---|---|
 | 1 | 2026-06-10 | `6c6df8d` (content) / closure commit titled "close round 1" | Evidence corpus (6 files), synthesis (REPORT, HYPOTHESES, OPEN-QUESTIONS), owner-facing summary + turnaround outline, round-1 owner feedback folded in |
+| 2 | 2026-06-10 | commit titled "forensics: close round 2" | Primary deliverable `ai/LESSONS.md` (+ human companion `docs/lessons.md`); AGENTS v1 → ~140-line operating agreement + `ai/environment.md`, v1 archived to `docs/archive/agents-v1/`; 10 skills archived; 3 push-gated lints (SPEC-B5 + 2); retro remedy channel amended; FORMALIZATION-COLLECTION opened; Q6/Q8 resolved |
 
 Each future round closes the same way: fold owner feedback in, add a row here with the
 closing commit, and title that commit "forensics: close round N". (Git tags would be
@@ -67,8 +70,12 @@ commit message convention instead.)
 
 - `retrospective/2026-06-09-214-a.md` — agent-authored accountability retro; documents
   the claimed-done-without-clean-build pattern and concludes in-band rules failed
-- `AGENTS.md` + `.claude/agents-md/` (47 detail files) — the accreted rule surface
-- `.claude/skills/` (~24 skills) — the accreted skill surface
+- The accreted rule surface — **relocated 2026-06-10 (round 2, owner-directed
+  restructure):** AGENTS v1 + its 46 detail files (the "47" above was off by one —
+  §6.28 never had one, see Q8 resolution) now live intact at
+  `docs/archive/agents-v1/`; the live `AGENTS.md` is the round-2 operating agreement
+- `.claude/skills/` (11 active) + `.claude/skills-archive/` (10 archived round 2) —
+  the skill surface
 - `ai/handoff.md` — cross-session state file; top banner shows end-state of auto-016
 - `SUBSTRATE-READINESS.md` — the clean-build evidence gate created 2026-06-09
 - `docs/open-issues.md`, `docs/testing-debt-burndown.md` — registered debt
