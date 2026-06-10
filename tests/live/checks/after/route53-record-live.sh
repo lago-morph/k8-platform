@@ -99,7 +99,7 @@ ZONES="$(aws route53 list-hosted-zones --output json 2>/dev/null \
 zone_id=""
 while IFS= read -r row; do
   [ -z "$row" ] && continue
-  zname="$(printf '%s' "$row" | jq -r '.name')"   # e.g. "878302603783.realhandsonlabs.net."
+  zname="$(printf '%s' "$row" | jq -r '.name')"   # e.g. "<account-id>.realhandsonlabs.net."
   zid_raw="$(printf '%s' "$row" | jq -r '.id')"   # e.g. "/hostedzone/Z0427196330MCUVARWMSF"
   zid="${zid_raw##*/}"                             # strip /hostedzone/ prefix
 

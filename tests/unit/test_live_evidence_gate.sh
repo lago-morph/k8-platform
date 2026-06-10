@@ -17,7 +17,7 @@ PROF=.github/scripts/required-profile-for-changes.sh
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 
 SHA=abc123def456
-ACCT=695454131301
+ACCT=695454131301  # noqa: account-id - synthetic constant for fabricated evidence fixtures
 CLUS=k8-platform-mgmt
 
 # write_fixture <name> <json-array>
