@@ -44,11 +44,17 @@ gates — and archive most of the behavioral prose, keeping a one-page operating
 agreement. Same for skills: keep the few that bridge real environment gaps, archive the
 process scaffolding that grew around failures the structural fixes will remove.
 
-**5. Decide the account question** (decision point below). Rotating accounts caused
-roughly one substrate rebuild per run and made some values uncommittable. Either get a
-stable account, or promote ephemerality to a first-class design input (every
-account-specific value flows through a discovery step — which is what the already-
-decided "cluster facts" fix does). Half-acknowledging it, as now, is the worst option.
+**5. Promote ephemerality to a first-class design input.** *(Re-written 2026-06-10
+after your clarification: the platform is intentionally ephemeral — a demonstration
+companion to the planned blog series in `ai/blog/`, not a production cluster. So the
+account question isn't a decision to make; it's the design to honor.)* Every
+account-specific value flows through a discovery step (which is what the already-decided
+"cluster facts" fix does), and rebuild-from-nothing stops being a tax and becomes the
+product: a reader of the blog series gets a repo that provably stands itself up on any
+fresh account. This makes move 1 — the clean-build pipeline — not just the quality gate
+but the project's central demonstration artifact. What changes in practice: the code is
+finished only when it contains zero values that outlive an account, and "the substrate
+rebuilt itself cleanly" graduates from chore to headline feature.
 
 **6. Change the session shape until trust is rebuilt.**
 Short, scoped, attended sessions with a machine-verified exit condition — not overnight
@@ -62,28 +68,33 @@ rebuilds itself.
 flowchart LR
     A[1-2 External done<br/>+ no live keys] --> B[3 Close the<br/>four seams]
     B --> C[Clean-build<br/>gate green]
-    C --> D[4-5 Shrink rulebook,<br/>settle account model]
+    C --> D[4-5 Shrink rulebook,<br/>design for ephemerality]
     D --> E[6 Re-expand<br/>autonomy]
     E --> F[7 Phases 4-6]
 ```
 
 ## Decisions that are yours
 
+*(Updated 2026-06-10: the account-model row that used to lead this table is resolved —
+you clarified ephemerality is the design intent, see move 5. The remaining three you've
+endorsed in the directions marked ✔; rows kept for the record and rewind paths.)*
+
 | Decision | Options | Trade-off | Rewind path |
 |---|---|---|---|
-| Account model | Stable account vs designed-for-ephemerality | Stable is simpler and kills the rebuild tax; ephemeral is what you have and forces good discovery discipline | Designed-for-ephemerality work is not wasted on a stable account; the reverse mostly is |
-| Where to rebuild | Restructure this repo in place vs fresh repo salvaging code + lessons | In place keeps history and the (excellent) record; fresh escapes the clutter and stale state at the cost of migration effort | A fresh repo can always import this one's history; merging a fresh start back is harder |
-| Autonomy | Pause overnight runs until gate is green vs keep them with the new controls | Pausing costs throughput you currently aren't really getting (much of it was rework); keeping them tests the new controls sooner | Either reverses in one session |
-| Rulebook | Aggressive archive (one page + enforcement) vs conservative prune | Aggressive matches the evidence; conservative hedges against rules that were quietly load-bearing | Archived rules are one `git mv` from restored |
+| Where to rebuild | **Restructure this repo in place ✔** vs fresh repo salvaging code + lessons | In place keeps history and the (excellent) record; fresh escapes the clutter and stale state at the cost of migration effort | A fresh repo can always import this one's history; merging a fresh start back is harder |
+| Autonomy | **Pause overnight runs until gate is green ✔** vs keep them with the new controls | Pausing costs throughput you currently aren't really getting (much of it was rework); keeping them tests the new controls sooner | Either reverses in one session |
+| Rulebook | **Aggressive archive (one page + enforcement) ✔** vs conservative prune | Aggressive matches the evidence; conservative hedges against rules that were quietly load-bearing | Archived rules are one `git mv` from restored |
 
 ## My opinion, marked as such
 
-Speculative recommendation: stable account if at all possible, restructure in place (the
-retro corpus is too valuable to strand), pause overnight runs, aggressive archive. The
-forensic record's strongest single lesson is that **structure beat prose every time it
-was tried** — I'd spend nearly all turnaround effort on items 1–3 and let most of the
-instruction surface go.
+Speculative recommendation (account-model part withdrawn 2026-06-10 — your
+clarification that the design is intentionally ephemeral supersedes it, and honestly
+makes the plan more coherent: the clean-build gate and the demonstration are now the
+same artifact): restructure in place (the retro corpus is too valuable to strand),
+pause overnight runs, aggressive archive. The forensic record's strongest single
+lesson is that **structure beat prose every time it was tried** — I'd spend nearly all
+turnaround effort on items 1–3 and let most of the instruction surface go.
 
-What I don't know yet: whether a stable account is available to you; whether the live
-gate's first end-to-end round-trip works (it had never completed one); and how much of
-the test estate is trustworthy versus theater — that's a round-2 question.
+What I don't know yet: whether the live gate's first end-to-end round-trip works (it
+had never completed one), and how much of the test estate is trustworthy versus
+theater — that's a round-2 question.

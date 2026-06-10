@@ -40,6 +40,18 @@ must not be back-edited into evidence files.
 - `SUMMARY-FOR-OWNER.md` — plain-language account of what happened, good and bad
 - `TURNAROUND-OUTLINE.md` — plain-language sketch of paths to project completion
 
+## Owner feedback log (durable record of round reviews)
+
+- **2026-06-10 (round-1 review).** (a) Design-intent clarification: the platform is
+  intentionally **ephemeral** — a demonstration companion to the planned blog series
+  (`ai/blog/`), NOT a production cluster; production adaptation is a possible future,
+  not the objective. Defect D6 / factor E1 re-framed accordingly (rotation is design;
+  durability assumptions in code/process are the defect). (b) Owner **strongly agrees**
+  with the other three opinion-level recommendations in `TURNAROUND-OUTLINE.md`:
+  restructure this repo in place, pause overnight runs until the clean-build gate is
+  green, aggressively archive the rulebook into enforcement. Treat these as settled
+  direction for round 2 unless the owner says otherwise.
+
 ## Primary exhibits elsewhere in the repo (read-only; do not reorganize during analysis)
 
 - `retrospective/2026-06-09-214-a.md` — agent-authored accountability retro; documents

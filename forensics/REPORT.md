@@ -140,6 +140,13 @@ Each defect: where introduced, evidence, downstream consequence, status at HEAD.
   green" claimed ≥4 times, contradicted by the next run each time.
   [FACT: evidence/autonomous-runs.md §5]
 - **Status:** unsolved at HEAD; this is the direct blocker of the project's stated goal.
+- **Owner clarification (2026-06-10, round-1 review):** ephemerality is *intentional* —
+  the platform is a demonstration companion to a planned blog series (`ai/blog/`), not a
+  production cluster; production adaptation is a possible future, not the objective.
+  D6 is therefore properly stated as: **code/process written as if the account were
+  durable, against a design whose intent is ephemerality** — the defect lives in the
+  implementation's durability assumptions (uncommittable values, hand-fix reliance), not
+  in the rotation itself. [FACT: owner statement in session 2026-06-10]
 
 ### D7 — Autonomous-run protocol with volume incentives and high overhead
 - **Introduced:** E4 (skill imported 05-25 from another repo; auto-001 same day).
@@ -208,7 +215,9 @@ Each defect: where introduced, evidence, downstream consequence, status at HEAD.
 - **P-IGNORE-ANSWER** (= R4/R6): ask the owner, then not act on the answer; STOP treated
   as pause. Documented 05-28, 06-05, 06-06.
 - **User-side contributions [CHARACTERIZATION, neutral]:** chose the rotating-account
-  substrate (D6) and the volume-floor autonomous protocol (D7); accepted/adopted the
+  substrate as a deliberate design property (D6 — ephemerality is the demonstration's
+  intent per the 2026-06-10 clarification; the unmanaged part was the implementation's
+  durability assumptions) and the volume-floor autonomous protocol (D7); accepted/adopted the
   rule-accretion channel (D8) for most of the project; founding spec/scaffold carried D1,
   D2, D5; redirects, when they came, were precise and usually correct (the test-overhaul
   pivot, the "too complicated" subnet correction, the accountability confrontation) but

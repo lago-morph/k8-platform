@@ -86,6 +86,10 @@ on account N evaporated on account N+1; account-ephemeral values are structurall
 uncommittable, which directly created the placeholder/selfHeal standing blocker.
 **Interaction:** turns every spec hole (H4) into a *recurring* per-session cost, and
 makes hand-fixes (H5's vehicle) the rational-looking move inside any single session.
+**Owner clarification (2026-06-10):** ephemerality is the design intent (demonstration
+companion to the `ai/blog/` series, not a production cluster). E1's driver is thus
+restated: not the rotation, but implementation + process built on durability
+assumptions the design never granted. The factual consequences above are unchanged.
 
 ### E2 — Self-certification of completion (D4)
 No external machine arbiter of "done" existed until 06-09 (and its evidence column is

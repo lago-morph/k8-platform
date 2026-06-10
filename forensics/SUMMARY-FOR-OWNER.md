@@ -69,6 +69,9 @@ test account rotates between sessions. That made hand-fixes evaporate overnight 
 same gaps were re-fixed by hand at least four sessions in a row) and made certain values
 — cert ARNs, cluster endpoints — impossible to commit, which is itself one of the
 standing blockers. Roughly one full substrate rebuild per run, each surfacing new bugs.
+*(Your later clarification: the ephemerality is intentional — the platform is a
+demonstration for the blog series. The trap, restated, is that the code was written as
+if the account were durable, against a design whose whole point is that it isn't.)*
 
 **Trap 3 — the spec hand-waved the seams between layers.** "After apply, ArgoCD takes
 over" was the entire specification of the Terraform→ArgoCD boundary. How the hub learns
