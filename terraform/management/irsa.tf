@@ -43,22 +43,54 @@ resource "aws_iam_policy" "crossplane_aws" {
         Action   = ["eks:*"]
         Resource = "*"
       },
+      # EC2 networking — the platform-cluster Composition creates subnets, route
+      # tables, and the kube-relay-ingress SecurityGroupRule in the shared base
+      # VPC. auto-016-001 (OI-2026-06-08-1 follow-up) splits the former single
+      # Resource:"*" `EC2Networking` Sid into a VPC-conditioned set and an
+      # unconditioned set. Two adversarial rounds (6 reviewers) established that
+      # the ec2:Vpc condition key is ONLY present in the auth context for actions
+      # whose request carries a VPC-bearing resource — applying it to the others
+      # (route/association/route-table-delete, subnet delete/modify) would deny a
+      # real MR (absent-key + StringEquals = deny). Do NOT rename these Sids
+      # without updating tests/unit/test_iam_resource_scoping.sh.
       {
-        Sid    = "EC2Networking"
+        # EC2VpcScoped — only the actions confirmed to carry ec2:Vpc:
+        # CreateSubnet + CreateRouteTable (request carries VpcId) and
+        # Authorize/RevokeSecurityGroupIngress (the SG resolves to its VPC).
+        # Pinned to the base VPC so Crossplane cannot create networking in any
+        # other VPC. (DeleteSubnet/ModifySubnetAttribute do NOT carry ec2:Vpc —
+        # they live in EC2Unconditioned below.)
+        Sid    = "EC2VpcScoped"
+        Effect = "Allow"
+        Action = [
+          "ec2:CreateSubnet", "ec2:CreateRouteTable",
+          "ec2:AuthorizeSecurityGroupIngress", "ec2:RevokeSecurityGroupIngress",
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "ec2:Vpc" = "arn:aws:ec2:${local.region}:${local.account_id}:vpc/${local.base_vpc_id}"
+          }
+        }
+      },
+      {
+        # EC2Unconditioned — Describe* is list-shaped (no resource-level ARN);
+        # the route/association/route-table-delete and subnet delete/modify
+        # actions do NOT carry the ec2:Vpc condition key (their request targets a
+        # route-table/subnet id, not a VpcId), and CreateTags/DeleteTags span
+        # mixed resource types where the VPC is not reliably in context. These
+        # stay Resource:"*" by necessity — an INTENTIONAL wildcard (lint
+        # allow-lists this Sid in the must-stay-"*" group). The meaningful
+        # blast-radius reduction is the VPC-bound creates above.
+        Sid    = "EC2Unconditioned"
         Effect = "Allow"
         Action = [
           "ec2:Describe*",
-          "ec2:CreateSubnet", "ec2:DeleteSubnet", "ec2:ModifySubnetAttribute",
-          "ec2:CreateRouteTable", "ec2:DeleteRouteTable",
+          "ec2:DeleteSubnet", "ec2:ModifySubnetAttribute",
+          "ec2:DeleteRouteTable",
           "ec2:CreateRoute", "ec2:DeleteRoute",
           "ec2:AssociateRouteTable", "ec2:DisassociateRouteTable",
           "ec2:CreateTags", "ec2:DeleteTags",
-          # Security-group ingress rules: the platform-cluster Composition's
-          # kube-relay-ingress MR (SecurityGroupRule) admits the shared SSM
-          # relay to each cluster's API SG on 443 (docs/decisions/0008).
-          # Without these the MR fails create with UnauthorizedOperation
-          # (found by the ADR-0006 behavioral test, not any static lint).
-          "ec2:AuthorizeSecurityGroupIngress", "ec2:RevokeSecurityGroupIngress",
         ]
         Resource = "*"
       },
@@ -226,6 +258,18 @@ resource "aws_iam_policy" "crossplane_aws" {
       },
     ]
   })
+
+  # auto-016-001: the EC2VpcScoped statement embeds the base VPC ARN in its
+  # ec2:Vpc condition. If base hasn't been applied (vpc_id == ""), the condition
+  # value becomes ".../vpc/" and would DENY every VPC-scoped EC2 action — a
+  # silent fail-closed. Fail fast at plan time instead. (Management always
+  # applies after base in a normal bring-up, so this only fires on misuse.)
+  lifecycle {
+    precondition {
+      condition     = local.base_vpc_id != ""
+      error_message = "base VPC id is empty — apply terraform/base first so the EC2VpcScoped ec2:Vpc condition resolves to a real VPC ARN."
+    }
+  }
 }
 
 module "irsa_crossplane" {
