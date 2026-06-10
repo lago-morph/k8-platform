@@ -184,6 +184,13 @@ locals {
       # single relay can tunnel kubectl to every cluster — no per-cluster relay
       # instance (the account is capped at 9 EC2 instances). See docs/decisions/0008.
       relaySecurityGroupId = aws_security_group.kube_relay.id
+      # Security-group id of the management cluster's NODES. The
+      # platform-cluster Composition admits this SG to each hosted cluster's
+      # EKS API on 443 (hub-eks-api-ingress) so the hub ArgoCD
+      # application-controller / Crossplane can reach the spoke's private
+      # endpoint — the durable form of the auto-012/auto-016 live
+      # authorize-security-group-ingress hand-fix (OI-2026-06-07-4).
+      managementNodeSecurityGroupId = module.eks.node_security_group_id
     }
   })
 }

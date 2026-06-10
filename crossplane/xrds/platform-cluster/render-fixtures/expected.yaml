@@ -366,6 +366,33 @@ metadata:
   generateName: render-probe-cluster-
   labels:
     crossplane.io/composite: render-probe-cluster
+    platform.k8-platform.io/role: hub-eks-api-ingress
+  name: render-probe-cluster-3d235ce5b1e9
+  namespace: default
+spec:
+  forProvider:
+    description: hub ArgoCD/Crossplane to hosted-cluster API server
+    fromPort: 443
+    protocol: tcp
+    region: us-east-1
+    sourceSecurityGroupId: sg-00000000000000001
+    toPort: 443
+    type: ingress
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
+apiVersion: ec2.aws.m.upbound.io/v1beta1
+kind: SecurityGroupRule
+metadata:
+  annotations: {}
+  generateName: render-probe-cluster-
+  labels:
+    crossplane.io/composite: render-probe-cluster
     platform.k8-platform.io/role: kube-relay-ingress
   name: render-probe-cluster-81ea7144944e
   namespace: default
@@ -401,6 +428,9 @@ spec:
       - apiVersion: acm.aws.m.upbound.io/v1beta1
         kind: Certificate
         name: render-probe-cluster-132e67b41d9b
+      - apiVersion: ec2.aws.m.upbound.io/v1beta1
+        kind: SecurityGroupRule
+        name: render-probe-cluster-3d235ce5b1e9
       - apiVersion: ec2.aws.m.upbound.io/v1beta1
         kind: SecurityGroupRule
         name: render-probe-cluster-81ea7144944e
@@ -456,7 +486,7 @@ status:
     - reason: ReconcileSuccess
       status: "True"
       type: Synced
-    - message: 'Unready resources: cluster-cert-validation, cluster-cert-validation-record, cluster-certificate, and 11 more'
+    - message: 'Unready resources: cluster-cert-validation, cluster-cert-validation-record, cluster-certificate, and 12 more'
       reason: Creating
       status: "False"
       type: Ready

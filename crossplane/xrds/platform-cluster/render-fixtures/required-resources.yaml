@@ -17,3 +17,4 @@ data:
   domain: render-probe.example.test
   accountId: "000000000000"
   relaySecurityGroupId: sg-00000000000000000
+  managementNodeSecurityGroupId: sg-00000000000000001

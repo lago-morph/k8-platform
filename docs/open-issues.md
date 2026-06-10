@@ -20,7 +20,7 @@ is the sequence number for that date.
 | OI-2026-06-07-2 | placeholder overlays fought by bootstrap selfHeal | consumer half IMPLEMENTED 2026-06-10 (**ADR-0010**: spoke apps → ApplicationSets templating cluster-Secret fact annotations; supersedes ADR-0005's ConfigMap corollary). Remaining: the producer (labeled registration Secret = OI-2026-06-07-1) + clean-build evidence |
 | OI-2026-06-07-1 | spoke ArgoCD cluster Secret has no GitOps form | durable producer BUILT 2026-06-10 (ADR-0010 PR-2: provider-kubernetes Objects in the xspokeaccess Composition) — `pending clean-build verification` |
 | OI-2026-06-07-3 | shared-VPC ELB subnet tags | **RECURRED auto-016** (NLB couldn't place) — live-fixed; durable base-terraform fix owed |
-| OI-2026-06-07-4 | hub→spoke EKS-API SG rule | **RECURRED auto-016** (ArgoCD→spoke 443 timeout) — live-fixed; durable Composition fix owed |
+| OI-2026-06-07-4 | hub→spoke EKS-API SG rule | durable Composition rule BUILT 2026-06-10 (`hub-eks-api-ingress`, classic SecurityGroupRule) — `pending clean-build verification` |
 | OI-2026-06-07-5 | cross-cluster Keycloak DB secret | open; Keycloak not yet booted against RDS |
 | OI-2026-06-07-6 | **static assertions masquerade as tests** | umbrella — the test overhaul executes against this; not a single bug |
 | OI-2026-06-07-7 | P0-spike `resourceRefs`⇒AccessDenied not confirmed | needs a provisioned XR |
@@ -203,7 +203,7 @@ spoke tag). Base does not currently know spoke cluster names — a small list/va
 
 ## OI-2026-06-07-4 — hub→spoke EKS-API security-group rule has no durable form
 
-**Status:** open — DECISION MADE (2026-06-07, concur with recommendation); implement in a new session. See `ai/handoff.md` task 6. (The live rule is gone with the expired account.)
+**Status:** durable rule BUILT 2026-06-10 — **`pending clean-build verification`** (SUBSTRATE row 2; recurred live in both auto-012 and auto-016 before this).
 **Surfaced:** 2026-06-07, auto-012.
 
 **What happened:** the hub ArgoCD app-controller (mgmt node SG `sg-…`) could not
@@ -211,11 +211,19 @@ reach the spoke EKS API (private endpoint) — the spoke EKS cluster SG had no i
 443 from the mgmt nodes. Added live:
 `authorize-security-group-ingress` 443 from the mgmt node SG to the spoke cluster SG.
 
-**Durable form:** a `SecurityGroupIngressRule` MR in the platform-cluster
-Composition (groupId from the Cluster MR's clusterSecurityGroupId, source = mgmt SG
-from an extended `cluster-network` EnvironmentConfig).
+**Durable form (implemented):** a `hub-eks-api-ingress` MR in the
+platform-cluster Composition — the classic **`SecurityGroupRule`**, not
+`SecurityGroupIngressRule` as originally sketched (provider-aws-ec2 v2.5.0
+cannot observe the latter — tf-aws#45303, same constraint the
+kube-relay-ingress rule documents). securityGroupId from the Cluster MR's
+clusterSecurityGroupId (via XR status), source = `managementNodeSecurityGroupId`
+newly published in the `cluster-network` EnvironmentConfig from
+`module.eks.node_security_group_id`. Gated by
+`tests/unit/test_hub_spoke_api_ingress.sh` + the regenerated render golden.
 
-**Next step:** add the mgmt SG to the EnvironmentConfig + the ingress-rule MR.
+**Next step:** clean-build verification — a fresh spoke bring-up must be
+reachable from the hub ArgoCD with zero `authorize-security-group-ingress`
+hand-fixes.
 
 ---
 

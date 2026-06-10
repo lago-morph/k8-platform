@@ -36,6 +36,8 @@ run_suite tests/unit/test_irsa_trust_validator.sh
 run_suite tests/unit/test_iam_required_actions.sh
 run_suite tests/unit/test_eks_module_defaults.sh
 run_suite tests/unit/test_kube_access.sh
+# OI-2026-06-07-4: durable hub→spoke EKS-API 443 rule in the Composition
+run_suite tests/unit/test_hub_spoke_api_ingress.sh
 run_suite tests/unit/test_helm_render.sh
 run_suite tests/unit/test_post_comment.sh
 run_suite tests/unit/test_kyverno_policy_lint.sh

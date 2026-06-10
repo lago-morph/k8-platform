@@ -662,6 +662,53 @@ spec:
               - type: NonEmpty
                 fieldPath: status.atProvider.id
 
+          # ---------- 15. admit the hub to the EKS API --------------
+          # Ingress 443 on this cluster's EKS-managed SG from the management
+          # cluster's NODE SG (cluster-network EnvironmentConfig
+          # managementNodeSecurityGroupId): the hub ArgoCD
+          # application-controller and Crossplane providers reach the spoke's
+          # private API endpoint through it. Durable form of the
+          # auto-012/auto-016 live authorize-security-group-ingress hand-fix
+          # (OI-2026-06-07-4 / SUBSTRATE row 2); without it every fresh
+          # bring-up strands the spoke unreachable from the hub.
+          #
+          # Classic SecurityGroupRule for the same reason as
+          # kube-relay-ingress (12): provider-aws-ec2 v2.5.0 cannot observe
+          # SecurityGroupIngressRule ("Missing Resource Identity After
+          # Read", hashicorp/terraform-provider-aws#45303).
+          - name: hub-eks-api-ingress
+            base:
+              apiVersion: ec2.aws.m.upbound.io/v1beta1
+              kind: SecurityGroupRule
+              metadata:
+                labels:
+                  platform.k8-platform.io/role: hub-eks-api-ingress
+              spec:
+                forProvider:
+                  region: us-east-1
+                  type: ingress
+                  protocol: tcp
+                  fromPort: 443
+                  toPort: 443
+                  description: "hub ArgoCD/Crossplane to hosted-cluster API server"
+                managementPolicies: [Observe, Create, Update, Delete]
+                providerConfigRef:
+                  kind: ClusterProviderConfig
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+              - type: FromCompositeFieldPath
+                fromFieldPath: status.clusterSecurityGroupId
+                toFieldPath: spec.forProvider.securityGroupId
+              - type: FromEnvironmentFieldPath
+                fromFieldPath: managementNodeSecurityGroupId
+                toFieldPath: spec.forProvider.sourceSecurityGroupId
+            readinessChecks:
+              - type: NonEmpty
+                fieldPath: status.atProvider.id
+
           # ---------- 13. sandbox EKS access entry ------------------
           # Read-only access entry for the sandbox IAM identity (cloud_user).
           # principalArn is built from the EnvironmentConfig accountId — no
