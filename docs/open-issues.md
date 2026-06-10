@@ -17,10 +17,10 @@ is the sequence number for that date.
 
 | ID | One-line | Note |
 |----|----------|------|
-| OI-2026-06-07-2 | placeholder overlays fought by bootstrap selfHeal | consumer half IMPLEMENTED 2026-06-10 (**ADR-0010**: spoke apps → ApplicationSets templating cluster-Secret fact annotations; supersedes ADR-0005's ConfigMap corollary). Remaining: the producer (labeled registration Secret = OI-2026-06-07-1) + clean-build evidence |
-| OI-2026-06-07-1 | spoke ArgoCD cluster Secret has no GitOps form | durable producer BUILT 2026-06-10 (ADR-0010 PR-2: provider-kubernetes Objects in the xspokeaccess Composition) — `pending clean-build verification` |
-| OI-2026-06-07-3 | shared-VPC ELB subnet tags | durable base-terraform tags BUILT 2026-06-10 (`hosted_cluster_names` var) — `pending clean-build verification` |
-| OI-2026-06-07-4 | hub→spoke EKS-API SG rule | durable Composition rule BUILT 2026-06-10 (`hub-eks-api-ingress`, classic SecurityGroupRule) — `pending clean-build verification` |
+| OI-2026-06-07-2 | placeholder overlays fought by bootstrap selfHeal | **RESOLVED — 1× clean-build evidence 2026-06-10** (ADR-0010 consumer+producer; SUBSTRATE row 4): all 7 ApplicationSets generated from the registration Secret's contract on clean build #1, no overlay surface remains |
+| OI-2026-06-07-1 | spoke ArgoCD cluster Secret has no GitOps form | **RESOLVED — 1× clean-build evidence 2026-06-10** (SUBSTRATE row 5): Composition-produced Secret, full contract, `spoke-cluster-secret-live.sh` PASS on clean build #1 |
+| OI-2026-06-07-3 | shared-VPC ELB subnet tags | **RESOLVED — 1× clean-build evidence 2026-06-10** (SUBSTRATE row 3): spoke NLB placed with zero create-tags on clean build #1 |
+| OI-2026-06-07-4 | hub→spoke EKS-API SG rule | **RESOLVED — 1× clean-build evidence 2026-06-10** (SUBSTRATE row 2): hub ArgoCD synced the spoke with zero authorize-sg-ingress on clean build #1 |
 | OI-2026-06-07-5 | cross-cluster Keycloak DB secret | open; Keycloak not yet booted against RDS |
 | OI-2026-06-07-6 | **static assertions masquerade as tests** | umbrella — the test overhaul executes against this; not a single bug |
 | OI-2026-06-07-7 | P0-spike `resourceRefs`⇒AccessDenied not confirmed | needs a provisioned XR |
@@ -31,10 +31,10 @@ is the sequence number for that date.
 
 | ID | One-line | Note |
 |----|----------|------|
-| OI-2026-06-10-1 | **NEW** — ACM provider v2.5.0 leaves Certificate `crossplane.io/external-name` EMPTY → `certificateArnSelector` never resolves | Composition fixed (direct ARN patch via the composite); WHY external-name stays empty is undiagnosed — see entry |
+| OI-2026-06-10-1 | **NEW** — ACM provider v2.5.0 leaves Certificate `crossplane.io/external-name` EMPTY → `certificateArnSelector` never resolves | Composition fix MERGED (#223) + validated on clean build #1 (the stuck MR resolved via GitOps propagation, XR Ready=True); WHY external-name stays empty remains undiagnosed — see entry |
 | OI-2026-06-09-1 | **NEW** — narrowed `iam:GetRole` broke EKS nodegroup SLR create | **FIXED** PR #213, proven live (nodegroup ACTIVE after fix); pending merge |
 | OI-2026-06-08-1 | Crossplane `Resource:"*"` (RDS/EC2) follow-up | IAM resolved (#203); RDS PR #211 (applied live, ongoing-reconcile green), EC2 PR #212 (draft) |
-| OI-2026-06-08-2 | hub→spoke e2e not behaviorally tested | check authored PR #210; blocked on OI-2026-06-07-2 for clean-build validation |
+| OI-2026-06-08-2 | hub→spoke e2e not behaviorally tested | **RESOLVED 2026-06-10**: first execution of `hello-e2e-live.sh` PASS on clean build #1 (SUBSTRATE row 8) |
 
 **ENVIRONMENTAL / MITIGATED (known limitations, not active bugs):**
 
