@@ -65,7 +65,7 @@ is the sequence number for that date.
 ## auto-016 update (2026-06-09) — fresh-account bring-up surfaced 1 regression + 3 recurrences
 
 A clean fresh-account bring-up with the auto-015 narrowed Crossplane policy applied
-**from the start** (account `471112679140`) brought base + hub + spoke EKS up and
+**from the start** (account `471112679140`) brought base + hub + spoke EKS up and <!-- noqa: account-id - historical run provenance; account rotated -->
 **re-validated OI-2026-06-08-1's identity narrowing on the CREATE path** (spoke OIDC
 provider + Roles + RolePolicy + AccessEntries + AccessPolicyAssociations all
 `Ready=True` under the narrowed policy). It also surfaced:
@@ -771,7 +771,7 @@ cleanup** of the stray `provider-family-aws` Provider, so it self-heals a wedged
 cluster without a `terraform destroy`. DO NOT MERGE until the re-validation
 `management apply-and-verify` run is green on the branch.
 **Surfaced:** 2026-06-06, `terraform-test.yml phase=management action=apply-and-verify`
-run `27054926075`, main SHA `c3a6cb3`, account `211125540973`. FAILED at
+run `27054926075`, main SHA `c3a6cb3`, account `211125540973`. FAILED at <!-- noqa: account-id - historical run provenance; account rotated -->
 `terraform_data.crossplane_aws_provider` (helm.tf:241).
 
 ### Verbatim symptom
@@ -792,8 +792,8 @@ The Healthy-wait timed out, then the diagnostics dump and the hard SA gate fired
    provider.../provider-aws-acm/eks/iam/route53        True   False  ...:v2.5.0  5m3s
    provider.../provider-family-aws                      True   False  ...:v2.5.0  5m3s
    provider.../upbound-provider-family-aws              True   False  ...:v2.5.0  4m57s
-   providerrevision.../provider-family-aws-604659292671          False False ...v2.5.0 Active 5m1s
-   providerrevision.../upbound-provider-family-aws-604659292671  False False ...v2.5.0 Active 4m55s
+   providerrevision.../provider-family-aws-604659292671          False False ...v2.5.0 Active 5m1s   # noqa: account-id - quoted live kubectl output (rotated account)
+   providerrevision.../upbound-provider-family-aws-604659292671  False False ...v2.5.0 Active 4m55s   # noqa: account-id - quoted live kubectl output (rotated account)
    ```
 2. **No provider runtime Deployment or ServiceAccount was ever created.** The
    `kubectl -n crossplane-system get deploy,sa --show-labels` dump lists ONLY
@@ -905,8 +905,8 @@ adversarial-review framing — this is a load-bearing bootstrap change.
 ### Next concrete diagnostic step (before applying)
 Capture the missing positive evidence to confirm the duplicate-package mechanism
 vs. a generic provider-runtime stall: on the next failed (or a probe) run, dump
-`kubectl describe providerrevision provider-family-aws-604659292671
-upbound-provider-family-aws-604659292671` and
+`kubectl describe providerrevision` on both revisions (the `provider-family-aws-*`
+and `upbound-provider-family-aws-*` names; suffixes are account-derived) and
 `kubectl -n crossplane-system logs deploy/crossplane` around revision activation.
 If both revisions report a CRD-ownership / "already managed by" conflict, the
 structural conclusion is positively confirmed and the rename is the fix. If
@@ -1045,7 +1045,7 @@ SKIP-gate kept SEPARATE from the service-ready poll, and ship as a HARD check
 (expect-full / exit non-zero on a reachable-but-failing curl), never a silent skip.
 
 **Evidence (probe run 2026-06-08, auto-014, read-only):**
-`curl https://hello.platform.878302603783.realhandsonlabs.net` → host does NOT
+`curl https://hello.platform.878302603783.realhandsonlabs.net` → host does NOT <!-- noqa: account-id - historical run provenance; account rotated -->
 resolve (**NXDOMAIN**). The public hello endpoint is not materialized — ExternalDNS
 has not created the record (and/or the registration overlay supplying the ephemeral
 domain+cert has not run). So the public-NLB curl path is not yet available; the

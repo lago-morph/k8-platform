@@ -116,6 +116,11 @@ run_suite tests/unit/test_negatives_guard_fired.sh
 run_suite tests/unit/test_instantiate_lib.sh
 # auto-015 P3: reaper entrypoint (enumerate→decide→dry-run→delete; faked AWS)
 run_suite tests/unit/test_reaper_run.sh
+# forensics round 2 — repo-content lints (ai/LESSONS.md L9/L19/L25):
+# SPEC-B5 account-ID hardcode lint; committed-prompt ban; root-clutter freeze
+run_suite tests/unit/test_no_account_id_hardcoded.sh
+run_suite tests/unit/test_no_next_session_prompt_files.sh
+run_suite tests/unit/test_root_file_allowlist.sh
 
 echo ""
 if [ "$OVERALL" -eq 0 ]; then

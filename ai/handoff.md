@@ -8,6 +8,22 @@ last, the current state, and the next concrete steps. Keep it factual
 
 ## NEW SESSION QUICKSTART (read this first)
 
+> ## ▶ 2026-06-10 — INSTRUCTION SURFACE RESTRUCTURED (forensics round 2)
+> The 748-line AGENTS.md + 46 detail files were replaced by a ~140-line
+> operating agreement (`AGENTS.md`); environment/capability facts moved to
+> `ai/environment.md`; lessons + the remedy-decision protocol live in
+> `ai/LESSONS.md` (read it before proposing any rule/skill/process change).
+> The old rulebook is archived intact at `docs/archive/agents-v1/` — all
+> historical "§x.y" citations resolve there. 10 skills archived to
+> `.claude/skills-archive/`. New push-gated lints: no hardcoded account IDs
+> (SPEC-B5), no committed next-session prompts, root-file allowlist.
+> **Operating posture (owner-set):** unattended volume runs PAUSED until the
+> `SUBSTRATE-READINESS.md` gate is green twice; short scoped sessions with
+> machine-verifiable exits; the only feature backlog is the four durable
+> fixes + the from-scratch evidence loop (`ai/LESSONS.md` §5: S1–S3).
+>
+> The auto-017 run order below remains the correct *platform* work queue.
+
 > ## ▶ NEXT SESSION — auto-017 (account may have rotated; re-verify per §8.1)
 > **⚠️ CLEAN-BUILD HONESTY (read `SUBSTRATE-READINESS.md` + AGENTS §6.41 FIRST).**
 > auto-016 declared progress but **clean-build-tested NONE of it**. Every "fix" below was
@@ -19,7 +35,7 @@ last, the current state, and the next concrete steps. Keep it factual
 > resume test-overhaul work until that checklist is green.
 >
 > **auto-016 work (PRs #209–#214) — status, honestly stated:** Full narrative: `run-summary-auto-016.md`.
-> Account this ran on: `471112679140` (us-east-1) — may rotate; confirm with
+> Account this ran on: `471112679140` (us-east-1) — may rotate; confirm with <!-- noqa: account-id - historical run provenance; account rotated -->
 > `aws sts get-caller-identity` first.
 >
 > **Substrate brought up fresh + the auto-015 IAM narrowing RE-VALIDATED on the
@@ -79,7 +95,7 @@ last, the current state, and the next concrete steps. Keep it factual
 
 > ## ▶ [SUPERSEDED by auto-016 results above] ORIGINAL auto-016 BRIEF (account may have rotated; re-verify per §8.1)
 > **DONE 2026-06-08 (auto-015, PRs #201–#207).** Full narrative: `run-summary-auto-015.md`.
-> Account this ran on: `176646220910` (us-east-1) — may rotate; confirm with
+> Account this ran on: `176646220910` (us-east-1) — may rotate; confirm with <!-- noqa: account-id - historical run provenance; account rotated -->
 > `aws sts get-caller-identity` before trusting any live state below.
 >
 > **Substrate brought up live + verified:** terraform base + management via CI
@@ -139,7 +155,7 @@ last, the current state, and the next concrete steps. Keep it factual
 > --show-current` before every commit when background worktree subagents are running.
 
 > ## ▶ [SUPERSEDED by auto-015 above] NEXT SESSION — auto-015, on a **NEW AWS account**
-> The prior account (`878302603783`) is gone — assume **zero live resources**; no
+> The prior account (`878302603783`) is gone — assume **zero live resources**; no <!-- noqa: account-id - historical run provenance; account rotated -->
 > evidence exists for any SHA, so every live/chainsaw gate starts RED until a
 > bring-up + producer dispatch on the new account.
 >
@@ -286,9 +302,9 @@ last, the current state, and the next concrete steps. Keep it factual
 > **Run goal:** EXECUTE the test overhaul per `planning/test-overhaul/FINAL-PLAN.md`.
 > This run shipped the **P1 static scaffold** as 7 stacked implementation PRs
 > (#171–#176, on trunk #170) and brought the substrate up live on the fresh
-> account `695454131301`.
+> account `695454131301`. <!-- noqa: account-id - historical run provenance; account rotated -->
 >
-> **✅ Substrate is LIVE on `695454131301`:** phase-0 base (run 27085405081) and
+> **✅ Substrate is LIVE on `695454131301`:** phase-0 base (run 27085405081) and <!-- noqa: account-id - historical run provenance; account rotated -->
 > phase-1 **management apply-and-verify GREEN** (run 27085571769) — EKS
 > `k8-platform-mgmt` ACTIVE, ArgoCD + Crossplane + all providers + ESO + Kyverno +
 > IRSA up, mgmt e2e-verify passed. Phase-3 platform cluster NOT yet synced.
@@ -450,7 +466,7 @@ not-worth-the-cost.
 > **[auto-012 — 2026-06-07 — SUPERSEDES auto-011 below.]** Full detail:
 > `run-summary-auto-012.md` + `docs/open-issues.md` (OI-2026-06-07-1..5) + PR #165.
 >
-> **⚠️ AWS ACCOUNT EXPIRED — the `596430611165` account auto-012 ran on is GONE.**
+> **⚠️ AWS ACCOUNT EXPIRED — the `596430611165` account auto-012 ran on is GONE.** <!-- noqa: account-id - historical run provenance; account rotated -->
 > The next session gets a FRESH account (normal §8.4 rotation): all auto-012 LIVE
 > state (the spoke cluster, the ArgoCD spoke registration, the RDS instance, the
 > out-of-band IAM/SG/subnet changes) is destroyed. **What survives is the CODE in
@@ -552,7 +568,7 @@ not-worth-the-cost.
 > **[auto-011 — 2026-06-06/07 — SUPERSEDES auto-010 below.]** Full detail:
 > `run-summary-auto-011.md` + `decisions/auto-011-*` + `retrospective/2026-06-…`.
 >
-> **⚠️ SAME INHERITED LIVE ACCOUNT `596430611165` (us-east-1). Phases 0/1 up.**
+> **⚠️ SAME INHERITED LIVE ACCOUNT `596430611165` (us-east-1). Phases 0/1 up.** <!-- noqa: account-id - historical run provenance; account rotated -->
 > Tools are NOT preinstalled in a fresh sandbox — install `aws` v2 + `argocd` (and
 > `kubectl` is useless: kube-API is private-CA blocked; use the **`kube-diagnose`
 > workflow** (`workflow_dispatch`, read-only script input) + the **ArgoCD REST API**
@@ -582,7 +598,7 @@ not-worth-the-cost.
 >   Bumped to **v1.2.1** (the v1.x line is the Crossplane-v2 series); now Healthy,
 >   `providerconfig.kubernetes.crossplane.io/hub` created.
 > - **Live now:** EKS `k8-platform-services` **ACTIVE**, node group **ACTIVE**,
->   `*.platform.596430611165.realhandsonlabs.net` ACM cert **ISSUED**, mgmt e2e-verify
+>   `*.platform.596430611165.realhandsonlabs.net` ACM cert **ISSUED**, mgmt e2e-verify <!-- noqa: account-id - historical run provenance; account rotated -->
 >   all green (ArgoCD HTTP 200). The XR `Ready` may still show `Creating` briefly while
 >   it aggregates the last MR condition — verify it flips to `Ready=True`.
 >
@@ -599,7 +615,7 @@ not-worth-the-cost.
 >    + the `hub` ProviderConfig are installed for this. NOTE: provider-kubernetes Object
 >    MRs need RBAC to write the Secret (same class as the ESO ClusterRole) — grant it.
 > 4. Overlay spoke values (certArn/domain/region) → spoke apps converge (ingress-nginx →
->    external-dns → hello) → verify `https://hello.platform.596430611165.realhandsonlabs.net`
+>    external-dns → hello) → verify `https://hello.platform.596430611165.realhandsonlabs.net` <!-- noqa: account-id - historical run provenance; account rotated -->
 >    (200, valid ACM chain).
 > 5. **Phase 5:** sync `keycloak-db` XDatabase XR; verify RDS + connection secret +
 >    Keycloak. (xdatabase XRD now syncs — include-glob widened to `xrds/*`.)
@@ -612,7 +628,7 @@ not-worth-the-cost.
 > `run-summary-auto-010.md` + `retrospective/2026-06-06-159/`.
 >
 > **⚠️ ACCOUNT IS INHERITED, NOT ROTATED.** Unlike the usual §8.4 assumption, the
-> next session inherits the SAME LIVE account `596430611165` (us-east-1). **Phases
+> next session inherits the SAME LIVE account `596430611165` (us-east-1). **Phases <!-- noqa: account-id - historical run provenance; account rotated -->
 > 0 and 1 are already APPLIED and VERIFIED live — do NOT rebuild them.** Run
 > `scripts/whereami.sh` first to confirm the account/cluster are still up, then
 > proceed straight to phase 3. Work continues on branch
@@ -622,9 +638,9 @@ not-worth-the-cost.
 > - **EKS `k8-platform-mgmt` ACTIVE, 3 nodes Ready**, full mgmt stack running
 >   (ArgoCD, Crossplane + all providers **incl. provider-aws-rds**, ESO, Kyverno,
 >   ingress-nginx, external-dns), all `policies/audit` applied.
-> - **ArgoCD UI is REACHABLE**: `https://argocd.management.596430611165.realhandsonlabs.net`
+> - **ArgoCD UI is REACHABLE**: `https://argocd.management.596430611165.realhandsonlabs.net` <!-- noqa: account-id - historical run provenance; account rotated -->
 >   (HTTP 200; admin password = `terraform/management` output `argocd_admin_password`,
->   read from S3 state `s3://k8-platform-tfstate-596430611165/k8-platform/management/terraform.tfstate`).
+>   read from S3 state `s3://k8-platform-tfstate-596430611165/k8-platform/management/terraform.tfstate`). <!-- noqa: account-id - historical run provenance; account rotated -->
 > - **maxPods → 110 DONE + proven** (AL2023 nodeadm node group up in 1m47s; eks.tf).
 > - **Phase 4 COMPLETE**: hub Alloy via new `hub-addons` AppProject (Option A).
 > - **Phase 5 COMPLETE (authored+tested)**: `XDatabase` XRD + RDS Composition +
@@ -637,7 +653,7 @@ not-worth-the-cost.
 >   per-PR kind run.
 >
 > **IMMEDIATE NEXT STEPS (in order):**
-> 1. `scripts/whereami.sh` — confirm account `596430611165` + cluster ACTIVE.
+> 1. `scripts/whereami.sh` — confirm account `596430611165` + cluster ACTIVE. <!-- noqa: account-id - historical run provenance; account rotated -->
 > 2. **Confirm phase-2 chainsaw green** on commit `fab6026` (run dispatched; real-AWS
 >    scenarios excluded). If only `claim-creates-secret` flaked (OI-2026-05-28-1),
 >    re-kick once. Then re-run the `chainsaw-verify` PR check so #159 goes green.

@@ -7,7 +7,7 @@
 # Today: detect invalid JMESPath literals — specifically, empty
 # backticks (`` ``), which are a syntax error JMESPath surfaces as
 # "unexpected end of JSON input". This is exactly the bug class that
-# broke phase 1 apply-and-verify against fresh account 309191981509 —
+# broke phase 1 apply-and-verify against a fresh account (2026-05-23) —
 # Kyverno accepted 7 policies, then rejected 03-ingress-managed-by-
 # external-dns with that error, taking down the whole apply step.
 #

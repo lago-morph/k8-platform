@@ -1,5 +1,14 @@
 # Testing / infra debt burndown
 
+> **⚠️ STATUS CORRECTION (2026-06-10, forensics round 2).** The ✅ DONE marks
+> below predate the clean-build standard and several were validated against
+> hand-modified environments (item 1's proof was later RETRACTED). For current
+> truth, **`SUBSTRATE-READINESS.md` supersedes this file** — its evidence
+> column is the only "done". This file is kept as the historical record of the
+> burndown's scope and order. (Forensics: defect D10 — contradictory state
+> docs at HEAD.) The "AGENTS §6.3x" citations below resolve against the
+> archived rulebook at `docs/archive/agents-v1/`.
+
 **Owner-directed (2026-06-07):** clear this list **before any new implementation
 (feature) work.** The recurring pain hasn't been the features — it's a test gate
 you can't trust (flakes you re-kick, real-AWS checks hidden in a nightly that

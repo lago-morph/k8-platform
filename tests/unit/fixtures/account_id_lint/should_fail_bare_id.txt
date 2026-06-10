@@ -1,0 +1,1 @@
+role arn for the run was arn:aws:iam::413117505476:role/k8-platform-mgmt
