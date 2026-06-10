@@ -3,17 +3,17 @@
 # Alertmanager. The hub (management) cluster runs only an Alloy agent that
 # remote-writes metrics + pushes logs here (see observability-alloy-mgmt.yaml).
 #
-# Deployed by the hub ArgoCD as a plain spoke Application
+# Deployed by the hub ArgoCD via the kube-prometheus-stack ApplicationSet
 # (argocd/apps/spoke/observability-kube-prometheus-stack.yaml), multi-source:
 # this static values file + the upstream chart. Sync-wave 40 (after ingress-nginx
 # + ExternalDNS at wave 20, so the Grafana Ingress resolves immediately).
 #
-# DYNAMIC value (AGENTS §8.1, NOT committed): the `<domain>` root in the Grafana
-# Ingress host is account-ephemeral. It is overlaid by the Application's
-# helm.valuesObject at sync time (grafana.ingress.hosts[0] :=
-# grafana.platform.${domain}). The PLACEHOLDER_DOMAIN below is a render
-# placeholder, never a real domain in git (CI-gated by
-# tests/unit/test_spoke_values_no_ephemeral.sh).
+# DYNAMIC value (NOT committed): the `<domain>` root in the Grafana Ingress
+# host is account-ephemeral. The ApplicationSet templates it into
+# helm.valuesObject from the spoke cluster Secret's cluster-facts annotations
+# (ADR-0010): grafana.ingress.hosts[0] := grafana.<subdomain>.<domain>. The
+# PLACEHOLDER_DOMAIN below is a render placeholder, never a real domain in git
+# (CI-gated by tests/unit/test_spoke_values_no_ephemeral.sh).
 #
 # Resources kept small — the spoke runs on t3.medium nodes (auto-008 sizing).
 

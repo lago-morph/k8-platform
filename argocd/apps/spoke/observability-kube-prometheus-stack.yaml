@@ -1,53 +1,70 @@
-# ArgoCD Application — kube-prometheus-stack on the platform (spoke) cluster.
-# The CENTRAL observability stack (Prometheus + Grafana + Alertmanager,
-# REQ-OBS-01/03/05). Plain per-service Application (not an ApplicationSet — the
-# phase-6 refactor; see ingress-nginx.yaml header for the auto-008 rationale),
-# targeting the spoke by NAME under the platform-spoke AppProject.
+# ArgoCD ApplicationSet — kube-prometheus-stack on the platform spoke
+# (REQ-OBS-01/03/05, ADR-0010). The CENTRAL observability stack (Prometheus +
+# Grafana + Alertmanager). Replaces the plain
+# spoke-observability-kube-prometheus-stack Application. PLATFORM-ONLY
+# (selector pins short-name=spoke): the central stack lives on the platform
+# services cluster.
 #
-# Multi-source: the upstream chart + this repo's static values
-# (platform-services/observability/kube-prometheus-stack/values.yaml). The
-# account-ephemeral <domain> in the Grafana Ingress host is NOT committed — it is
-# overlaid into helm.valuesObject at registration (grafana.ingress.hosts[0] :=
-# grafana.platform.${domain}) from the spoke cluster-Secret annotation, exactly
-# like ingress-nginx's cert ARN (auto-008 §5). INERT until the spoke is
-# registered.
+# Multi-source: the upstream chart + this repo's static values. The
+# cluster-facts contract (docs/decisions/0010) templates the Grafana ingress
+# host := grafana.<subdomain>.<domain> from the spoke's cluster Secret,
+# overriding the committed render placeholder.
+#
+# INERT until a labeled cluster Secret exists; producer = OI-2026-06-07-1.
 apiVersion: argoproj.io/v1alpha1
-kind: Application
+kind: ApplicationSet
 metadata:
-  name: spoke-observability-kube-prometheus-stack
+  name: observability-kube-prometheus-stack
   namespace: argocd
-  annotations:
-    # After ingress-nginx + ExternalDNS (wave 20) so the Grafana Ingress
-    # resolves immediately. Wave 40 (phase-4 observability band).
-    argocd.argoproj.io/sync-wave: "40"
 spec:
-  project: platform-spoke
-  sources:
-    - repoURL: https://prometheus-community.github.io/helm-charts
-      chart: kube-prometheus-stack
-      targetRevision: 65.8.1
-      helm:
-        valueFiles:
-          - $values/platform-services/observability/kube-prometheus-stack/values.yaml
-        # OVERLAID-AT-REGISTRATION: the live registration step patches
-        # valuesObject with grafana.ingress.hosts[0]=grafana.platform.<domain>.
-        # Kept absent in git (ephemeral).
-    - repoURL: https://github.com/lago-morph/k8-platform.git
-      targetRevision: main
-      ref: values
-  destination:
-    name: platform-spoke
-    namespace: monitoring
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-      - ServerSideApply=true
-    retry:
-      limit: 5
-      backoff:
-        duration: 10s
-        factor: 2
-        maxDuration: 5m
+    preserveResourcesOnDeletion: true
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            k8-platform.io/cluster-role: spoke
+            k8-platform.io/short-name: spoke
+  template:
+    metadata:
+      name: '{{index .metadata.labels "k8-platform.io/short-name"}}-observability-kube-prometheus-stack'
+      annotations:
+        # After ingress-nginx + ExternalDNS (wave 20) so the Grafana Ingress
+        # resolves immediately. Wave 40 (phase-4 observability band).
+        argocd.argoproj.io/sync-wave: "40"
+    spec:
+      project: platform-spoke
+      sources:
+        - repoURL: https://prometheus-community.github.io/helm-charts
+          chart: kube-prometheus-stack
+          targetRevision: 65.8.1
+          helm:
+            valueFiles:
+              - $values/platform-services/observability/kube-prometheus-stack/values.yaml
+            # Cluster-facts contract (ADR-0010): hosts list replaced wholesale.
+            valuesObject:
+              grafana:
+                ingress:
+                  hosts:
+                    - 'grafana.{{index .metadata.annotations "k8-platform.io/subdomain"}}.{{index .metadata.annotations "k8-platform.io/domain"}}'
+        - repoURL: https://github.com/lago-morph/k8-platform.git
+          targetRevision: main
+          ref: values
+      destination:
+        name: '{{.name}}'
+        namespace: monitoring
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 5m

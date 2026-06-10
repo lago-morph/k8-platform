@@ -66,9 +66,13 @@ if [ -z "$WAVE" ] || [ "$WAVE" = "null" ]; then
 else
   pass "db_xr_sync_wave_present ($WAVE)"
 
-  # Keycloak App wave (40) — the DB must come strictly before it.
-  APP_WAVE="$(yq -r '.metadata.annotations."argocd.argoproj.io/sync-wave"' "$APP" 2>/dev/null)"
-  [ -z "$APP_WAVE" ] && APP_WAVE=40
+  # Keycloak App wave (40) — the DB must come strictly before it. The wave
+  # rides the ApplicationSet's TEMPLATE metadata (ADR-0010), with the old
+  # plain-Application path as fallback.
+  APP_WAVE="$(yq -r '.spec.template.metadata.annotations."argocd.argoproj.io/sync-wave"' "$APP" 2>/dev/null)"
+  { [ -z "$APP_WAVE" ] || [ "$APP_WAVE" = "null" ]; } \
+    && APP_WAVE="$(yq -r '.metadata.annotations."argocd.argoproj.io/sync-wave"' "$APP" 2>/dev/null)"
+  { [ -z "$APP_WAVE" ] || [ "$APP_WAVE" = "null" ]; } && APP_WAVE=40
   if [ "$WAVE" -lt "$APP_WAVE" ] 2>/dev/null; then
     pass "db_xr_wave_before_keycloak_app ($WAVE < $APP_WAVE)"
   else

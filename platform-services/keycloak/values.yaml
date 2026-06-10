@@ -10,9 +10,10 @@
 # objects carry NO tls block. Keycloak is reached through the spoke's
 # ingress-nginx at auth.platform.<domain> over HTTPS terminated at the NLB.
 #
-# EPHEMERAL DATA (AGENTS §8.1): the real <domain> is account-ephemeral and is
-# NOT committed. `auth.platform.PLACEHOLDER_DOMAIN` is overlaid at registration
-# time via the Application's helm.valuesObject, the same mechanism the spoke
+# EPHEMERAL DATA: the real <domain> is account-ephemeral and is NOT committed.
+# `auth.platform.PLACEHOLDER_DOMAIN` is a render placeholder overridden by the
+# keycloak ApplicationSet's valuesObject, templated from the spoke cluster
+# Secret's cluster-facts annotations (ADR-0010), the same mechanism the spoke
 # ingress/hello apps use. CI-gated by tests/unit/test_spoke_values_no_ephemeral.sh.
 #
 # DATABASE (separate brief — NOT decided here): this file assumes an EXTERNAL
@@ -50,12 +51,13 @@ auth:
 ## Composition never writes). Contract pinned by
 ## tests/unit/test_keycloak_db_secret_contract.sh.
 ##
-## host/port are NON-secret topology and stay as a PLACEHOLDER overlay: the
-## Bitnami keycloak chart has no existingSecret host/port key, so they cannot be
-## sourced from the connection Secret. They are overlaid at registration time
-## from the XR's status.endpoint / status.port (the RDS instance address/port
-## the Composition surfaces via its ToCompositeFieldPath patches) via the
-## Application's helm.valuesObject, the same mechanism as the spoke ingress/host.
+## host/port are NON-secret topology and stay as PLACEHOLDERs: the Bitnami
+## keycloak chart has no existingSecret host/port key, so they cannot be
+## sourced from the connection Secret. They are deliberately OUT of the
+## cluster-facts contract (ADR-0010 — they are XDatabase topology, not cluster
+## facts) and are the one remaining ephemeral-value gap: ADR-0010 PR-2 wires
+## them durably (extraEnvVarsSecret env override from an ESO-materialized
+## secret, or a recorded contract extension — PR-2 decides and records which).
 postgresql:
   enabled: false
 externalDatabase:
@@ -68,7 +70,8 @@ externalDatabase:
 
 ## Ingress at auth.platform.<domain> via the spoke's nginx. No tls: block — the
 ## NLB terminates TLS with the wildcard ACM cert (REQ-AUTH-06). hostname is a
-## placeholder overlaid at registration (ephemeral domain).
+## render placeholder overridden by the ApplicationSet's templated
+## auth.<subdomain>.<domain> (ADR-0010).
 ingress:
   enabled: true
   ingressClassName: nginx

@@ -53,7 +53,7 @@ A live hand-fix is **NOT** evidence. It validates the *mechanism*, never the *ar
 | 1 | EKS service-linked-role `iam:GetRole` (zero-node spoke) | PR #213 (committed `irsa.tf`) | **RETRACTED.** The earlier "VALIDATED" was a **selective nodegroup recreate inside an environment the agent had hand-modified all night** — a poke certified as a clean build (see `retrospective/2026-06-09-214-a.md`). It proves nothing. **No clean-build evidence exists.** | **pending clean-build verification** (the only valid proof is a from-scratch bring-up from committed source in an uncompromised environment) |
 | 2 | Hub→spoke EKS-API SG 443 (OI-2026-06-07-4) | **not built** (live `authorize-sg-ingress` only) | — | **blocker — durable fix not built** |
 | 3 | Shared ELB subnet tags (OI-2026-06-07-3) | **not built** (live `create-tags` only) | — | **blocker — durable fix not built** |
-| 4 | Placeholder overlays vs bootstrap selfHeal (OI-2026-06-07-2, ADR-0005 cluster-facts ConfigMap) | **not built** — THE keystone; blocks hello | — | **blocker — durable fix not built** |
+| 4 | Placeholder overlays vs bootstrap selfHeal (OI-2026-06-07-2, **ADR-0010** cluster-facts via cluster-Secret annotations + ApplicationSets — supersedes ADR-0005's ConfigMap corollary) | consumer half COMMITTED (the spoke apps are ApplicationSets templating the five-fact contract; no hand-overlay surface remains). Producer half = row 5 (the labeled registration Secret). | — (needs the row-5 producer, then the clean build) | **pending clean-build verification** — blocked on row 5 |
 | 5 | Spoke ArgoCD cluster-Secret durable form (OI-2026-06-07-1) | **not built** (live REST/kubectl bootstrap only) | — | **blocker — durable fix not built** |
 | 6 | RDS narrowing safe on the CREATE path (#211) | PR #211 (committed) | — (DB pre-existed; only ongoing-reconcile seen) | **pending clean-build verification** |
 | 7 | EC2 narrowing safe on the CREATE path (#212) | PR #212 (committed) | — (never applied live) | **pending clean-build verification** |
@@ -67,9 +67,9 @@ run ID.
 
 ## The order of operations to actually finish (no test work until this is green)
 
-1. Build the four missing durable fixes (#2–#5). #4 (the cluster-facts ConfigMap) is
-   the keystone — it has been "decided" since 2026-06-07 and never built, and it is
-   what blocks hello today.
+1. Build the four missing durable fixes (#2–#5). #4 (cluster facts, ADR-0010) is
+   the keystone — its consumer half is committed; #5 (the labeled registration
+   Secret, ADR-0010 PR-2) is now what blocks hello.
 2. Put #213 + #211 + #212 + #2–#5 on one integration branch.
 3. **Tear down to a clean state (or take a fresh account) and rebuild from that branch
    with ZERO manual steps.** This is the part that has never been done. The point of a

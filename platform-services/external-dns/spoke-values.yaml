@@ -13,17 +13,24 @@
 # disjoint and the txtOwnerIds differ — it GATES this file against the hub's
 # terraform/management/helm.tf config (auto-008 S3).
 #
-# DYNAMIC values (AGENTS §8.1, NOT committed): the `<domain>` root and the IRSA
-# role ARN (eks.amazonaws.com/role-arn) are account-ephemeral. They are overlaid
-# by the ArgoCD Application (argocd/apps/spoke/external-dns.yaml) via
-# valuesObject — domainFilters[0] := platform.${domain} and the SA role-arn from
-# the spoke external-dns IAM role (created by the XSpokeAccess Composition). The
-# placeholders below are overridden at sync time.
+# Renamed values.yaml → spoke-values.yaml (ADR-0010): the external-dns
+# ApplicationSet selects the per-cluster file by the short-name label
+# (<short-name>-values.yaml), so the platform spoke's file carries its
+# short-name prefix like workload1's does.
+#
+# DYNAMIC values (never committed): the `<domain>` root, the IRSA role ARN
+# (eks.amazonaws.com/role-arn) and the region are account-ephemeral. The
+# ApplicationSet (argocd/apps/spoke/external-dns.yaml) templates them into
+# valuesObject from the spoke cluster Secret's cluster-facts annotations
+# (ADR-0010) — domainFilters[0] := <subdomain>.<domain>, the SA role-arn from
+# XSpokeAccess status, env AWS_REGION from the region fact. The placeholders
+# below are render placeholders overridden at sync time.
 provider:
   name: aws
 policy: upsert-only
-# Spoke-only subdomain. domainFilters[0] is overlaid with platform.<domain> at
-# sync time; this literal is a render placeholder, never a real domain in git.
+# Spoke-only subdomain. domainFilters[0] is templated to platform.<domain> by
+# the ApplicationSet at sync time; this literal is a render placeholder, never
+# a real domain in git.
 domainFilters:
   - "platform.PLACEHOLDER_DOMAIN"
 # Distinct owner id + prefix so the spoke's TXT registry never collides with the
@@ -48,7 +55,7 @@ serviceAccount:
   # AssumeRoleWithWebIdentity is denied so external-dns publishes NO records.
   name: external-dns
   annotations:
-    # Overlaid by the Application's valuesObject (spoke external-dns IRSA role):
+    # Templated by the ApplicationSet (spoke external-dns IRSA role, ADR-0010):
     eks.amazonaws.com/role-arn: "PLACEHOLDER_OVERRIDDEN_BY_APPLICATION"
 env:
   - name: AWS_REGION

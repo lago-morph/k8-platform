@@ -14,14 +14,15 @@
 #
 # tests/unit/test_workload1_apps.sh asserts this file's filter/owner/prefix are
 # disjoint from both the hub (terraform/management/helm.tf) and the platform
-# spoke (platform-services/external-dns/values.yaml).
+# spoke (platform-services/external-dns/spoke-values.yaml).
 #
-# DYNAMIC values (AGENTS §8.1, NOT committed): the `<domain>` root and the IRSA
-# role ARN (eks.amazonaws.com/role-arn) are account-ephemeral. They are overlaid
-# by the ArgoCD Application (argocd/apps/spoke/workload1-external-dns.yaml) via
-# valuesObject — domainFilters[0] := workload1.${domain} and the SA role-arn from
-# the workload1 external-dns IAM role (created by the XSpokeAccess Composition).
-# The placeholders below are overridden at sync time.
+# DYNAMIC values (never committed): the `<domain>` root, the IRSA role ARN
+# (eks.amazonaws.com/role-arn) and the region are account-ephemeral. The
+# shared external-dns ApplicationSet (argocd/apps/spoke/external-dns.yaml)
+# selects this file by the workload1 Secret's short-name label and templates
+# the ephemeral values into valuesObject from that Secret's cluster-facts
+# annotations (ADR-0010). The placeholders below are render placeholders
+# overridden at sync time.
 provider:
   name: aws
 policy: upsert-only
@@ -36,9 +37,23 @@ txtOwnerId: "k8-platform-workload1"
 txtPrefix: "_edns-workload1-."
 sources:
   - ingress
+# The domainFilter (workload1.<domain>) is a SUBDOMAIN of the account's only
+# hosted zone, so external-dns must manage subdomain records inside the PARENT
+# zone — same root cause as the hub instance (run 27071670054) and the same
+# fix the platform spoke carries. This was MISSING here (latent drift caught
+# by the ADR-0010 conversion review): without it workload1's external-dns
+# matches zero zones and publishes nothing.
+extraArgs:
+  - "--aws-zone-match-parent"
 serviceAccount:
+  # Pin the SA NAME to `external-dns` (auto-012). The XSpokeAccess IRSA trust
+  # policy hardcodes system:serviceaccount:external-dns:external-dns; without
+  # the pin the chart names the SA after the release, the sub claim
+  # mismatches, and AssumeRoleWithWebIdentity is denied. This was MISSING here
+  # (same latent drift as above).
+  name: external-dns
   annotations:
-    # Overlaid by the Application's valuesObject (workload1 external-dns IRSA role):
+    # Templated by the ApplicationSet (workload1 external-dns IRSA role, ADR-0010):
     eks.amazonaws.com/role-arn: "PLACEHOLDER_OVERRIDDEN_BY_APPLICATION"
 env:
   - name: AWS_REGION

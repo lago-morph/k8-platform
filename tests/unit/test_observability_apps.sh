@@ -32,37 +32,43 @@ OBS_APPS=(
 # the array would make §1 vacuously pass).
 [ "${#OBS_APPS[@]}" -eq 2 ] || { echo "FAIL: OBS_APPS must list exactly the 2 spoke obs apps"; FAIL=1; }
 
-# ── 1. spoke-app contract (mirrors test_spoke_apps.sh) ──────────────────────
+# ── 1. spoke ApplicationSet contract (ADR-0010; mirrors test_spoke_apps.sh) ──
+# The central stack is PLATFORM-ONLY: generators pin short-name=spoke in
+# addition to cluster-role=spoke (workload spokes get no Prometheus/Loki).
 for app in "${OBS_APPS[@]}"; do
   base="$(basename "$app")"
   [ -f "$app" ] || { echo "FAIL[$base]: missing"; FAIL=1; continue; }
 
   kind="$(yq -r '.kind' "$app")"
-  [ "$kind" = "Application" ] || { echo "FAIL[$base]: kind=$kind, want Application"; FAIL=1; }
+  [ "$kind" = "ApplicationSet" ] || { echo "FAIL[$base]: kind=$kind, want ApplicationSet (ADR-0010)"; FAIL=1; }
 
-  proj="$(yq -r '.spec.project' "$app")"
-  [ "$proj" = "platform-spoke" ] && echo "ok[$base]: project=platform-spoke" \
-    || { echo "FAIL[$base]: project=$proj, want platform-spoke"; FAIL=1; }
+  pin="$(yq -r '.spec.generators[0].clusters.selector.matchLabels."k8-platform.io/short-name"' "$app")"
+  [ "$pin" = "spoke" ] && echo "ok[$base]: generator pinned to the platform spoke" \
+    || { echo "FAIL[$base]: central obs stack must pin short-name=spoke (got $pin)"; FAIL=1; }
 
-  # destination by NAME (spoke), never the hub server.
-  dname="$(yq -r '.spec.destination.name' "$app")"
-  dserver="$(yq -r '.spec.destination.server' "$app")"
-  { [ "$dname" != "null" ] && [ -n "$dname" ]; } && echo "ok[$base]: destination.name=$dname" \
-    || { echo "FAIL[$base]: destination.name must be set (spoke by name)"; FAIL=1; }
+  proj="$(yq -r '.spec.template.spec.project' "$app")"
+  [ "$proj" = "platform-spoke" ] && echo "ok[$base]: template project=platform-spoke" \
+    || { echo "FAIL[$base]: template project=$proj, want platform-spoke"; FAIL=1; }
+
+  # destination by generated NAME (spoke), never the hub server.
+  dname="$(yq -r '.spec.template.spec.destination.name' "$app")"
+  dserver="$(yq -r '.spec.template.spec.destination.server' "$app")"
+  [ "$dname" = '{{.name}}' ] && echo "ok[$base]: template destination.name={{.name}}" \
+    || { echo "FAIL[$base]: template destination.name must be '{{.name}}' (got $dname)"; FAIL=1; }
   [ "$dserver" = "null" ] || { echo "FAIL[$base]: destination.server set ($dserver) — spokes are by name"; FAIL=1; }
 
   # multi-source: an upstream chart + this repo's values ref.
-  nsrc="$(yq -r '.spec.sources | length' "$app")"
+  nsrc="$(yq -r '.spec.template.spec.sources | length' "$app")"
   [ "$nsrc" = "2" ] && echo "ok[$base]: multi-source (chart + values ref)" \
     || { echo "FAIL[$base]: expected 2 sources (chart + \$values), got $nsrc"; FAIL=1; }
-  if yq -e '.spec.sources[] | select(.ref == "values")' "$app" >/dev/null 2>&1; then
+  if yq -e '.spec.template.spec.sources[] | select(.ref == "values")' "$app" >/dev/null 2>&1; then
     echo "ok[$base]: has a \$values ref source"
   else
     echo "FAIL[$base]: missing the ref: values source"; FAIL=1
   fi
 
   # every source targetRevision pinned (not HEAD/empty).
-  revs="$(yq -r '[.spec.sources[]?.targetRevision] | .[] | select(. != null)' "$app")"
+  revs="$(yq -r '[.spec.template.spec.sources[]?.targetRevision] | .[] | select(. != null)' "$app")"
   [ -n "$revs" ] || { echo "FAIL[$base]: no targetRevision found"; FAIL=1; }
   while IFS= read -r r; do
     [ -z "$r" ] && continue
@@ -72,15 +78,15 @@ for app in "${OBS_APPS[@]}"; do
   done <<< "$revs"
   echo "ok[$base]: all source targetRevisions pinned"
 
-  prune="$(yq -r '.spec.syncPolicy.automated.prune' "$app")"
-  sh="$(yq -r '.spec.syncPolicy.automated.selfHeal' "$app")"
+  prune="$(yq -r '.spec.template.spec.syncPolicy.automated.prune' "$app")"
+  sh="$(yq -r '.spec.template.spec.syncPolicy.automated.selfHeal' "$app")"
   { [ "$prune" = "true" ] && [ "$sh" = "true" ]; } && echo "ok[$base]: automated prune+selfHeal" \
     || { echo "FAIL[$base]: need automated prune+selfHeal (prune=$prune selfHeal=$sh)"; FAIL=1; }
 
   # sync-wave 40 — observability band, after ingress/dns wave 20.
-  wave="$(yq -r '.metadata.annotations."argocd.argoproj.io/sync-wave"' "$app")"
-  [ "$wave" = "40" ] && echo "ok[$base]: sync-wave=40 (after ingress/dns)" \
-    || { echo "FAIL[$base]: sync-wave=$wave, want 40 (after ingress/dns wave 20)"; FAIL=1; }
+  wave="$(yq -r '.spec.template.metadata.annotations."argocd.argoproj.io/sync-wave"' "$app")"
+  [ "$wave" = "40" ] && echo "ok[$base]: template sync-wave=40 (after ingress/dns)" \
+    || { echo "FAIL[$base]: template sync-wave=$wave, want 40 (after ingress/dns wave 20)"; FAIL=1; }
 done
 
 # ── 2. values files carry the REQ-OBS knobs ─────────────────────────────────
@@ -138,22 +144,35 @@ if [ -f "$ALLOY" ]; then
   else
     echo "FAIL[alloy]: Alloy must remote_write metrics + push logs to the spoke (REQ-OBS-02)"; FAIL=1
   fi
-  # AGENTS §8.1: the spoke endpoints are account-ephemeral and overlaid at
-  # registration — every `url =` in the Alloy river config MUST be a PLACEHOLDER_
-  # token, never a real http(s) literal committed to git. test_spoke_values_no_ephemeral
-  # only bans ARNs/domains/account-ids, so this is the gate that catches a real
+  # The spoke endpoints are account-ephemeral — every `url =` in the Alloy
+  # river config MUST be a sys.env() lookup (ADR-0010: the ApplicationSet
+  # injects the real URLs as alloy.extraEnv), never a real http(s) literal
+  # committed to git. test_spoke_values_no_ephemeral only bans
+  # ARNs/domains/account-ids, so this is the gate that catches a real
   # remote_write/loki URL being baked in.
   bad_urls="$(grep -nE 'url[[:space:]]*=[[:space:]]*"https?://' "$ALLOY" || true)"
   if [ -n "$bad_urls" ]; then
-    echo "FAIL[alloy]: river config has a literal http(s) url (must be PLACEHOLDER_, overlaid at registration):"; echo "$bad_urls"; FAIL=1
+    echo "FAIL[alloy]: river config has a literal http(s) url (must be sys.env(), injected by the ApplicationSet):"; echo "$bad_urls"; FAIL=1
   else
-    echo "ok[alloy]: all river-config urls are PLACEHOLDER_ tokens (no baked endpoint)"
+    echo "ok[alloy]: no baked endpoint urls in the river config"
   fi
-  if grep -qE 'url[[:space:]]*=[[:space:]]*"PLACEHOLDER_SPOKE_PROMETHEUS_REMOTE_WRITE_URL"' "$ALLOY" \
-     && grep -qE 'url[[:space:]]*=[[:space:]]*"PLACEHOLDER_SPOKE_LOKI_PUSH_URL"' "$ALLOY"; then
-    echo "ok[alloy]: both spoke endpoint placeholders present"
+  if grep -qE 'url[[:space:]]*=[[:space:]]*sys\.env\("SPOKE_PROMETHEUS_REMOTE_WRITE_URL"\)' "$ALLOY" \
+     && grep -qE 'url[[:space:]]*=[[:space:]]*sys\.env\("SPOKE_LOKI_PUSH_URL"\)' "$ALLOY"; then
+    echo "ok[alloy]: both spoke endpoints read via sys.env()"
   else
-    echo "FAIL[alloy]: expected PLACEHOLDER_SPOKE_PROMETHEUS_REMOTE_WRITE_URL + PLACEHOLDER_SPOKE_LOKI_PUSH_URL"; FAIL=1
+    echo "FAIL[alloy]: expected sys.env(\"SPOKE_PROMETHEUS_REMOTE_WRITE_URL\") + sys.env(\"SPOKE_LOKI_PUSH_URL\") urls"; FAIL=1
+  fi
+  # Cross-file contract: the ApplicationSet must inject exactly those env vars
+  # (a rename on either side silently breaks telemetry shipping).
+  AAPP="$SPOKE_DIR/observability-alloy-mgmt.yaml"
+  if [ -f "$AAPP" ]; then
+    envnames="$(yq -r '.spec.template.spec.sources[]? | select(.chart != null) | .helm.valuesObject.alloy.extraEnv[].name' "$AAPP" 2>/dev/null)"
+    if echo "$envnames" | grep -q '^SPOKE_PROMETHEUS_REMOTE_WRITE_URL$' \
+       && echo "$envnames" | grep -q '^SPOKE_LOKI_PUSH_URL$'; then
+      echo "ok[alloy]: ApplicationSet injects both endpoint env vars (extraEnv)"
+    else
+      echo "FAIL[alloy]: ApplicationSet must inject SPOKE_PROMETHEUS_REMOTE_WRITE_URL + SPOKE_LOKI_PUSH_URL via alloy.extraEnv (got: $envnames)"; FAIL=1
+    fi
   fi
 else
   echo "FAIL: $ALLOY missing"; FAIL=1
@@ -175,25 +194,33 @@ HUB_PROJ="$ROOT/argocd/projects/hub-addons.yaml"
 
 if [ -f "$ALLOY_APP" ]; then
   base="$(basename "$ALLOY_APP")"
-  [ "$(yq -r '.kind' "$ALLOY_APP")" = "Application" ] && echo "ok[$base]: kind Application" \
-    || { echo "FAIL[$base]: kind must be Application"; FAIL=1; }
+  [ "$(yq -r '.kind' "$ALLOY_APP")" = "ApplicationSet" ] && echo "ok[$base]: kind ApplicationSet (ADR-0010)" \
+    || { echo "FAIL[$base]: kind must be ApplicationSet"; FAIL=1; }
+
+  # 3a-bis. The generator reads the PLATFORM SPOKE's Secret (for the domain
+  # facts) even though the app deploys to the hub — the deliberate ADR-0010
+  # exception (reverses auto-008 F1; the template hard-codes the destination).
+  apin="$(yq -r '.spec.generators[0].clusters.selector.matchLabels."k8-platform.io/short-name"' "$ALLOY_APP")"
+  [ "$apin" = "spoke" ] && echo "ok[$base]: generator selects the platform spoke Secret (facts source)" \
+    || { echo "FAIL[$base]: generator must pin short-name=spoke (got $apin)"; FAIL=1; }
 
   # 3b. project is hub-addons EXACTLY — explicitly not the spoke / locked projects.
-  aproj="$(yq -r '.spec.project' "$ALLOY_APP")"
+  aproj="$(yq -r '.spec.template.spec.project' "$ALLOY_APP")"
   case "$aproj" in
-    hub-addons) echo "ok[$base]: project=hub-addons" ;;
+    hub-addons) echo "ok[$base]: template project=hub-addons" ;;
     platform-spoke|k8-platform) echo "FAIL[$base]: project=$aproj — the hub agent must use hub-addons, not $aproj"; FAIL=1 ;;
     *) echo "FAIL[$base]: project=$aproj, want hub-addons"; FAIL=1 ;;
   esac
 
-  # 3c. HUB destination by SERVER, never by name (inverse of the spoke contract).
-  [ "$(yq -r '.spec.destination.server' "$ALLOY_APP")" = "https://kubernetes.default.svc" ] \
-    && echo "ok[$base]: destination.server is the hub in-cluster" \
-    || { echo "FAIL[$base]: destination.server must be https://kubernetes.default.svc"; FAIL=1; }
-  [ "$(yq -r '.spec.destination.name' "$ALLOY_APP")" = "null" ] \
+  # 3c. HUB destination by SERVER, never by name (inverse of the spoke
+  # contract) — and HARD-CODED, never the generated {{.name}}/{{.server}}.
+  [ "$(yq -r '.spec.template.spec.destination.server' "$ALLOY_APP")" = "https://kubernetes.default.svc" ] \
+    && echo "ok[$base]: template destination.server is the hub in-cluster (hard-coded)" \
+    || { echo "FAIL[$base]: template destination.server must be https://kubernetes.default.svc"; FAIL=1; }
+  [ "$(yq -r '.spec.template.spec.destination.name' "$ALLOY_APP")" = "null" ] \
     && echo "ok[$base]: no destination.name (hub is by server)" \
     || { echo "FAIL[$base]: hub app must not set destination.name"; FAIL=1; }
-  ans="$(yq -r '.spec.destination.namespace' "$ALLOY_APP")"
+  ans="$(yq -r '.spec.template.spec.destination.namespace' "$ALLOY_APP")"
   [ "$ans" = "monitoring-agent" ] && echo "ok[$base]: namespace monitoring-agent" \
     || { echo "FAIL[$base]: destination.namespace must be monitoring-agent, got $ans"; FAIL=1; }
   # cross-file: the app's namespace must be allowed by the hub-addons project.
@@ -205,19 +232,19 @@ if [ -f "$ALLOY_APP" ]; then
 
   # 3d. multi-source: pinned alloy chart 0.12.6 + a $values ref to this repo, and
   #     both source repos must be members of the hub-addons project sourceRepos.
-  nsrc="$(yq -r '.spec.sources | length' "$ALLOY_APP")"
+  nsrc="$(yq -r '.spec.template.spec.sources | length' "$ALLOY_APP")"
   [ "$nsrc" = "2" ] && echo "ok[$base]: multi-source (chart + \$values)" \
     || { echo "FAIL[$base]: expected 2 sources, got $nsrc"; FAIL=1; }
-  chart_rev="$(yq -r '.spec.sources[] | select(.chart=="alloy") | .targetRevision' "$ALLOY_APP")"
+  chart_rev="$(yq -r '.spec.template.spec.sources[] | select(.chart=="alloy") | .targetRevision' "$ALLOY_APP")"
   [ "$chart_rev" = "0.12.6" ] && echo "ok[$base]: alloy chart pinned 0.12.6" \
     || { echo "FAIL[$base]: alloy chart targetRevision must be 0.12.6, got $chart_rev"; FAIL=1; }
-  if yq -e '.spec.sources[] | select(.ref == "values")' "$ALLOY_APP" >/dev/null 2>&1; then
+  if yq -e '.spec.template.spec.sources[] | select(.ref == "values")' "$ALLOY_APP" >/dev/null 2>&1; then
     echo "ok[$base]: has a \$values ref source"
   else
     echo "FAIL[$base]: missing the ref: values source"; FAIL=1
   fi
   # valueFiles must point at the committed alloy values (a typo renders empty config).
-  if yq -e '.spec.sources[] | select(.helm.valueFiles[]? == "$values/platform-services/observability/alloy/values.yaml")' "$ALLOY_APP" >/dev/null 2>&1; then
+  if yq -e '.spec.template.spec.sources[] | select(.helm.valueFiles[]? == "$values/platform-services/observability/alloy/values.yaml")' "$ALLOY_APP" >/dev/null 2>&1; then
     echo "ok[$base]: references the committed alloy values file"
   else
     echo "FAIL[$base]: must reference \$values/platform-services/observability/alloy/values.yaml"; FAIL=1
@@ -230,15 +257,15 @@ if [ -f "$ALLOY_APP" ]; then
       else
         echo "FAIL[$base]: source repo $srepo not in hub-addons sourceRepos (sync rejected)"; FAIL=1
       fi
-    done <<< "$(yq -r '.spec.sources[].repoURL' "$ALLOY_APP")"
+    done <<< "$(yq -r '.spec.template.spec.sources[].repoURL' "$ALLOY_APP")"
   fi
 
   # 3e. automated prune+selfHeal + sync-wave 40, and project reconciles first.
-  { [ "$(yq -r '.spec.syncPolicy.automated.prune' "$ALLOY_APP")" = "true" ] \
-    && [ "$(yq -r '.spec.syncPolicy.automated.selfHeal' "$ALLOY_APP")" = "true" ]; } \
+  { [ "$(yq -r '.spec.template.spec.syncPolicy.automated.prune' "$ALLOY_APP")" = "true" ] \
+    && [ "$(yq -r '.spec.template.spec.syncPolicy.automated.selfHeal' "$ALLOY_APP")" = "true" ]; } \
     && echo "ok[$base]: automated prune+selfHeal" \
     || { echo "FAIL[$base]: hub agent needs automated prune+selfHeal"; FAIL=1; }
-  awave="$(yq -r '.metadata.annotations."argocd.argoproj.io/sync-wave"' "$ALLOY_APP")"
+  awave="$(yq -r '.spec.template.metadata.annotations."argocd.argoproj.io/sync-wave"' "$ALLOY_APP")"
   [ "$awave" = "40" ] && echo "ok[$base]: sync-wave=40 (obs band)" \
     || { echo "FAIL[$base]: sync-wave=$awave, want 40"; FAIL=1; }
   if [ -f "$HUB_PROJ" ]; then
@@ -258,7 +285,7 @@ fi
 # Degrades to a yq structural check when chart-repo egress is unavailable.
 if command -v helm >/dev/null 2>&1 && [ -f "$KPS" ]; then
   TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
-  KPS_VER="$(yq -r '.spec.sources[] | select(.chart=="kube-prometheus-stack") | .targetRevision' \
+  KPS_VER="$(yq -r '.spec.template.spec.sources[] | select(.chart=="kube-prometheus-stack") | .targetRevision' \
     "$SPOKE_DIR/observability-kube-prometheus-stack.yaml")"
   if helm template kps kube-prometheus-stack \
         --repo https://prometheus-community.github.io/helm-charts \

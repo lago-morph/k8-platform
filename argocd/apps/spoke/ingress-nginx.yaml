@@ -1,56 +1,78 @@
-# ArgoCD Application — ingress-nginx on the platform (spoke) cluster.
+# ArgoCD ApplicationSet — ingress-nginx on every spoke cluster (ADR-0010).
 #
-# auto-008 decision: PLAIN per-service Application (not an ApplicationSet — only
-# one spoke exists in phase 3; the ApplicationSet refactor lands in phase 6 when
-# the workload cluster makes fan-out real). Targets the spoke by NAME
-# (destination.name: platform-spoke — the ArgoCD cluster Secret created at
-# registration), under the platform-spoke AppProject.
+# Replaces the per-spoke plain Applications (spoke-ingress-nginx +
+# workload1-ingress-nginx) that carried registration-time overlay placeholders:
+# the cluster generator selects every registered spoke's ArgoCD cluster Secret
+# (label k8-platform.io/cluster-role: spoke) and templates the account-ephemeral
+# cert ARN from that Secret's k8-platform.io/* annotations (the cluster-facts
+# contract, docs/decisions/0010). Nothing account-specific is committed and
+# nothing is hand-overlaid — bootstrap selfHeal has nothing to fight.
 #
-# Multi-source: the upstream chart + this repo's static values
-# (platform-services/ingress/values.yaml). The account-ephemeral cert ARN
-# (aws-load-balancer-ssl-cert) is NOT committed — it is overlaid into
-# `helm.valuesObject` at registration time from the spoke cluster-Secret
-# annotation `k8-platform.io/certificate-arn` (auto-008 §5). Until the spoke is
-# registered this Application has no destination and is inert.
+# INERT until a labeled cluster Secret exists (empty generator → zero apps),
+# exactly as the per-app files were inert before registration. The producer of
+# the labeled Secret is OI-2026-06-07-1 (SUBSTRATE row 5, PR-2 of ADR-0010).
 #
-# INERT UNTIL the live spoke registration step replaces the
-# OVERLAID-AT-REGISTRATION placeholder below — see decisions/auto-008 "Build
-# split: live-coupled".
+# goTemplate + missingkey=error: a registration Secret missing a contract
+# annotation fails generation loudly instead of rendering an empty value.
+# preserveResourcesOnDeletion: a deleted/relabeled Secret must not cascade-
+# delete live spoke workloads.
 apiVersion: argoproj.io/v1alpha1
-kind: Application
+kind: ApplicationSet
 metadata:
-  name: spoke-ingress-nginx
+  name: ingress-nginx
   namespace: argocd
-  annotations:
-    # After the cluster + spoke registration (wave 10) but before hello (wave 30).
-    argocd.argoproj.io/sync-wave: "20"
 spec:
-  project: platform-spoke
-  sources:
-    - repoURL: https://kubernetes.github.io/ingress-nginx
-      chart: ingress-nginx
-      targetRevision: 4.10.0
-      helm:
-        valueFiles:
-          - $values/platform-services/ingress/values.yaml
-        # OVERLAID-AT-REGISTRATION: the live registration step patches
-        # valuesObject with the real cert ARN. Kept absent in git (ephemeral).
-    - repoURL: https://github.com/lago-morph/k8-platform.git
-      targetRevision: main
-      ref: values
-  destination:
-    name: platform-spoke
-    namespace: ingress-nginx
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-      - ServerSideApply=true
-    retry:
-      limit: 5
-      backoff:
-        duration: 10s
-        factor: 2
-        maxDuration: 5m
+    preserveResourcesOnDeletion: true
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            k8-platform.io/cluster-role: spoke
+  template:
+    metadata:
+      name: '{{index .metadata.labels "k8-platform.io/short-name"}}-ingress-nginx'
+      annotations:
+        # After the cluster + spoke registration (wave 10) but before hello
+        # (wave 30). Waves ride the GENERATED Application so bootstrap-relative
+        # ordering is preserved (ADR-0010).
+        argocd.argoproj.io/sync-wave: "20"
+    spec:
+      project: platform-spoke
+      sources:
+        - repoURL: https://kubernetes.github.io/ingress-nginx
+          chart: ingress-nginx
+          targetRevision: 4.10.0
+          helm:
+            valueFiles:
+              - $values/platform-services/ingress/values.yaml
+            # Cluster-facts contract (ADR-0010): the NLB cert ARN comes from
+            # this spoke's own wildcard ACM cert via the cluster Secret.
+            valuesObject:
+              controller:
+                service:
+                  annotations:
+                    service.beta.kubernetes.io/aws-load-balancer-ssl-cert: '{{index .metadata.annotations "k8-platform.io/certificate-arn"}}'
+        - repoURL: https://github.com/lago-morph/k8-platform.git
+          targetRevision: main
+          ref: values
+      destination:
+        # The matched cluster Secret's NAME (e.g. platform-spoke) — distinct
+        # from the short-name label used for the Application name above.
+        name: '{{.name}}'
+        namespace: ingress-nginx
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 5m
