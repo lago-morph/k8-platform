@@ -56,6 +56,15 @@ assert_contains "IAMOIDCProviders scoped to oidc-provider/*" 'oidc-provider/*' "
 assert_eq "IAMOIDCProviders is NOT a bare wildcard" "false" \
   "$(printf '%s' "$OIDC_RES" | grep -Eq 'Resource[[:space:]]*=[[:space:]]*"\*"' && echo true || echo false)"
 
+# auto-016 — the EKS service-linked-role escape hatch (iam:GetRole +
+# CreateServiceLinkedRole) must stay scoped to the SLR path, NOT re-widened to
+# role/* or "*" (that would re-grant GetRole on every role, undoing auto-015).
+SLR_RES="$(resource_for_sid EKSServiceLinkedRoles)"
+assert_contains "EKSServiceLinkedRoles scoped to the EKS SLR path" 'role/aws-service-role/eks' "$SLR_RES"
+assert_eq "EKSServiceLinkedRoles is NOT a bare wildcard" "false" \
+  "$(printf '%s' "$SLR_RES" | grep -Eq 'Resource[[:space:]]*=[[:space:]]*"\*"' && echo true || echo false)"
+assert_eq "EKSServiceLinkedRoles statement present" "true" "$([ -n "$SLR_RES" ] && echo true || echo false)"
+
 # (2) the deliberately-broad statements must STAY "*" (catches a premature
 # over-narrow that would silently break the next bring-up). EKS/ACM are opaque
 # ARNs; EC2VpcScoped/EC2Unconditioned keep Resource:"*" (the EC2 narrowing is in
