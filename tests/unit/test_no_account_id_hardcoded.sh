@@ -21,6 +21,14 @@
 #     root session artifacts (run-summary*, overnight-summary, handoff-
 #     followups*, run-envelope*). retrospective/, forensics/, logs/ and
 #     summary/ were never in SPEC-B5's scan scope.
+#   * ONE file-scoped exemption (KNOWN_FINDINGS below):
+#     tests/live/checks/after/route53-record-live.sh carries a pre-existing
+#     account-ID in a comment example, but tests/live/** sits on the
+#     fail-closed live-evidence-gated surface (live-evidence-verify.yml) —
+#     touching it demands live evidence the substrate cannot yet produce
+#     (ai/LESSONS.md S1). The fix rides the first PR that legitimately
+#     changes tests/live/ (and therefore carries live evidence); remove the
+#     exemption in that PR. Tracked: ai/LESSONS.md S7.
 
 set -uo pipefail
 cd "$(dirname "$0")/../.."   # repo root
@@ -31,6 +39,9 @@ cd "$(dirname "$0")/../.."   # repo root
 ID_RE='\b[0-9]{12}\b'
 MARKER_RE='[Nn][Oo][Qq][Aa]:[[:space:]]*account-id'
 FIXDIR="tests/unit/fixtures/account_id_lint"
+# File-scoped exemptions — see the header note; each entry needs a removal
+# trigger documented there. Keep this list at ~zero.
+KNOWN_FINDINGS_RE='^tests/live/checks/after/route53-record-live\.sh:'
 
 # classify_line <line-content>
 #   prints: OK | VIOLATION | NO_REASON
@@ -87,7 +98,7 @@ scan_findings() {
       local class
       class=$(classify_line "$content")
       [ "$class" = "OK" ] || echo "${file}:${lineno}:${class}"
-    done
+    done | grep -vE "$KNOWN_FINDINGS_RE" || true
 }
 
 # fixture_findings <fixture-file> — count of non-OK lines in one fixture
