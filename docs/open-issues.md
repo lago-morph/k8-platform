@@ -18,7 +18,7 @@ is the sequence number for that date.
 | ID | One-line | Note |
 |----|----------|------|
 | OI-2026-06-07-2 | placeholder overlays fought by bootstrap selfHeal | consumer half IMPLEMENTED 2026-06-10 (**ADR-0010**: spoke apps → ApplicationSets templating cluster-Secret fact annotations; supersedes ADR-0005's ConfigMap corollary). Remaining: the producer (labeled registration Secret = OI-2026-06-07-1) + clean-build evidence |
-| OI-2026-06-07-1 | spoke ArgoCD cluster Secret has no GitOps form | open; hand-bootstrapped live again in auto-016 |
+| OI-2026-06-07-1 | spoke ArgoCD cluster Secret has no GitOps form | durable producer BUILT 2026-06-10 (ADR-0010 PR-2: provider-kubernetes Objects in the xspokeaccess Composition) — `pending clean-build verification` |
 | OI-2026-06-07-3 | shared-VPC ELB subnet tags | **RECURRED auto-016** (NLB couldn't place) — live-fixed; durable base-terraform fix owed |
 | OI-2026-06-07-4 | hub→spoke EKS-API SG rule | **RECURRED auto-016** (ArgoCD→spoke 443 timeout) — live-fixed; durable Composition fix owed |
 | OI-2026-06-07-5 | cross-cluster Keycloak DB secret | open; Keycloak not yet booted against RDS |
@@ -108,8 +108,9 @@ provider + Roles + RolePolicy + AccessEntries + AccessPolicyAssociations all
 
 ## OI-2026-06-07-1 — spoke ArgoCD cluster Secret has no durable (GitOps) form
 
-**Status:** open — DECISION MADE (2026-06-07); implement in a new session (AWS account expired). See ADR `docs/decisions/0005-*` + `ai/handoff.md` task 3.
-**Resolution:** plain ESO — enable the EKS Cluster MR connection secret → `PushSecret` → AWS Secrets Manager → `ExternalSecret` with `target.template` assembling the cluster-secret `config` (caData-in-JSON). NOT provider-kubernetes, NOT XPlatformSecret.
+**Status:** durable producer BUILT 2026-06-10 (ADR-0010 PR-2) — **`pending clean-build verification`** (SUBSTRATE row 5; no live evidence exists until a from-scratch bring-up).
+**Resolution (final, ADR-0010 PR-2 — supersedes the 2026-06-07 "plain ESO" line below):** two provider-kubernetes Objects in the `xspokeaccess-aws` Composition — a cluster-facts OBSERVE Object reading the paired XPlatformCluster XR (same name/namespace; also retires the `spec.oidcIssuer` placeholder overlay), and the `spoke-cluster-secret` writer assembling the registration Secret (five-fact contract annotations + selector labels + `awsAuthConfig`/`caData` config via `CombineFromComposite`), complete-or-absent via Required-policy patches. Hub `kubernetes.m.crossplane.io ClusterProviderConfig` (InjectedIdentity) + pinned `provider-kubernetes` SA + namespace-scoped RBAC (`crossplane/rbac/02-*`). Fork rationale + ESO capability verification: ADR-0010 "PR-2 resolutions" + `planning/adr-0010-cluster-facts/adr0010-pr2-producer-brief.md` (ESO *can* template annotations from remote data; decided on data flow — the facts are hub-local).
+**Resolution (original 2026-06-07, superseded for THIS secret):** plain ESO — enable the EKS Cluster MR connection secret → `PushSecret` → AWS Secrets Manager → `ExternalSecret` with `target.template` assembling the cluster-secret `config` (caData-in-JSON). NOT provider-kubernetes, NOT XPlatformSecret. (ADR-0005's Alternatives rejection of provider-kubernetes is amended in place — its premise assumed the JSON assembly happened in provider references, not the Composition.)
 **Surfaced:** 2026-06-07, auto-012, phase-3 spoke registration.
 
 **What happened:** the `platform-spoke` ArgoCD cluster Secret was created LIVE via
@@ -126,15 +127,20 @@ provider-kubernetes references cannot assemble — only a Crossplane Composition
 `CombineFromComposite` fmt can). The cluster Secret will not be re-created on a
 fresh account.
 
-**Recommended durable mechanism:** add a provider-kubernetes `Object` to the
-XSpokeAccess Composition that builds the cluster Secret, assembling `config` JSON
-via `CombineFromComposite` from the cluster endpoint + caData overlaid onto the XR
-(same overlay pattern as `spec.oidcIssuer`), + RBAC for the provider-kubernetes SA
-to write Secrets in `argocd` ns (same class as the ESO ClusterRole, #160). Needs
-render fixtures + chainsaw (§6.8 — new Object kind in a v2 composition).
+**Recommended durable mechanism (2026-06-07; now IMPLEMENTED as refined by
+ADR-0010 PR-2):** a provider-kubernetes `Object` in the XSpokeAccess
+Composition assembling the `config` JSON via `CombineFromComposite` — with one
+refinement: endpoint/caData are not *overlaid* onto the XR (overlays are the
+banned pattern) but OBSERVED from the paired XPlatformCluster via a second,
+Observe-only Object. RBAC + render fixtures + chainsaw shipped with the
+implementation; live oracle authored at
+`tests/live/checks/after/spoke-cluster-secret-live.sh`.
 
-**Next step:** author the Composition Object + RBAC; delete the REST-bootstrapped
-secret at cutover so the Object owns it.
+**Next step:** clean-build verification (SUBSTRATE order of operations) — a
+fresh bring-up from committed source must produce the labeled Secret with the
+full contract and a Successful ArgoCD connection, with zero manual steps. On a
+previously hand-bootstrapped hub, delete the REST-bootstrapped secret at
+cutover so the Object owns it.
 
 ---
 

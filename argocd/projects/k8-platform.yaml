@@ -50,3 +50,12 @@ spec:
       kind: "*"
     - group: "platform.k8-platform.io"
       kind: "*"
+    # crossplane/rbac/02-provider-kubernetes-spoke-cluster-secret.yaml grants
+    # the provider-kubernetes SA namespace-scoped writes (argocd Secrets) +
+    # reads (platform XPlatformClusters) for the ADR-0010 PR-2 registration
+    # Secret producer. Namespaced Role/RoleBinding only — deliberately NOT
+    # the cluster-scoped pair, per the broaden-deliberately rule.
+    - group: "rbac.authorization.k8s.io"
+      kind: "Role"
+    - group: "rbac.authorization.k8s.io"
+      kind: "RoleBinding"

@@ -109,6 +109,15 @@ kinds:
     # standalone ExternalSecrets. (The ClusterSecretStore is a bring-up precondition.)
     cost: singleton-coupled
     defended_by: tests/live/checks/after/external-secret-live.sh
+  kubernetes.m.crossplane.io/Object:
+    lane: non-aws         # kube-object reads/writes on the hub; no IAM action to simulate
+    # ADR-0010 PR-2: the xspokeaccess Composition's cluster-facts Observe
+    # Object + the spoke-cluster-secret registration-Secret writer. Coupled
+    # to the spoke singleton (the facts come from the one paired
+    # XPlatformCluster); after-the-fact on the hub, never instantiated
+    # per-run.
+    cost: singleton-coupled
+    defended_by: tests/live/checks/after/spoke-cluster-secret-live.sh
 
 # extra: side-effect resources absent from any Composition's resources[] (a
 # controller-created NLB, an out-of-band-tagged subnet — blockers #9 and the LB).

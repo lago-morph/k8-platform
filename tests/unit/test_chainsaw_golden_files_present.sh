@@ -49,6 +49,9 @@ while IFS= read -r f; do
   # xdatabase/00-xrd-establishes is the same shape (dry-run XRD/admission
   # contract, no live render), so it is exempt for the same reason.
   #
+  # xspokeaccess/00-xrd-establishes (ADR-0010 PR-2) — same dry-run shape,
+  # exempt for the same reason.
+  #
   # (The former xdatabase/01-claim-creates-rds and 02-deletion-cleanup
   # real-AWS scenarios were excised — AGENTS §6.36, OI-2026-06-06-4 — along
   # with the nightly/non-gating lane. The XDatabase render contract is still
@@ -56,7 +59,7 @@ while IFS= read -r f; do
   # tests/unit/test_xdatabase_rds_composition.sh; its gating live behavioral
   # coverage moves to tests/live/ with the live-suite capstone.)
   case "$dir" in
-    *platform-cluster/00-xrd-establishes*|*xdatabase/00-xrd-establishes*)
+    *platform-cluster/00-xrd-establishes*|*xdatabase/00-xrd-establishes*|*xspokeaccess/00-xrd-establishes*)
       _pass "golden_exempt_${scenario_name} (XRD-establishment, no live render)"
       continue
       ;;

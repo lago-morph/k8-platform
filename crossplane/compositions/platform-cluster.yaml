@@ -363,6 +363,12 @@ spec:
               - type: ToCompositeFieldPath
                 fromFieldPath: status.atProvider.identity[0].oidc[0].issuer
                 toFieldPath: status.oidcIssuer
+              # Base64 cluster CA (public material) — consumed by the
+              # XSpokeAccess cluster-facts Observe Object to build the ArgoCD
+              # registration Secret's tlsClientConfig.caData (ADR-0010 PR-2).
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.certificateAuthority[0].data
+                toFieldPath: status.clusterCaData
               # Route the EKS-managed cluster security group id through the XR
               # so the kube-relay Instance (resource 15) can join it for private
               # API reach — see docs/decisions/0008.

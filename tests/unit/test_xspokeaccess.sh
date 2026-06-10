@@ -41,17 +41,25 @@ assert_eq "xrd_v1alpha1_served"        "true" "$(yq -r '.spec.versions[] | selec
 assert_eq "xrd_v1alpha1_referenceable" "true" "$(yq -r '.spec.versions[] | select(.name=="v1alpha1") | .referenceable' "$XRD")"
 assert_eq "xrd_wave_minus_one" "-1" "$(yq -r '.metadata.annotations["argocd.argoproj.io/sync-wave"]' "$XRD")"
 
-# required spec fields: clusterName, subdomain, oidcIssuer (all operator/
-# claim-provided; the account-ephemeral values come from the EnvironmentConfig)
+# required spec fields: clusterName, subdomain, shortName (all stable,
+# committed; the account-ephemeral values come from the EnvironmentConfig
+# or the cluster-facts Observe Object — ADR-0010 PR-2)
 REQUIRED=$(yq -r '.spec.versions[0].schema.openAPIV3Schema.properties.spec.required[]' "$XRD")
-for r in clusterName subdomain oidcIssuer; do
+for r in clusterName subdomain shortName; do
   echo "$REQUIRED" | grep -qx "$r" \
     && _pass "xrd_spec_required:$r" \
     || _fail "xrd_spec_required:$r" "spec.$r not in required"
 done
 
-# status echoes the three ARNs
-for s in oidcProviderArn externalDnsRoleArn accessEntryArn; do
+# the retired spec.oidcIssuer overlay field must NOT exist (ADR-0010 PR-2:
+# the issuer is OBSERVED from the paired cluster XR; the strict schema
+# rejecting this field is what makes the old overlay runbook fail loudly)
+assert_eq "xrd_spec_oidcIssuer_retired" "null" \
+  "$(yq -r '.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.oidcIssuer' "$XRD")"
+
+# status echoes the three ARNs + the four cluster-facts mirrors
+for s in oidcProviderArn externalDnsRoleArn accessEntryArn \
+         clusterOidcIssuer clusterEndpoint clusterCaData clusterCertificateArn; do
   t=$(yq -r ".spec.versions[0].schema.openAPIV3Schema.properties.status.properties.${s}.type" "$XRD")
   assert_eq "xrd_status:$s" "string" "$t"
 done
@@ -83,8 +91,142 @@ PT='.spec.pipeline[] | select(.functionRef.name == "function-patch-and-transform
 assert_eq "comp_pt_step" "function-patch-and-transform" \
   "$(yq -r '.spec.pipeline[] | select(.functionRef.name=="function-patch-and-transform") | .functionRef.name' "$COMP")"
 
-# five resources rendered
-assert_eq "comp_resource_count" "5" "$(yq -r "${PT}.resources | length" "$COMP")"
+# seven resources rendered (5 AWS + cluster-facts Observe Object +
+# spoke-cluster-secret Object — ADR-0010 PR-2)
+assert_eq "comp_resource_count" "7" "$(yq -r "${PT}.resources | length" "$COMP")"
+
+# env patches source the issuer from the OBSERVED cluster facts, not a
+# spec overlay (ADR-0010 PR-2 — reverses the auto-008 C2 input design)
+for tf_path in oidcIssuer oidcHost; do
+  src=$(yq -r ".spec.pipeline[] | select(.functionRef.name==\"function-patch-and-transform\") | .input.environment.patches[] | select(.toFieldPath==\"${tf_path}\") | .fromFieldPath" "$COMP")
+  assert_eq "comp_env_issuer_from_observed:$tf_path" "status.clusterOidcIssuer" "$src"
+done
+
+# the issuer-dependent patches are Required so the OIDC provider / Role
+# are never created with an empty url / trust policy
+OIDC_URL_POLICY=$(yq -r "${PT}.resources[] | select(.name==\"oidc-provider\") | .patches[] | select(.toFieldPath==\"spec.forProvider.url\") | .policy.fromFieldPath" "$COMP")
+assert_eq "comp_oidc_url_required" "Required" "$OIDC_URL_POLICY"
+TRUST_POLICY=$(yq -r "${PT}.resources[] | select(.name==\"external-dns-role\") | .patches[] | select(.toFieldPath==\"spec.forProvider.assumeRolePolicy\") | .policy.fromFieldPath" "$COMP")
+assert_eq "comp_trust_policy_required" "Required" "$TRUST_POLICY"
+
+# ---- 2e. cluster-facts Observe Object (ADR-0010 PR-2) --------------------
+CF='.resources[] | select(.name=="cluster-facts")'
+assert_eq "comp_cluster_facts_kind" "Object" "$(yq -r "${PT} | ${CF}.base.kind" "$COMP")"
+assert_eq "comp_cluster_facts_apiVersion" "kubernetes.m.crossplane.io/v1alpha1" \
+  "$(yq -r "${PT} | ${CF}.base.apiVersion" "$COMP")"
+# observe-only — this Object must NEVER mutate the cluster XR
+assert_eq "comp_cluster_facts_observe_only" "Observe" \
+  "$(yq -r "${PT} | ${CF}.base.spec.managementPolicies | join(\",\")" "$COMP")"
+assert_eq "comp_cluster_facts_providerconfig_hub" "hub" \
+  "$(yq -r "${PT} | ${CF}.base.spec.providerConfigRef.name" "$COMP")"
+assert_eq "comp_cluster_facts_target_kind" "XPlatformCluster" \
+  "$(yq -r "${PT} | ${CF}.base.spec.forProvider.manifest.kind" "$COMP")"
+# the observe target is the XR's OWN name/namespace (the pairing
+# convention — no free-text target field to typo)
+for pair in "metadata.name spec.forProvider.manifest.metadata.name" \
+            "metadata.namespace spec.forProvider.manifest.metadata.namespace"; do
+  from="${pair%% *}"; to="${pair##* }"
+  src=$(yq -r "${PT} | ${CF}.patches[] | select(.toFieldPath==\"${to}\") | .fromFieldPath" "$COMP")
+  assert_eq "comp_cluster_facts_pairing:$from" "$from" "$src"
+done
+# loudness guard: readiness requires ALL FOUR observed facts (a stuck
+# producer holds the XR visibly Ready=False, never a silent non-registration)
+CF_READY=$(yq -r "${PT} | ${CF}.readinessChecks[].fieldPath" "$COMP")
+for f in oidcIssuer endpoint clusterCaData certificateArn; do
+  echo "$CF_READY" | grep -q "status.atProvider.manifest.status.$f" \
+    && _pass "comp_cluster_facts_readiness:$f" \
+    || _fail "comp_cluster_facts_readiness:$f" "no NonEmpty readiness check on observed $f"
+done
+
+# ---- 2f. spoke-cluster-secret Object (ADR-0010 PR-2 producer) ------------
+SC='.resources[] | select(.name=="spoke-cluster-secret")'
+assert_eq "comp_secret_kind" "Object" "$(yq -r "${PT} | ${SC}.base.kind" "$COMP")"
+assert_eq "comp_secret_manifest_kind" "Secret" \
+  "$(yq -r "${PT} | ${SC}.base.spec.forProvider.manifest.kind" "$COMP")"
+assert_eq "comp_secret_namespace_argocd" "argocd" \
+  "$(yq -r "${PT} | ${SC}.base.spec.forProvider.manifest.metadata.namespace" "$COMP")"
+assert_eq "comp_secret_providerconfig_hub" "hub" \
+  "$(yq -r "${PT} | ${SC}.base.spec.providerConfigRef.name" "$COMP")"
+# ArgoCD cluster marker + ADR-0010 selector label ride the base manifest
+assert_eq "comp_secret_type_label" "cluster" \
+  "$(yq -r "${PT} | ${SC}.base.spec.forProvider.manifest.metadata.labels[\"argocd.argoproj.io/secret-type\"]" "$COMP")"
+assert_eq "comp_secret_cluster_role_label" "spoke" \
+  "$(yq -r "${PT} | ${SC}.base.spec.forProvider.manifest.metadata.labels[\"k8-platform.io/cluster-role\"]" "$COMP")"
+# COMPLETE-OR-ABSENT (ADR-0010 consequence (b)): EVERY patch into the
+# Secret manifest carries policy.fromFieldPath: Required — under p&t
+# v0.10.6 an unresolvable Required patch skips creating this one
+# composed resource, so the Secret never appears partially written.
+SC_PATCH_COUNT=$(yq -r "${PT} | ${SC}.patches | length" "$COMP")
+SC_REQUIRED_COUNT=$(yq -r "${PT} | ${SC}.patches[] | select(.policy.fromFieldPath==\"Required\") | .toFieldPath" "$COMP" | wc -l | tr -d ' ')
+assert_eq "comp_secret_all_patches_required (${SC_PATCH_COUNT} patches)" "$SC_PATCH_COUNT" "$SC_REQUIRED_COUNT"
+# registration name = <subdomain>-spoke (matches the platform-spoke
+# AppProject destination allowlist: platform-spoke / *-spoke)
+NAME_FMT=$(yq -r "${PT} | ${SC}.patches[] | select(.toFieldPath==\"spec.forProvider.manifest.metadata.name\") | .transforms[0].string.fmt" "$COMP")
+assert_eq "comp_secret_name_fmt" "%s-spoke" "$NAME_FMT"
+NAME_SRC=$(yq -r "${PT} | ${SC}.patches[] | select(.toFieldPath==\"spec.forProvider.manifest.metadata.name\") | .fromFieldPath" "$COMP")
+assert_eq "comp_secret_name_from_subdomain" "spec.subdomain" "$NAME_SRC"
+# config = awsAuthConfig.clusterName (= the AccessEntry grant target, so a
+# wrong-cluster fact read fails closed at auth) + observed caData
+CONFIG_FMT=$(yq -r "${PT} | ${SC}.patches[] | select(.toFieldPath==\"spec.forProvider.manifest.stringData.config\") | .combine.string.fmt" "$COMP")
+echo "$CONFIG_FMT" | grep -q 'awsAuthConfig' \
+  && _pass "comp_secret_config_awsauth" \
+  || _fail "comp_secret_config_awsauth" "config combine missing awsAuthConfig"
+echo "$CONFIG_FMT" | grep -q 'caData' \
+  && _pass "comp_secret_config_cadata" \
+  || _fail "comp_secret_config_cadata" "config combine missing tlsClientConfig.caData"
+CONFIG_VARS=$(yq -r "${PT} | ${SC}.patches[] | select(.toFieldPath==\"spec.forProvider.manifest.stringData.config\") | .combine.variables[].fromFieldPath" "$COMP")
+assert_eq "comp_secret_config_vars" "spec.clusterName
+status.clusterCaData" "$CONFIG_VARS"
+
+# ---- 2g. RBAC + SA pinning for the producer ------------------------------
+RBAC=crossplane/rbac/02-provider-kubernetes-spoke-cluster-secret.yaml
+if [ -f "$RBAC" ]; then
+  _pass "rbac_file_exists"
+  # bindings target the SA name the DeploymentRuntimeConfig pins
+  # (yq emits `---` between multi-doc results — filter it)
+  for sa in $(yq -r 'select(.kind=="RoleBinding") | .subjects[0].name' "$RBAC" | grep -v '^---$'); do
+    assert_eq "rbac_binds_pinned_sa" "provider-kubernetes" "$sa"
+  done
+  grep -q 'name: provider-kubernetes$' terraform/management/crossplane-phase3.tf \
+    && _pass "terraform_pins_provider_kubernetes_sa" \
+    || _fail "terraform_pins_provider_kubernetes_sa" "crossplane-phase3.tf must pin the SA via DeploymentRuntimeConfig serviceAccountTemplate"
+  # the hub config the Objects reference must be the .m. ClusterProviderConfig
+  grep -q 'kubernetes.m.crossplane.io/v1alpha1' terraform/management/crossplane-phase3.tf \
+    && _pass "terraform_hub_clusterproviderconfig_m_group" \
+    || _fail "terraform_hub_clusterproviderconfig_m_group" "the hub config must be kubernetes.m.crossplane.io ClusterProviderConfig (the namespaced Object cannot reference the legacy group)"
+  # the k8-platform AppProject must permit namespaced Role/RoleBinding or
+  # the crossplane-resources app fails to sync (the #160 failure class)
+  for k in Role RoleBinding; do
+    yq -r '.spec.namespaceResourceWhitelist[].kind' argocd/projects/k8-platform.yaml | grep -qx "$k" \
+      && _pass "appproject_whitelists_namespaced:$k" \
+      || _fail "appproject_whitelists_namespaced:$k" "argocd/projects/k8-platform.yaml namespaceResourceWhitelist missing $k"
+  done
+else
+  _fail "rbac_file_exists" "$RBAC not found (the producer Object has no write path without it)"
+fi
+
+# ---- 2h. XR ↔ cluster-XR pairing (the observe convention) ----------------
+# Every committed XSpokeAccess must have an XPlatformCluster XR with the
+# SAME metadata.name + namespace somewhere under clusters/ — that pairing
+# IS the observe wiring; a mismatch means observe-not-found forever.
+shopt -s globstar nullglob
+for sa_xr in clusters/**/*.yaml; do
+  [ "$(yq -r '.kind // ""' "$sa_xr" 2>/dev/null)" = "XSpokeAccess" ] || continue
+  sa_name=$(yq -r '.metadata.name' "$sa_xr")
+  sa_ns=$(yq -r '.metadata.namespace' "$sa_xr")
+  paired=0
+  for pc_xr in clusters/**/*.yaml; do
+    [ "$(yq -r '.kind // ""' "$pc_xr" 2>/dev/null)" = "XPlatformCluster" ] || continue
+    if [ "$(yq -r '.metadata.name' "$pc_xr")" = "$sa_name" ] && \
+       [ "$(yq -r '.metadata.namespace' "$pc_xr")" = "$sa_ns" ]; then
+      paired=1; break
+    fi
+  done
+  [ "$paired" -eq 1 ] \
+    && _pass "xr_pairing:$sa_xr ($sa_ns/$sa_name)" \
+    || _fail "xr_pairing:$sa_xr" "no XPlatformCluster named $sa_ns/$sa_name under clusters/ — the cluster-facts Observe Object would never find its target"
+done
+shopt -u globstar nullglob
 
 # 2a. OpenIDConnectProvider — kind, thumbprint constant (C1), clientId
 OIDC='.resources[] | select(.name=="oidc-provider") | .base'
@@ -150,11 +292,11 @@ XR_WAVE=$(yq -r '.metadata.annotations["argocd.argoproj.io/sync-wave"]' "$XR")
 [ "$XR_WAVE" -gt 10 ] 2>/dev/null \
   && _pass "xr_wave_after_cluster" \
   || _fail "xr_wave_after_cluster" "XR sync-wave ($XR_WAVE) must be > 10 (cluster XR wave)"
-# oidcIssuer is a clearly-marked placeholder, not a real issuer
-ISS=$(yq -r '.spec.oidcIssuer' "$XR")
-echo "$ISS" | grep -qi 'PLACEHOLDER' \
-  && _pass "xr_oidcIssuer_placeholder" \
-  || _fail "xr_oidcIssuer_placeholder" "spec.oidcIssuer ($ISS) is not a marked placeholder (it is account-ephemeral, AGENTS §8.1)"
+# the retired oidcIssuer overlay must NOT be committed (ADR-0010 PR-2:
+# the issuer is observed from the paired cluster XR, never overlaid)
+assert_eq "xr_no_oidcIssuer" "null" "$(yq -r '.spec.oidcIssuer' "$XR")"
+# the ADR-0010 selector value rides the XR
+assert_eq "xr_shortName" "spoke" "$(yq -r '.spec.shortName' "$XR")"
 
 # S4: no committed account id / role ARN / zone id literals in the XR or claim app
 EPHEM_SCAN_FILES=("$XR" argocd/apps/spoke-access.yaml)

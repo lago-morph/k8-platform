@@ -10,6 +10,7 @@ iam.aws.m.upbound.io/OpenIDConnectProvider
 iam.aws.m.upbound.io/Role
 iam.aws.m.upbound.io/RolePolicy
 iam.aws.m.upbound.io/RolePolicyAttachment
+kubernetes.m.crossplane.io/Object
 rds.aws.m.upbound.io/Instance
 route53.aws.m.upbound.io/Record
 secretsmanager.aws.m.upbound.io/Secret

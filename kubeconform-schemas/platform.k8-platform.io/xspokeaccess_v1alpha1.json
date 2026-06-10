@@ -14,10 +14,10 @@
           "description": "DNS label for this spoke under the root domain (e.g. \"platform\" \u2192 platform.<domain>). external-dns on the spoke is scoped to this subdomain; the inline Route53 policy is zone-scoped (the whole hosted zone, shared by hub + spokes \u2014 record-level scoping is via external-dns --domain-filter, auto-008 \u00a76).",
           "pattern": "^[a-z][a-z0-9-]{0,30}[a-z0-9]$"
         },
-        "oidcIssuer": {
+        "shortName": {
           "type": "string",
-          "description": "The spoke cluster's OIDC issuer URL (XPlatformCluster.status.oidcIssuer). Account-ephemeral (AGENTS \u00a78.1) \u2014 only known once the cluster is live, so it is overlaid at sync time by the operator from the cluster XR's published status, NOT committed as a literal. The OpenIDConnectProvider's url and the external-dns trust policy's sub/aud conditions are built from it.",
-          "pattern": "^https://.+"
+          "description": "The ADR-0010 short-name selector value for this spoke (e.g. \"spoke\", \"workload1\"). Stamped on the registration Secret as the k8-platform.io/short-name label; the consumer ApplicationSets derive generated Application names and per-cluster values files from it. Stable and committed (not account-ephemeral).",
+          "pattern": "^[a-z][a-z0-9-]{0,30}[a-z0-9]$"
         },
         "region": {
           "type": "string",
@@ -29,7 +29,7 @@
       "required": [
         "clusterName",
         "subdomain",
-        "oidcIssuer"
+        "shortName"
       ],
       "additionalProperties": false
     },
@@ -47,6 +47,22 @@
         "accessEntryArn": {
           "type": "string",
           "description": "ARN of the EKS AccessEntry mapping the argocd role to the spoke, echoed for observability."
+        },
+        "clusterOidcIssuer": {
+          "type": "string",
+          "description": "Observed XPlatformCluster.status.oidcIssuer. Feeds the OpenIDConnectProvider url and the external-dns trust policy conditions (replaces the retired spec.oidcIssuer overlay)."
+        },
+        "clusterEndpoint": {
+          "type": "string",
+          "description": "Observed XPlatformCluster.status.endpoint \u2014 the spoke API server URL, written to the registration Secret's `server` field."
+        },
+        "clusterCaData": {
+          "type": "string",
+          "description": "Observed XPlatformCluster.status.clusterCaData (base64 cluster CA, public material) \u2014 embedded in the registration Secret's config JSON (tlsClientConfig.caData)."
+        },
+        "clusterCertificateArn": {
+          "type": "string",
+          "description": "Observed XPlatformCluster.status.certificateArn \u2014 the spoke's wildcard ACM cert, stamped as the k8-platform.io/certificate-arn contract annotation."
         }
       },
       "additionalProperties": false
