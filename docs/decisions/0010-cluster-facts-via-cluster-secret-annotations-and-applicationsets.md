@@ -1,8 +1,8 @@
 # 0010 — Cluster facts reach spoke Applications via cluster-Secret annotations templated by ApplicationSets
 
-- **Status**: PROPOSED (round-1 adversarial review folded in — 2 reviewers, 5 BLOCKER
-  + 7 MAJOR findings addressed, reviews in `planning/adr-0010-cluster-facts/`;
-  owner ratification pending)
+- **Status**: Accepted (owner-ratified 2026-06-10 after round-1 adversarial
+  review — 2 reviewers, 5 BLOCKER + 7 MAJOR findings folded in; reviews in
+  `planning/adr-0010-cluster-facts/`)
 - **Date**: 2026-06-10
 - **Closes**: OI-2026-06-07-2 (the SUBSTRATE-READINESS keystone, row 4)
 - **Supersedes / amends**: the **cluster-facts ConfigMap corollary of ADR-0005**
@@ -45,12 +45,14 @@ XSpokeAccess pair).
 **Explicitly out of contract:** keycloak's `externalDatabase.host`/`port`
 (`platform-services/keycloak/values.yaml:62-63`). They are database connection
 data from a third XR (XDatabase `status.endpoint`/`status.port`), not cluster
-facts. They travel the **keycloak-db connection-Secret path** (OI-2026-06-07-5 /
-ADR-0005 ESO): the ExternalSecret that materializes `keycloak-db` on the spoke
-templates `host`/`port` keys in, and the chart consumes them via its
-`externalDatabase.existingSecret*` keys. *Implementation must verify the pinned
-Bitnami chart (21.4.4) supports existingSecret host/port keys; fallback if not:
-add the two keys to this contract and record the extension here.*
+facts. **Repo-verified constraint** (`platform-services/keycloak/values.yaml`
+header, pinned by `test_keycloak_db_secret_contract.sh`): the pinned Bitnami
+chart (21.4.4) has NO existingSecret host/port keys — they cannot ride the
+connection Secret via chart values. They are therefore the one remaining
+ephemeral-value gap after PR-1, resolved in PR-2 by either (i)
+`extraEnvVarsSecret` overriding `KEYCLOAK_DATABASE_HOST`/`PORT` from an
+ESO-materialized secret, or (ii) extending this contract with the two keys —
+PR-2 decides and records which here.
 
 ## Decision
 

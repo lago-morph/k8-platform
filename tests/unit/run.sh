@@ -77,6 +77,9 @@ run_suite tests/unit/test_external_dns_disjoint_filters.sh
 run_suite tests/unit/test_spoke_values_no_ephemeral.sh
 run_suite tests/unit/test_hello_chart_render.sh
 run_suite tests/unit/test_spoke_apps.sh
+# ADR-0010: the cluster-facts contract lint (ApplicationSets may reference only
+# contract keys; no hand-overlay markers; cloud-agnostic workload guard)
+run_suite tests/unit/test_cluster_facts_contract.sh
 # phase-4 observability (REQ-OBS-01..05)
 run_suite tests/unit/test_hub_addons_appproject.sh
 run_suite tests/unit/test_observability_apps.sh

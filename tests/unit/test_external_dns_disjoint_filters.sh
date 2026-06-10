@@ -10,7 +10,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 require_tool yq
 
 HELM_TF="$HERE/../../terraform/management/helm.tf"
-SPOKE_VALUES="$HERE/../../platform-services/external-dns/values.yaml"
+SPOKE_VALUES="$HERE/../../platform-services/external-dns/spoke-values.yaml"
 FAIL=0
 
 [ -f "$HELM_TF" ] || { echo "FAIL: $HELM_TF missing"; exit 1; }

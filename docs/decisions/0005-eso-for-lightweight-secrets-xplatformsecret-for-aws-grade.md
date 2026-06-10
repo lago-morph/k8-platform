@@ -52,6 +52,16 @@ configuration is owned by the cluster abstraction (the `XPlatformCluster` XRD /
 its provisioning path), alongside the per-cluster ConfigMap of cluster facts
 (OI-2026-06-07-2). See `ai/handoff.md` for the implementation task list.
 
+> **AMENDED by ADR-0010 (2026-06-10):** the cluster-facts carrier is NOT a
+> ConfigMap — tree-grounded review showed two of the facts land in
+> chart-rendered Service/ServiceAccount annotations that cannot read
+> ConfigMaps at runtime. The facts ride the per-cluster **ArgoCD cluster
+> Secret's `k8-platform.io/*` annotations**, templated into the spoke apps by
+> ApplicationSets. The principle (cluster abstraction owns the facts; no
+> per-app hand overlays; cloud-agnostic workloads) and everything else in
+> this ADR stand unchanged. See `0010-cluster-facts-via-cluster-secret-
+> annotations-and-applicationsets.md`.
+
 ## Alternatives considered
 
 - **Use `XPlatformSecret` for everything (including OI-1/OI-5).** Rejected: it pulls

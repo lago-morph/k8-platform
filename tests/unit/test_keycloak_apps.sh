@@ -33,39 +33,48 @@ POLICY="$ROOT/policies/audit/10-spoke-no-cluster-admin-binding.yaml"
 RBAC_DIR="$ROOT/clusters/platform/rbac"
 FAIL=0
 
-# ── (A) the Keycloak spoke Application contract ────────────────────────────
+# ── (A) the Keycloak spoke ApplicationSet contract (ADR-0010) ───────────────
+# Keycloak is PLATFORM-ONLY: the generator pins short-name=spoke in addition
+# to cluster-role=spoke (the auth layer does not fan out to workload spokes).
+# The generic ApplicationSet shape (goTemplate, missingkey=error,
+# preserveResourcesOnDeletion, destination={{.name}}) is gated by
+# test_spoke_apps.sh; here we gate the Keycloak-specific pins.
 [ -f "$APP" ] || { echo "FAIL: $APP missing"; exit 1; }
 
 kind="$(yq -r '.kind' "$APP")"
-[ "$kind" = "Application" ] && echo "ok: kind=Application" \
-  || { echo "FAIL: kind=$kind, want Application"; FAIL=1; }
+[ "$kind" = "ApplicationSet" ] && echo "ok: kind=ApplicationSet" \
+  || { echo "FAIL: kind=$kind, want ApplicationSet (ADR-0010)"; FAIL=1; }
 
-proj="$(yq -r '.spec.project' "$APP")"
-[ "$proj" = "platform-spoke" ] && echo "ok: project=platform-spoke" \
-  || { echo "FAIL: project=$proj, want platform-spoke"; FAIL=1; }
+pin="$(yq -r '.spec.generators[0].clusters.selector.matchLabels."k8-platform.io/short-name"' "$APP")"
+[ "$pin" = "spoke" ] && echo "ok: generator pinned to the platform spoke (short-name=spoke)" \
+  || { echo "FAIL: keycloak must be platform-only — generator short-name=$pin, want spoke"; FAIL=1; }
 
-dname="$(yq -r '.spec.destination.name' "$APP")"
-dserver="$(yq -r '.spec.destination.server' "$APP")"
-[ "$dname" = "platform-spoke" ] && echo "ok: destination.name=platform-spoke" \
-  || { echo "FAIL: destination.name=$dname, want platform-spoke"; FAIL=1; }
-[ "$dserver" = "null" ] && echo "ok: no destination.server (spoke by name)" \
+proj="$(yq -r '.spec.template.spec.project' "$APP")"
+[ "$proj" = "platform-spoke" ] && echo "ok: template project=platform-spoke" \
+  || { echo "FAIL: template project=$proj, want platform-spoke"; FAIL=1; }
+
+dname="$(yq -r '.spec.template.spec.destination.name' "$APP")"
+dserver="$(yq -r '.spec.template.spec.destination.server' "$APP")"
+[ "$dname" = '{{.name}}' ] && echo "ok: template destination.name={{.name}}" \
+  || { echo "FAIL: template destination.name=$dname, want {{.name}}"; FAIL=1; }
+[ "$dserver" = "null" ] && echo "ok: no destination.server (spoke by generated name)" \
   || { echo "FAIL: destination.server set ($dserver) — spokes are by name"; FAIL=1; }
 
-dns="$(yq -r '.spec.destination.namespace' "$APP")"
+dns="$(yq -r '.spec.template.spec.destination.namespace' "$APP")"
 [ "$dns" = "keycloak" ] && echo "ok: destination.namespace=keycloak" \
   || { echo "FAIL: destination.namespace=$dns, want keycloak"; FAIL=1; }
 
 # Bitnami chart source, pinned (not HEAD/empty).
-chart="$(yq -r '.spec.sources[]? | select(.chart != null) | .chart' "$APP")"
+chart="$(yq -r '.spec.template.spec.sources[]? | select(.chart != null) | .chart' "$APP")"
 [ "$chart" = "keycloak" ] && echo "ok: chart=keycloak" \
   || { echo "FAIL: chart=$chart, want keycloak"; FAIL=1; }
 
-chartrepo="$(yq -r '.spec.sources[]? | select(.chart != null) | .repoURL' "$APP")"
+chartrepo="$(yq -r '.spec.template.spec.sources[]? | select(.chart != null) | .repoURL' "$APP")"
 [ "$chartrepo" = "https://charts.bitnami.com/bitnami" ] \
   && echo "ok: chart repoURL=bitnami" \
   || { echo "FAIL: chart repoURL=$chartrepo, want https://charts.bitnami.com/bitnami"; FAIL=1; }
 
-rev="$(yq -r '.spec.sources[]? | select(.chart != null) | .targetRevision' "$APP")"
+rev="$(yq -r '.spec.template.spec.sources[]? | select(.chart != null) | .targetRevision' "$APP")"
 case "$rev" in
   HEAD|null|"") echo "FAIL: chart targetRevision '$rev' not pinned"; FAIL=1;;
   *) echo "ok: chart targetRevision pinned ($rev)";;
@@ -80,19 +89,27 @@ else
 fi
 
 # multi-source: this repo provides $values (values file in git).
-valref="$(yq -r '.spec.sources[]? | select(.ref == "values") | .repoURL' "$APP")"
+valref="$(yq -r '.spec.template.spec.sources[]? | select(.ref == "values") | .repoURL' "$APP")"
 [ "$valref" = "https://github.com/lago-morph/k8-platform.git" ] \
   && echo "ok: \$values source is this repo" \
   || { echo "FAIL: \$values ref source=$valref, want this repo"; FAIL=1; }
 
-prune="$(yq -r '.spec.syncPolicy.automated.prune' "$APP")"
-sh="$(yq -r '.spec.syncPolicy.automated.selfHeal' "$APP")"
+# The auth hostname is templated from the cluster facts (never a committed
+# domain): auth.<subdomain>.<domain>.
+khost="$(yq -r '.spec.template.spec.sources[]? | select(.chart != null) | .helm.valuesObject.ingress.hostname' "$APP")"
+case "$khost" in
+  auth.*k8-platform.io/subdomain*k8-platform.io/domain*) echo "ok: ingress.hostname templated from cluster facts";;
+  *) echo "FAIL: ingress.hostname must be templated auth.<subdomain>.<domain> from cluster facts (got $khost)"; FAIL=1;;
+esac
+
+prune="$(yq -r '.spec.template.spec.syncPolicy.automated.prune' "$APP")"
+sh="$(yq -r '.spec.template.spec.syncPolicy.automated.selfHeal' "$APP")"
 { [ "$prune" = "true" ] && [ "$sh" = "true" ]; } && echo "ok: automated prune+selfHeal" \
   || { echo "FAIL: need automated prune+selfHeal (prune=$prune selfHeal=$sh)"; FAIL=1; }
 
-wave="$(yq -r '.metadata.annotations."argocd.argoproj.io/sync-wave"' "$APP")"
-[ "$wave" = "40" ] && echo "ok: sync-wave=40 (after base add-ons)" \
-  || { echo "FAIL: sync-wave=$wave, want 40 (REQ-AUTH ordering)"; FAIL=1; }
+wave="$(yq -r '.spec.template.metadata.annotations."argocd.argoproj.io/sync-wave"' "$APP")"
+[ "$wave" = "40" ] && echo "ok: template sync-wave=40 (after base add-ons)" \
+  || { echo "FAIL: template sync-wave=$wave, want 40 (REQ-AUTH ordering)"; FAIL=1; }
 
 # ── (B) the kc RBAC bindings + Kyverno allowlist prefix ────────────────────
 [ -d "$RBAC_DIR" ] || { echo "FAIL: $RBAC_DIR missing"; exit 1; }

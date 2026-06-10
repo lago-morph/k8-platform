@@ -17,7 +17,7 @@ is the sequence number for that date.
 
 | ID | One-line | Note |
 |----|----------|------|
-| OI-2026-06-07-2 | placeholder overlays fought by bootstrap selfHeal | **NOW BLOCKING** — decided (ADR 0005 cluster-facts ConfigMap), not implemented; auto-016 confirmed it blocks the hello e2e (cert/domain overlays won't stick) |
+| OI-2026-06-07-2 | placeholder overlays fought by bootstrap selfHeal | consumer half IMPLEMENTED 2026-06-10 (**ADR-0010**: spoke apps → ApplicationSets templating cluster-Secret fact annotations; supersedes ADR-0005's ConfigMap corollary). Remaining: the producer (labeled registration Secret = OI-2026-06-07-1) + clean-build evidence |
 | OI-2026-06-07-1 | spoke ArgoCD cluster Secret has no GitOps form | open; hand-bootstrapped live again in auto-016 |
 | OI-2026-06-07-3 | shared-VPC ELB subnet tags | **RECURRED auto-016** (NLB couldn't place) — live-fixed; durable base-terraform fix owed |
 | OI-2026-06-07-4 | hub→spoke EKS-API SG rule | **RECURRED auto-016** (ArgoCD→spoke 443 timeout) — live-fixed; durable Composition fix owed |
@@ -93,8 +93,11 @@ provider + Roles + RolePolicy + AccessEntries + AccessPolicyAssociations all
   meant to be overlaid at registration, but `bootstrap` self-heal reverts the
   overlays. Hand-overlaying domain + cert did NOT stick → the spoke NLB never gets a
   valid cert → `hello.platform.<domain>` unreachable. **This blocks the OI-2026-06-08-2
-  hello e2e from a clean-build validation.** Needs the ADR-0005 cluster-facts
-  ConfigMap solution (not another hand-overlay).
+  hello e2e from a clean-build validation.** 2026-06-10: mechanism decided +
+  consumer half implemented as ADR-0010 (ApplicationSets templating
+  cluster-Secret fact annotations — the ADR-0005 "ConfigMap" wording proved
+  infeasible for annotation-borne facts and is superseded); the producer half
+  rides OI-2026-06-07-1.
 - **OI-2026-06-08-2 (hello e2e)** — the HARD bounded-poll check is authored + merge-ready
   (PR #210), but CANNOT be clean-build-validated until OI-2026-06-07-2 is fixed
   (placeholders won't overlay durably). Also a transient: a Kyverno webhook blip
@@ -137,8 +140,9 @@ secret at cutover so the Object owns it.
 
 ## OI-2026-06-07-2 — registration-time ephemeral overlays fought by bootstrap selfHeal
 
-**Status:** open — DECISION MADE (2026-06-07); implement in a new session. See ADR `docs/decisions/0005-*` + `ai/handoff.md` task 2.
-**Resolution:** make this part of the `XPlatformCluster` XRD: every cluster ships (a) a per-cluster ConfigMap of cluster facts (domain/region/cert-ARN/external-dns-role-ARN) the add-ons read from — NOT per-app Helm overlays — and (b) ESO + an IRSA `ClusterSecretStore` (ESO baseline in every cluster). Workloads (`hello`) stay AWS-agnostic. This removes the bootstrap-selfHeal-vs-overlay conflict (no pausing bootstrap).
+**Status:** consumer half IMPLEMENTED (2026-06-10, ADR-0010) — `pending clean-build verification`, blocked on the producer (OI-2026-06-07-1).
+**Resolution (final, ADR-0010 — supersedes the 2026-06-07 ConfigMap wording below):** the per-cluster facts (domain / subdomain / cert-ARN / external-dns-role-ARN / region) ride the spoke's ArgoCD cluster Secret as `k8-platform.io/*` labels+annotations; the spoke apps are per-add-on **ApplicationSets** whose cluster generators template those facts into helm values. NOT per-app Helm overlays; workloads (`hello`) stay AWS-agnostic (domain+subdomain only); no pausing bootstrap. The 2026-06-07 resolution's "per-cluster ConfigMap read by add-ons" carrier was found infeasible on tree-grounded review (cert/role facts land in chart-rendered Service/SA *annotations*, which cannot read ConfigMaps) — its principle is preserved, its carrier replaced. The ESO-baseline corollary (b) stands unchanged.
+**Resolution (original, 2026-06-07 — carrier superseded):** make this part of the `XPlatformCluster` XRD: every cluster ships (a) a per-cluster ConfigMap of cluster facts (domain/region/cert-ARN/external-dns-role-ARN) the add-ons read from — NOT per-app Helm overlays — and (b) ESO + an IRSA `ClusterSecretStore` (ESO baseline in every cluster). Workloads (`hello`) stay AWS-agnostic. This removes the bootstrap-selfHeal-vs-overlay conflict (no pausing bootstrap).
 **Surfaced:** 2026-06-07, auto-012.
 
 **What happened:** the spoke apps (`spoke-hello`, `spoke-ingress-nginx`,

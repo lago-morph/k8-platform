@@ -8,6 +8,38 @@ last, the current state, and the next concrete steps. Keep it factual
 
 ## NEW SESSION QUICKSTART (read this first)
 
+> ## ▶ 2026-06-10 (later) — KEYSTONE CONSUMER HALF SHIPPED (ADR-0010)
+> **OI-2026-06-07-2 mechanism decided + consumer half implemented** (owner-ratified;
+> ADR-0010 — supersedes ADR-0005's "cluster-facts ConfigMap" carrier, which
+> tree-grounded review proved infeasible for annotation-borne facts):
+> - The ten `argocd/apps/spoke/` Applications are now **seven per-add-on
+>   ApplicationSets**. Cluster generators select labeled spoke cluster Secrets
+>   (`k8-platform.io/cluster-role=spoke`, `short-name`) and template the
+>   **five-fact contract** (`k8-platform.io/{domain,subdomain,certificate-arn,
+>   external-dns-role-arn,region}` annotations) into helm values.
+>   `missingkey=error`, `preserveResourcesOnDeletion: true`, waves ride the
+>   generated apps. The workload1-* mirror files collapsed into the shared sets
+>   (phase-6 fan-out is now free); alloy keeps its deliberate hub destination
+>   (reverses auto-008 F1, recorded in the ADR); hello stays cloud-agnostic
+>   (domain+subdomain only). NO hand-overlay surface remains under apps/spoke/.
+> - Gates: `test_cluster_facts_contract.sh` (bidirectional contract lint),
+>   rewritten `test_spoke_apps/observability/keycloak/workload1` suites,
+>   kubeconform now ACTUALLY validates ApplicationSets (schema added; argo CRD
+>   pin aligned v2.13.1→**v2.10.4** = the deployed chart 6.7.3). Full unit
+>   suite green. Adversarial reviews in `planning/adr-0010-cluster-facts/`.
+> - **NOT done (= ADR-0010 PR-2, the next scoped session = readiness row 5):**
+>   the PRODUCER — OI-2026-06-07-1's durable registration Secret must carry the
+>   contract labels/annotations (resolve the ESO-vs-provider-kubernetes fork
+>   there), `region` needs a surfaced source (NOT in the `cluster-network`
+>   EnvironmentConfig today), keycloak DB host/port path (`extraEnvVarsSecret`
+>   vs contract extension), and the single-writer RBAC note. Until PR-2 + a
+>   clean build, row 4 of `SUBSTRATE-READINESS.md` stays
+>   `pending clean-build verification`.
+> - **Cutover caveat:** the swap is non-atomic on a live hub (bootstrap prunes
+>   the old Applications; the AppSet-generated same-named ones re-sync fresh).
+>   Fine for the teardown+rebuild validation path; do not expect continuity on
+>   a running environment.
+
 > ## ▶ 2026-06-10 — INSTRUCTION SURFACE RESTRUCTURED (forensics round 2)
 > The 748-line AGENTS.md + 46 detail files were replaced by a ~140-line
 > operating agreement (`AGENTS.md`); environment/capability facts moved to

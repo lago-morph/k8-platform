@@ -1,7 +1,7 @@
 # ArgoCD ApplicationSet — ingress-nginx on every spoke cluster (ADR-0010).
 #
 # Replaces the per-spoke plain Applications (spoke-ingress-nginx +
-# workload1-ingress-nginx) that carried OVERLAID-AT-REGISTRATION placeholders:
+# workload1-ingress-nginx) that carried registration-time overlay placeholders:
 # the cluster generator selects every registered spoke's ArgoCD cluster Secret
 # (label k8-platform.io/cluster-role: spoke) and templates the account-ephemeral
 # cert ARN from that Secret's k8-platform.io/* annotations (the cluster-facts
