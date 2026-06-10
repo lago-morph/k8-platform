@@ -6,10 +6,10 @@
 # spoke-access MRs into the cluster Composition would patch
 # `url: ""` from an empty status.oidcIssuer and hard-fail before the
 # cluster is Ready. Instead this XR consumes the cluster's *published*
-# status (spec.oidcIssuer is filled at sync time from
-# XPlatformCluster.status.oidcIssuer) and is gated on the cluster being
-# Ready via ArgoCD sync-wave (the XR's Application is wave 20, after the
-# cluster claim at wave 10, and is manual-sync — see
+# status — since ADR-0010 PR-2 via the cluster-facts Observe Object (no
+# operator overlay) — and is gated on the cluster being Ready via ArgoCD
+# sync-wave (the XR's Application is wave 20, after the cluster claim at
+# wave 10, and is manual-sync — see
 # clusters/platform/spoke-access.yaml + argocd/apps/spoke-access.yaml).
 #
 # A claim against this XRD renders, on the HUB Crossplane:
@@ -31,13 +31,29 @@
 # (AGENTS §8.1). They are injected from the `cluster-network`
 # EnvironmentConfig that terraform/management materializes (extended in
 # terraform/management/crossplane-phase3.tf — auto-008 C3/C5). The XR
-# carries only stable per-spoke values; spec.oidcIssuer is the one value
-# overlaid at sync time (the issuer URL is only known once the cluster is
-# live — AGENTS §8.1) and is therefore a placeholder in git.
+# carries only stable per-spoke values.
+#
+# ADR-0010 PR-2 (OI-2026-06-07-1) adds the producer half of the
+# cluster-facts contract:
+#   4. A cluster-facts OBSERVE Object (provider-kubernetes, hub
+#      ProviderConfig) reading the paired XPlatformCluster XR — the one
+#      with this XR's OWN metadata.name/namespace (pairing asserted by
+#      tests/unit/test_xspokeaccess.sh). Its status supplies the OIDC
+#      issuer, endpoint, CA data and certificate ARN to this XR's status.
+#      This REVERSES the auto-008 C2 spec.oidcIssuer overlay input: the
+#      issuer is observed, never hand-patched (SUBSTRATE-READINESS bans
+#      placeholder overlays). C2's ordering concern is still honored by
+#      the manual-sync Application gate + the Observe readiness check.
+#   5. The ArgoCD spoke registration Secret (provider-kubernetes Object,
+#      complete-or-absent via Required-policy patches) carrying the
+#      ADR-0010 five-fact contract as k8-platform.io/* annotations and
+#      the selector labels. Registration name = <subdomain>-spoke
+#      (matches the platform-spoke AppProject destination allowlist).
 #
 # WARNING: when this XR is synced, Crossplane creates REAL AWS resources
-# (an OIDC provider, an IAM role/policy, and EKS access entries). The
-# corresponding ArgoCD Application is manual-sync only.
+# (an OIDC provider, an IAM role/policy, and EKS access entries) and
+# registers the spoke with the hub ArgoCD. The corresponding ArgoCD
+# Application is manual-sync only.
 apiVersion: apiextensions.crossplane.io/v2
 kind: CompositeResourceDefinition
 metadata:
@@ -88,18 +104,16 @@ spec:
                     hub + spokes — record-level scoping is via external-dns
                     --domain-filter, auto-008 §6).
                   pattern: "^[a-z][a-z0-9-]{0,30}[a-z0-9]$"
-                oidcIssuer:
+                shortName:
                   type: string
                   description: >-
-                    The spoke cluster's OIDC issuer URL
-                    (XPlatformCluster.status.oidcIssuer). Account-ephemeral
-                    (AGENTS §8.1) — only known once the cluster is live, so
-                    it is overlaid at sync time by the operator from the
-                    cluster XR's published status, NOT committed as a
-                    literal. The OpenIDConnectProvider's url and the
-                    external-dns trust policy's sub/aud conditions are built
-                    from it.
-                  pattern: "^https://.+"
+                    The ADR-0010 short-name selector value for this spoke
+                    (e.g. "spoke", "workload1"). Stamped on the registration
+                    Secret as the k8-platform.io/short-name label; the
+                    consumer ApplicationSets derive generated Application
+                    names and per-cluster values files from it. Stable and
+                    committed (not account-ephemeral).
+                  pattern: "^[a-z][a-z0-9-]{0,30}[a-z0-9]$"
                 region:
                   type: string
                   description: >-
@@ -111,7 +125,7 @@ spec:
               required:
                 - clusterName
                 - subdomain
-                - oidcIssuer
+                - shortName
             status:
               type: object
               properties:
@@ -131,3 +145,35 @@ spec:
                   description: >-
                     ARN of the EKS AccessEntry mapping the argocd role to
                     the spoke, echoed for observability.
+                # ---- cluster-facts mirrors (ADR-0010 PR-2) -------------
+                # Populated by the cluster-facts Observe Object from the
+                # paired XPlatformCluster's status; consumed by the
+                # spoke-cluster-secret Object's patches (P&T cross-resource
+                # refs travel via the composite). All four are
+                # account-ephemeral at runtime and never committed.
+                clusterOidcIssuer:
+                  type: string
+                  description: >-
+                    Observed XPlatformCluster.status.oidcIssuer. Feeds the
+                    OpenIDConnectProvider url and the external-dns trust
+                    policy conditions (replaces the retired spec.oidcIssuer
+                    overlay).
+                clusterEndpoint:
+                  type: string
+                  description: >-
+                    Observed XPlatformCluster.status.endpoint — the spoke
+                    API server URL, written to the registration Secret's
+                    `server` field.
+                clusterCaData:
+                  type: string
+                  description: >-
+                    Observed XPlatformCluster.status.clusterCaData (base64
+                    cluster CA, public material) — embedded in the
+                    registration Secret's config JSON
+                    (tlsClientConfig.caData).
+                clusterCertificateArn:
+                  type: string
+                  description: >-
+                    Observed XPlatformCluster.status.certificateArn — the
+                    spoke's wildcard ACM cert, stamped as the
+                    k8-platform.io/certificate-arn contract annotation.

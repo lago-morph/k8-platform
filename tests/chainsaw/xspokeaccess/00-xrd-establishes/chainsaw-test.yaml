@@ -1,0 +1,168 @@
+# XRD establishment + schema validation for XSpokeAccess (ADR-0010 PR-2).
+#
+# The XRD changed at the CRD boundary (spec.oidcIssuer removed,
+# spec.shortName added + required, four cluster-facts status mirrors
+# added) — ADR-0001 requires a live-admission chainsaw pass for v2
+# CRD-boundary changes. Mirrors platform-cluster/00-xrd-establishes:
+#
+#   1. The XSpokeAccess XRD is Established.
+#   2. The Composition applies cleanly (pipeline shape accepted; the
+#      provider-kubernetes Object bases are opaque to admission — no
+#      provider install needed for the dry-run contract).
+#   3. A valid XR passes server-side validation.
+#   4. The RETIRED spec.oidcIssuer field is REJECTED at admission (the
+#      strict schema is what makes the old overlay runbook fail loudly
+#      — ADR-0010 PR-2 brief, mechanism).
+#   5. A missing-shortName XR is REJECTED (the producer cannot stamp the
+#      selector label without it).
+#
+# Real AWS/Secret provisioning is exercised by the gating live suite,
+# not here (AGENTS test discipline; no nightly lanes — ADR-0009).
+#
+# NOTE: the canonical catch block's xr_kind diagnostic loop does not
+# enumerate xspokeaccess — appending to the canonical list would force
+# editing every existing scenario's catch block in the same PR (the
+# catch-block lint compares structurally). Accepted: the describe.kind
+# override below covers the XR; its MRs are enumerated via resourceRefs
+# only for the listed kinds.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: xspokeaccess-xrd-establishes
+spec:
+  timeouts:
+    apply: 30s
+    assert: 120s
+  steps:
+    - name: apply the XSpokeAccess XRD
+      try:
+        - apply:
+            file: ../../../../crossplane/xrds/xspokeaccess.yaml
+
+    - name: assert XRD reaches Established
+      try:
+        - script:
+            content: |
+              set -eu
+              kubectl wait --for=condition=Established --timeout=60s \
+                xrd/xspokeaccesses.platform.k8-platform.io
+
+    - name: assert the XR CRD landed in the cluster
+      try:
+        - assert:
+            resource:
+              apiVersion: apiextensions.k8s.io/v1
+              kind: CustomResourceDefinition
+              metadata:
+                name: xspokeaccesses.platform.k8-platform.io
+
+    - name: apply the XSpokeAccess Composition
+      try:
+        - apply:
+            file: ../../../../crossplane/compositions/xspokeaccess.yaml
+
+    - name: assert a valid XR passes server-side validation
+      # --dry-run=server avoids triggering Composition rendering (no
+      # provider-kubernetes / provider-aws-iam installed in kind). The
+      # contract under test is the XRD schema.
+      try:
+        - script:
+            content: |
+              set -eu
+              kubectl apply --dry-run=server -f - <<'YAML'
+              apiVersion: platform.k8-platform.io/v1alpha1
+              kind: XSpokeAccess
+              metadata:
+                name: schema-valid
+                namespace: default
+              spec:
+                clusterName: chainsaw-valid
+                subdomain: platform
+                shortName: spoke
+                region: us-east-1
+              YAML
+
+    - name: assert the retired spec.oidcIssuer is REJECTED
+      # ADR-0010 PR-2 removed the field; the strict schema (no
+      # preserve-unknown-fields) must reject it so the old
+      # placeholder-overlay runbook fails loudly at admission instead of
+      # silently no-oping.
+      try:
+        - script:
+            content: |
+              set -eu
+              if kubectl apply --dry-run=server -f - <<'YAML' 2>/tmp/err.log
+              apiVersion: platform.k8-platform.io/v1alpha1
+              kind: XSpokeAccess
+              metadata:
+                name: schema-invalid-oidcissuer
+                namespace: default
+              spec:
+                clusterName: chainsaw-bad
+                subdomain: platform
+                shortName: spoke
+                oidcIssuer: https://example.invalid/overlaid
+              YAML
+              then
+                echo "FAIL: retired spec.oidcIssuer was accepted"
+                exit 1
+              fi
+              grep -qi "oidcIssuer" /tmp/err.log
+
+    - name: assert a missing-shortName XR is REJECTED
+      try:
+        - script:
+            content: |
+              set -eu
+              if kubectl apply --dry-run=server -f - <<'YAML' 2>/tmp/err.log
+              apiVersion: platform.k8-platform.io/v1alpha1
+              kind: XSpokeAccess
+              metadata:
+                name: schema-invalid-noshortname
+                namespace: default
+              spec:
+                clusterName: chainsaw-bad
+                subdomain: platform
+              YAML
+              then
+                echo "FAIL: XR without shortName was accepted"
+                exit 1
+              fi
+              grep -qE "shortName|required" /tmp/err.log
+  # SPEC-A4 canonical catch block — keep in sync with
+  # tests/chainsaw/_lib/catch-block.yaml (enforced by
+  # tests/unit/test_chainsaw_catch_block.sh).
+  catch:
+    - describe:
+        apiVersion: platform.k8-platform.io/v1alpha1
+        kind: XSpokeAccess      # overridden per-scenario when the XR kind differs
+        namespace: ($namespace)
+    - script:
+        content: |
+          set +e
+          # Enumerate v2 XR kinds across ALL namespaces. The scenarios in
+          # this repo apply XRs to `namespace: default` (per commit 8526f46
+          # "use literal 'default' namespace in composition-drift apply"),
+          # NOT to chainsaw's per-test scratch namespace. A $NAMESPACE-bound
+          # lookup would return nothing and the catch block would be
+          # diagnostically empty — exactly what the 2026-05-28 PR #125
+          # composition-drift timeout exposed (issue OI-2026-05-28-1).
+          # `-A` surfaces the XR regardless of where the scenario put it.
+          for xr_kind in xplatformsecret xplatformcluster xdatabase; do
+            kubectl get "$xr_kind" -A \
+              -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' \
+              | while read -r ns name; do
+                  [ -z "$name" ] && continue
+                  kubectl describe "$xr_kind" -n "$ns" "$name" 2>&1 | head -c 1500
+                  # Describe every MR referenced by this XR. MRs are
+                  # cluster-scoped on the upbound providers, so no -n flag.
+                  kubectl get "$xr_kind" -n "$ns" "$name" \
+                    -o jsonpath='{range .spec.resourceRefs[*]}{.apiVersion}{" "}{.kind}{" "}{.name}{"\n"}{end}' \
+                    | while read -r api kind mrname; do
+                        [ -z "$kind" ] && continue
+                        kubectl describe "$kind.$api" "$mrname" 2>&1 | head -c 1000
+                      done
+                done
+          done
+    - events:
+        namespace: ($namespace)

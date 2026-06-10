@@ -51,6 +51,70 @@ spec:
   providerConfigRef:
     kind: ClusterProviderConfig
     name: default
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  annotations: {}
+  generateName: render-probe-spoke-
+  labels:
+    crossplane.io/composite: render-probe-spoke
+    platform.k8-platform.io/role: spoke-cluster-secret
+  name: render-probe-spoke-ae3c5f35fcdd
+  namespace: default
+spec:
+  forProvider:
+    manifest:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        annotations:
+          k8-platform.io/certificate-arn: arn:aws:acm:us-east-1:000000000000:certificate/00000000-0000-0000-0000-000000000000
+          k8-platform.io/domain: render-probe.example.test
+          k8-platform.io/external-dns-role-arn: arn:aws:iam::000000000000:role/k8-platform-render-probe-external-dns
+          k8-platform.io/region: us-east-1
+          k8-platform.io/subdomain: platform
+        labels:
+          argocd.argoproj.io/secret-type: cluster
+          k8-platform.io/cluster-role: spoke
+          k8-platform.io/short-name: spoke
+        name: platform-spoke
+        namespace: argocd
+      stringData:
+        config: '{"awsAuthConfig":{"clusterName":"render-probe"},"tlsClientConfig":{"caData":"UkVOREVSLVBST0JFLUNBLURBVEE="}}'
+        name: platform-spoke
+        server: https://RENDERPROBE0000000000000000000000.gr7.us-east-1.eks.amazonaws.com
+      type: Opaque
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: hub
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  annotations: {}
+  generateName: render-probe-spoke-
+  labels:
+    crossplane.io/composite: render-probe-spoke
+    platform.k8-platform.io/role: spoke-cluster-facts
+  name: render-probe-spoke-fca7cc8de7cd
+  namespace: default
+spec:
+  forProvider:
+    manifest:
+      apiVersion: platform.k8-platform.io/v1alpha1
+      kind: XPlatformCluster
+      metadata:
+        name: render-probe-spoke
+        namespace: default
+  managementPolicies:
+    - Observe
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: hub
 apiVersion: iam.aws.m.upbound.io/v1beta1
 kind: OpenIDConnectProvider
 metadata:
@@ -191,10 +255,20 @@ spec:
       - apiVersion: iam.aws.m.upbound.io/v1beta1
         kind: Role
         name: render-probe-spoke-c4644f95ee5c
-  oidcIssuer: https://oidc.eks.us-east-1.amazonaws.com/id/RENDERPROBE00000000000000000000
+      - apiVersion: kubernetes.m.crossplane.io/v1alpha1
+        kind: Object
+        name: render-probe-spoke-ae3c5f35fcdd
+      - apiVersion: kubernetes.m.crossplane.io/v1alpha1
+        kind: Object
+        name: render-probe-spoke-fca7cc8de7cd
   region: us-east-1
+  shortName: spoke
   subdomain: platform
 status:
+  clusterCaData: UkVOREVSLVBST0JFLUNBLURBVEE=
+  clusterCertificateArn: arn:aws:acm:us-east-1:000000000000:certificate/00000000-0000-0000-0000-000000000000
+  clusterEndpoint: https://RENDERPROBE0000000000000000000000.gr7.us-east-1.eks.amazonaws.com
+  clusterOidcIssuer: https://oidc.eks.us-east-1.amazonaws.com/id/RENDERPROBE00000000000000000000
   conditions:
     - reason: WatchCircuitClosed
       status: "True"
@@ -202,7 +276,8 @@ status:
     - reason: ReconcileSuccess
       status: "True"
       type: Synced
-    - message: 'Unready resources: access-entry, access-policy-association, external-dns-policy, and 2 more'
+    - message: 'Unready resources: access-entry, access-policy-association, cluster-facts, and 4 more'
       reason: Creating
       status: "False"
       type: Ready
+  externalDnsRoleArn: arn:aws:iam::000000000000:role/k8-platform-render-probe-external-dns

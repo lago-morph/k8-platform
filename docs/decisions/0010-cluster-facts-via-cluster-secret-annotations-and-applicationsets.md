@@ -40,7 +40,7 @@ XSpokeAccess pair).
 | `subdomain` | XR spec (`spec.dns.subdomain`); auto-008 already designed it as a Secret annotation | `platform-cluster.yaml` env patch; auto-008 §5 |
 | `certificate-arn` | XPlatformCluster → `status.certificateArn` | `platform-cluster.yaml:501-503` |
 | `external-dns-role-arn` | XSpokeAccess → `status.externalDnsRoleArn` | `xspokeaccess.yaml:200-202` |
-| `region` | **no surfaced source today** — PR-2 must add it (key in the `cluster-network` EnvironmentConfig from the terraform region var, surfaced to XR status) | review finding; `crossplane-phase3.tf:167-188` lacks it |
+| `region` | `XSpokeAccess.spec.region` (PR-2 resolution — region is per-cluster, not account-global; the EnvironmentConfig sketch below was the deferral placeholder) | PR-2 §Decision 2; `xspokeaccess.yaml` spec.region (validated, defaulted) |
 
 **Explicitly out of contract:** keycloak's `externalDatabase.host`/`port`
 (`platform-services/keycloak/values.yaml:62-63`). They are database connection
@@ -111,18 +111,14 @@ which permits only the hub.
   registration exactly as the per-app files were: an empty generator produces
   zero Applications and no sync error.
 - **PR-2 (seam #5, the build-session change):** the durable registration Secret
-  produced from committed source, carrying the contract labels/annotations, plus
-  the `region` EnvironmentConfig/status addition. **Honest status:** the producer
-  is an OPEN blocker (SUBSTRATE row 5, "hand-bootstrapped live again in
-  auto-016"), and the record holds an unresolved mechanism fork — ADR-0005 chose
-  ESO `target.template` for the caData-in-JSON assembly, while the
-  OI-2026-06-07-1 entry's later paragraph recommends a provider-kubernetes
-  `Object` (the hub `InjectedIdentity` ProviderConfig exists for exactly that,
-  `crossplane-phase3.tf:228-269`). PR-2 must resolve that fork; the fact contract
-  is mechanism-neutral (both writers can stamp metadata). ESO's
-  `target.template.metadata.{labels,annotations}` fields are schema-verified;
-  whether template values interpolate remote data is confirmed against live ESO
-  docs at PR-2 time.
+  produced from committed source, carrying the contract labels/annotations.
+  **Resolved 2026-06-10 — see "PR-2 resolutions" below.** (Original deferral:
+  the producer was an OPEN blocker with an unresolved
+  ESO-vs-provider-kubernetes mechanism fork. PR-2 resolved it for
+  provider-kubernetes after verifying against live ESO docs that ESO *could*
+  interpolate annotations from remote data — `templateFrom` with
+  `target: Annotations` exists in the pinned v0.9.13 — so the fork was
+  decided on data-flow architecture, not capability.)
 
 **Cutover (honest, non-atomic):** deleting the ten Application files while adding
 the ApplicationSets means bootstrap **prunes** the old Application objects and
@@ -197,3 +193,67 @@ app tests; the contract lint; no `OVERLAID-AT-REGISTRATION` markers remain under
 source → registration Secret carries the contract → generated apps converge →
 `hello.platform.<domain>` 200 via the PR #210 hard check → SUBSTRATE-READINESS
 rows 4+5 evidence columns filled by run ID.
+
+## PR-2 resolutions (2026-06-10 — the producer; OI-2026-06-07-1)
+
+Working paper with full grounding + two adversarial review rounds:
+`planning/adr-0010-cluster-facts/adr0010-pr2-producer-brief.md`. Status of
+everything below: **pending clean-build verification** (SUBSTRATE row 5).
+
+1. **Writer mechanism — provider-kubernetes `Object`, not ESO.** The
+   registration Secret is written by a `spoke-cluster-secret` Object
+   (namespaced `kubernetes.m.crossplane.io/v1alpha1`, verified in the pinned
+   provider v1.2.1) composed by `xspokeaccess-aws`, via the hub
+   `InjectedIdentity` ClusterProviderConfig. Capability was NOT the decider:
+   live ESO v0.9.13 docs confirm `templateFrom`/`target: Annotations` can
+   stamp remote data into metadata. Data flow was: the five facts span two XR
+   statuses + the EnvironmentConfig, all hub-local; ESO can only template
+   *remote provider* data, so even the minimal ESO shape round-trips ≥2
+   connection-detail Secrets through AWS Secrets Manager (a second cloud copy
+   of the spoke credential) to move data that never needs to leave the hub.
+   **This amends ADR-0005's Alternatives rejection of provider-kubernetes for
+   OI-1**: that rejection assumed the JSON assembly had to happen in
+   provider-kubernetes references; it happens in the Composition's
+   `CombineFromComposite` — the Object only applies a finished manifest.
+   ADR-0005's positive ESO decisions (secret *movement*; XPlatformSecret for
+   AWS-grade) stand. Cluster-side facts cross the XR boundary via an
+   Observe-only Object on the **paired** XPlatformCluster (the XSpokeAccess
+   XR's own name/namespace — no free-text target; readiness requires all four
+   observed facts so a stuck producer is loudly Ready=False). This also
+   retires the `spec.oidcIssuer` placeholder overlay (a SUBSTRATE-banned
+   manual step), reversing the auto-008 C2 *input* design while keeping its
+   ordering gate (manual-sync after cluster Ready).
+2. **`region` source — `XSpokeAccess.spec.region`** (amends the fact table
+   above, per its own deferral note). Region is a per-cluster fact; the
+   account-singleton EnvironmentConfig is the wrong altitude, and the field
+   already exists validated + defaulted on the XRD.
+3. **Keycloak DB host/port — NOT contract keys (firm); `extraEnvVarsSecret`
+   (direction).** host/port are XDatabase facts; putting them on the cluster
+   Secret would need a second writer or an XSpokeAccess→XDatabase coupling
+   and break per-Secret completeness for DB-less spokes. The chosen
+   mechanism: the OI-2026-06-07-5 ESO-materialized spoke secret adds
+   `KEYCLOAK_DATABASE_HOST`/`PORT` keys consumed via the chart's
+   `extraEnvVarsSecret`. The duplicate-env-name precedence (chart-rendered
+   env vs extraEnvVarsSecret) is an unverified premise — labeled hypothesis;
+   OI-5's implementation must prove it with a helm-render fixture. The
+   contract closes at five keys.
+4. **Single writer / partial writes.** Writer of record = the
+   `spoke-cluster-secret` Object under the pinned `provider-kubernetes` SA
+   (DeploymentRuntimeConfig), RBAC-granted argocd-namespace Secret writes +
+   platform-namespace XPlatformCluster reads
+   (`crossplane/rbac/02-provider-kubernetes-spoke-cluster-secret.yaml`); the
+   REST/kubectl registration path is retired from runbooks. **Honest
+   framing: a convergence/process control, not a security boundary** —
+   ArgoCD's controllers inherently write argocd-ns Secrets, ESO is
+   cluster-wide, Kyverno is Audit-only. Partial writes are prevented by
+   construction: every patch into the Secret manifest is
+   `policy.fromFieldPath: Required`, which under the pinned p&t v0.10.6
+   skips creating *this one* composed resource until every fact resolves —
+   the Secret is complete-or-absent (gated by the contract lint). Named
+   residual: a *regressing* fact on an existing Secret is removed by SSA and
+   fails loudly downstream (`missingkey=error` / connection failure);
+   `preserveResourcesOnDeletion` keeps workloads intact.
+
+Registration naming: `<spec.subdomain>-spoke` (`platform-spoke`,
+`workload1-spoke`) — required by the `platform-spoke` AppProject destination
+allowlist (`platform-spoke` / `*-spoke`); gated by the contract lint.

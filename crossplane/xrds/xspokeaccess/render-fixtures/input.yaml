@@ -1,12 +1,19 @@
 # Probe XSpokeAccess used by `crossplane render` for the SPEC-S9 dry-run
-# (auto-008 C6).
+# (auto-008 C6, extended for ADR-0010 PR-2).
 #
 # The account-ephemeral inputs (accountId, the ${clusterName}-argocd role
 # ARN, the Route53 zone id, the domain) are supplied by the
 # cluster-network EnvironmentConfig in required-resources.yaml (NOT on the
-# XR). spec.oidcIssuer here is a deterministic PROBE issuer — in
-# production it is overlaid at sync time from
-# XPlatformCluster.status.oidcIssuer (account-ephemeral, AGENTS §8.1).
+# XR).
+#
+# The status block carries deterministic PROBE values for the fields the
+# cluster-facts Observe Object mirrors at runtime (plus the
+# externalDnsRoleArn echoed from the Role MR). `crossplane render`
+# resolves FromCompositeFieldPath against the input XR INCLUDING status,
+# so populating it here renders the COMPLETE registration Secret into the
+# golden — exercising every Required-policy patch (the
+# complete-or-absent guarantee). These are stub values (account
+# 000000000000), NOT real account-ephemeral data (AGENTS §8.1).
 #
 # metadata.uid is pinned for deterministic render output (SPEC-S9 §5).
 # The render is fully offline; no real AWS resources are queried.
@@ -19,5 +26,11 @@ metadata:
 spec:
   clusterName: render-probe
   subdomain: platform
+  shortName: spoke
   region: us-east-1
-  oidcIssuer: https://oidc.eks.us-east-1.amazonaws.com/id/RENDERPROBE00000000000000000000
+status:
+  clusterOidcIssuer: https://oidc.eks.us-east-1.amazonaws.com/id/RENDERPROBE00000000000000000000
+  clusterEndpoint: https://RENDERPROBE0000000000000000000000.gr7.us-east-1.eks.amazonaws.com
+  clusterCaData: UkVOREVSLVBST0JFLUNBLURBVEE=
+  clusterCertificateArn: arn:aws:acm:us-east-1:000000000000:certificate/00000000-0000-0000-0000-000000000000
+  externalDnsRoleArn: arn:aws:iam::000000000000:role/k8-platform-render-probe-external-dns

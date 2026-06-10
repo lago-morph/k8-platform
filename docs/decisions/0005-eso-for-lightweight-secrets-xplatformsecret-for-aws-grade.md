@@ -71,6 +71,16 @@ its provisioning path), alongside the per-cluster ConfigMap of cluster facts
 - **provider-kubernetes `Object` for the ArgoCD cluster Secret (OI-1).** Rejected:
   it cannot assemble the caData-in-JSON `config` (references copy a value to a field
   path, no string templating). ESO `target.template` solves exactly this.
+
+  > **AMENDED by ADR-0010 PR-2 (2026-06-10):** this rejection's premise does
+  > not hold for a Composition-composed Object — the caData-in-JSON `config`
+  > is assembled by the Composition's `CombineFromComposite` *before* the
+  > Object applies the finished manifest. PR-2 chose the provider-kubernetes
+  > `Object` for the registration Secret on data-flow grounds (the facts are
+  > hub-local; ESO would round-trip them through AWS Secrets Manager). This
+  > amendment is scoped to the OI-1 registration Secret only; every other
+  > decision in this ADR (ESO for secret movement/generation, XPlatformSecret
+  > for AWS-grade, no retrofit) stands. See ADR-0010 "PR-2 resolutions".
 - **Retrofit existing XPlatformSecret usages to plain ESO now.** Rejected
   explicitly: they work; churn for no behavioural gain risks regressions. The
   philosophy applies going forward only.

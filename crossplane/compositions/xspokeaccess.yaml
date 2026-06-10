@@ -25,6 +25,26 @@
 #      from the EnvironmentConfig) to AmazonEKSClusterAdminPolicy on the
 #      SPOKE cluster, so the ArgoCD application-controller can sync to it.
 #      accessScope.type: cluster.
+#   4. cluster-facts OBSERVE Object (ADR-0010 PR-2): provider-kubernetes
+#      reads the paired XPlatformCluster XR (this XR's OWN name/namespace
+#      — no free-text target to typo; a broken pairing is observe-not-
+#      found = Synced=False, loud) and mirrors its status facts
+#      (oidcIssuer, endpoint, caData, certificateArn) onto this XR's
+#      status. Replaces the retired spec.oidcIssuer operator overlay.
+#   5. spoke-cluster-secret Object (ADR-0010 PR-2 / OI-2026-06-07-1):
+#      the durable ArgoCD registration Secret in the argocd namespace,
+#      carrying the five-fact contract annotations + selector labels the
+#      consumer ApplicationSets template. COMPLETE-OR-ABSENT: every patch
+#      into the Secret manifest carries policy.fromFieldPath: Required —
+#      under function-patch-and-transform v0.10.6 a Required patch that
+#      cannot resolve skips creating THIS composed resource only (the
+#      siblings proceed), so the Secret is never written partially
+#      (ADR-0010 consequence (b)). Registration name = <subdomain>-spoke,
+#      matching the platform-spoke AppProject destination allowlist
+#      (platform-spoke / *-spoke). The hub app-controller authenticates
+#      via awsAuthConfig.clusterName = spec.clusterName — the same value
+#      the AccessEntry (3) grants on, so a wrong-cluster fact read cannot
+#      authenticate (fail-closed at auth).
 #
 # All three ARNs are published to the XR status for observability.
 #
@@ -36,7 +56,13 @@
 # policy JSON with CombineFromEnvironment (per-resource ToEnvironment
 # writes are NOT visible to a combine in the same pass; top-level
 # environment patches are — same idiom the platform-cluster Composition
-# uses for `subdomain`).
+# uses for `subdomain`). Since ADR-0010 PR-2 the issuer source is
+# status.clusterOidcIssuer (the Observe Object's mirror), which lands on
+# the observed composite one reconcile after observation — the
+# established "cross-resource refs travel via the composite" idiom. The
+# issuer-dependent patches are Required, so the OIDC provider and the
+# external-dns Role are simply not created until the issuer is observed
+# (no url:"" hard-fail — the auto-008 C2 concern this XR exists for).
 apiVersion: apiextensions.crossplane.io/v1
 kind: Composition
 metadata:
@@ -85,11 +111,16 @@ spec:
         # CombineFromEnvironment policy-document assembly below.
         environment:
           patches:
+            # Issuer source = the cluster-facts Observe Object's status
+            # mirror (ADR-0010 PR-2). Before it populates these patches
+            # skip (Optional default) and the issuer-dependent resource
+            # patches below (Required) hold those MRs back — never an
+            # empty url.
             - type: FromCompositeFieldPath
-              fromFieldPath: spec.oidcIssuer
+              fromFieldPath: status.clusterOidcIssuer
               toFieldPath: oidcIssuer
             - type: FromCompositeFieldPath
-              fromFieldPath: spec.oidcIssuer
+              fromFieldPath: status.clusterOidcIssuer
               toFieldPath: oidcHost
               transforms:
                 - type: string
@@ -97,6 +128,64 @@ spec:
                     type: TrimPrefix
                     trim: "https://"
         resources:
+
+          # ---------- 0. cluster-facts Observe Object ----------------
+          # provider-kubernetes (hub ClusterProviderConfig, InjectedIdentity)
+          # observes the PAIRED XPlatformCluster — the one with this XR's
+          # own metadata.name/namespace (pairing asserted by
+          # tests/unit/test_xspokeaccess.sh; a broken pairing is
+          # observe-not-found = Synced=False, loud, never a wrong-cluster
+          # read). Mirrors the cluster's published facts onto this XR's
+          # status for the registration Secret + the OIDC trust plane.
+          # Readiness requires ALL FOUR facts observed, so "target exists
+          # but facts never populate" (cluster not Ready, RBAC gap) holds
+          # this Object — and the XR — visibly Ready=False instead of
+          # silently never registering the spoke (ADR-0010 PR-2 brief,
+          # loudness guard).
+          - name: cluster-facts
+            base:
+              apiVersion: kubernetes.m.crossplane.io/v1alpha1
+              kind: Object
+              metadata:
+                labels:
+                  platform.k8-platform.io/role: spoke-cluster-facts
+              spec:
+                managementPolicies: [Observe]
+                forProvider:
+                  manifest:
+                    apiVersion: platform.k8-platform.io/v1alpha1
+                    kind: XPlatformCluster
+                providerConfigRef:
+                  kind: ClusterProviderConfig
+                  name: hub
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: spec.forProvider.manifest.metadata.name
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.namespace
+                toFieldPath: spec.forProvider.manifest.metadata.namespace
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.manifest.status.oidcIssuer
+                toFieldPath: status.clusterOidcIssuer
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.manifest.status.endpoint
+                toFieldPath: status.clusterEndpoint
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.manifest.status.clusterCaData
+                toFieldPath: status.clusterCaData
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.manifest.status.certificateArn
+                toFieldPath: status.clusterCertificateArn
+            readinessChecks:
+              - type: NonEmpty
+                fieldPath: status.atProvider.manifest.status.oidcIssuer
+              - type: NonEmpty
+                fieldPath: status.atProvider.manifest.status.endpoint
+              - type: NonEmpty
+                fieldPath: status.atProvider.manifest.status.clusterCaData
+              - type: NonEmpty
+                fieldPath: status.atProvider.manifest.status.certificateArn
 
           # ---------- 1. OpenIDConnectProvider ----------------------
           # The spoke's IRSA anchor. thumbprintList is the well-known
@@ -123,9 +212,13 @@ spec:
                   kind: ClusterProviderConfig
                   name: default
             patches:
+              # Required: the OIDC provider is not created until the issuer
+              # is observed from the paired cluster XR (never url:"").
               - type: FromCompositeFieldPath
-                fromFieldPath: spec.oidcIssuer
+                fromFieldPath: status.clusterOidcIssuer
                 toFieldPath: spec.forProvider.url
+                policy:
+                  fromFieldPath: Required
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.clusterName
                 toFieldPath: spec.forProvider.tags.ClusterName
@@ -175,6 +268,11 @@ spec:
               #     + StringEquals { "<oidcHost>:sub": ".../external-dns",
               #                      "<oidcHost>:aud": "sts.amazonaws.com" }
               - type: CombineFromEnvironment
+                # Required: the Role is not created until oidcHost reaches
+                # the environment (i.e. the issuer was observed) — an IAM
+                # Role must never be created with an empty trust policy.
+                policy:
+                  fromFieldPath: Required
                 combine:
                   variables:
                     - fromFieldPath: accountId
@@ -350,6 +448,138 @@ spec:
               - type: FromEnvironmentFieldPath
                 fromFieldPath: argocdRoleArn
                 toFieldPath: spec.forProvider.principalArn
+            readinessChecks:
+              - type: MatchCondition
+                matchCondition:
+                  type: Ready
+                  status: "True"
+
+          # ---------- 6. ArgoCD spoke registration Secret ------------
+          # The durable producer half of the ADR-0010 cluster-facts
+          # contract (OI-2026-06-07-1): the cluster Secret is ArgoCD's
+          # connection credential AND the platform's fact bus. Writer of
+          # record = THIS Object (provider-kubernetes pod SA, RBAC in
+          # crossplane/rbac/02-provider-kubernetes-spoke-cluster-secret.yaml);
+          # the REST/kubectl registration path is retired.
+          #
+          # COMPLETE-OR-ABSENT: every patch into the manifest carries
+          # policy.fromFieldPath: Required. Under the pinned
+          # function-patch-and-transform v0.10.6, a Required patch that
+          # cannot resolve skips creating this one composed resource and
+          # leaves the siblings untouched — so the Secret only ever
+          # appears fully assembled (labels, five contract annotations,
+          # server, config), never partially (ADR-0010 consequence (b)).
+          #
+          # The contract keys here are gated bidirectionally against the
+          # consumer ApplicationSets by
+          # tests/unit/test_cluster_facts_contract.sh.
+          - name: spoke-cluster-secret
+            base:
+              apiVersion: kubernetes.m.crossplane.io/v1alpha1
+              kind: Object
+              metadata:
+                labels:
+                  platform.k8-platform.io/role: spoke-cluster-secret
+              spec:
+                managementPolicies: [Observe, Create, Update, Delete]
+                forProvider:
+                  manifest:
+                    apiVersion: v1
+                    kind: Secret
+                    metadata:
+                      namespace: argocd
+                      labels:
+                        # ArgoCD only treats a Secret as a cluster when
+                        # this label is present; the ApplicationSet
+                        # cluster generators additionally require the
+                        # k8-platform.io selector labels below. All ride
+                        # the complete-or-absent guarantee above.
+                        argocd.argoproj.io/secret-type: cluster
+                        k8-platform.io/cluster-role: spoke
+                    type: Opaque
+                providerConfigRef:
+                  kind: ClusterProviderConfig
+                  name: hub
+            patches:
+              # Registration name <subdomain>-spoke (platform-spoke,
+              # workload1-spoke) — matches the platform-spoke AppProject
+              # destination allowlist (platform-spoke / *-spoke) and the
+              # consumer templates' destination.name {{.name}}.
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.subdomain
+                toFieldPath: spec.forProvider.manifest.metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-spoke"
+                policy:
+                  fromFieldPath: Required
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.subdomain
+                toFieldPath: spec.forProvider.manifest.stringData.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-spoke"
+                policy:
+                  fromFieldPath: Required
+              # Selector label (ADR-0010): consumer ApplicationSets derive
+              # generated app names + per-cluster values files from it.
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.shortName
+                toFieldPath: spec.forProvider.manifest.metadata.labels[k8-platform.io/short-name]
+                policy:
+                  fromFieldPath: Required
+              # ---- the five-fact contract annotations ----
+              - type: FromEnvironmentFieldPath
+                fromFieldPath: domain
+                toFieldPath: spec.forProvider.manifest.metadata.annotations[k8-platform.io/domain]
+                policy:
+                  fromFieldPath: Required
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.subdomain
+                toFieldPath: spec.forProvider.manifest.metadata.annotations[k8-platform.io/subdomain]
+                policy:
+                  fromFieldPath: Required
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.manifest.metadata.annotations[k8-platform.io/region]
+                policy:
+                  fromFieldPath: Required
+              - type: FromCompositeFieldPath
+                fromFieldPath: status.clusterCertificateArn
+                toFieldPath: spec.forProvider.manifest.metadata.annotations[k8-platform.io/certificate-arn]
+                policy:
+                  fromFieldPath: Required
+              - type: FromCompositeFieldPath
+                fromFieldPath: status.externalDnsRoleArn
+                toFieldPath: spec.forProvider.manifest.metadata.annotations[k8-platform.io/external-dns-role-arn]
+                policy:
+                  fromFieldPath: Required
+              # ---- the ArgoCD connection fields ----
+              - type: FromCompositeFieldPath
+                fromFieldPath: status.clusterEndpoint
+                toFieldPath: spec.forProvider.manifest.stringData.server
+                policy:
+                  fromFieldPath: Required
+              # awsAuthConfig.clusterName = spec.clusterName — the SAME
+              # value the AccessEntry grants on, so a wrong-cluster fact
+              # read cannot authenticate (fail-closed at auth). The hub
+              # app-controller signs with its IRSA role; caData verifies
+              # the spoke's real CA.
+              - type: CombineFromComposite
+                policy:
+                  fromFieldPath: Required
+                combine:
+                  variables:
+                    - fromFieldPath: spec.clusterName
+                    - fromFieldPath: status.clusterCaData
+                  strategy: string
+                  string:
+                    fmt: '{"awsAuthConfig":{"clusterName":"%s"},"tlsClientConfig":{"caData":"%s"}}'
+                toFieldPath: spec.forProvider.manifest.stringData.config
             readinessChecks:
               - type: MatchCondition
                 matchCondition:

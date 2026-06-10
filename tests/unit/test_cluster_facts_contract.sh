@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
-# Gates the cluster-facts contract (ADR-0010): the spoke ApplicationSets may
-# reference ONLY the contract's annotation/label keys on the cluster Secret,
-# and every contract key must be documented in the ADR. This is the
-# consumer-side half of the bidirectional lint; the producer-side half (the
-# registration Secret must emit exactly these keys) lands with ADR-0010 PR-2
-# (OI-2026-06-07-1).
+# Gates the cluster-facts contract (ADR-0010) BIDIRECTIONALLY:
+#   consumer side — the spoke ApplicationSets may reference ONLY the
+#     contract's annotation/label keys on the cluster Secret;
+#   producer side (ADR-0010 PR-2 / OI-2026-06-07-1) — the xspokeaccess
+#     Composition's spoke-cluster-secret Object must emit EXACTLY the
+#     contract keys (no missing fact, no extra surface), with every patch
+#     into the Secret manifest carrying policy.fromFieldPath: Required
+#     (the complete-or-absent guarantee), and the registration name
+#     following <subdomain>-spoke (the AppProject allowlist contract).
+# Every contract key must be documented in the ADR.
 #
 # Also gates the structural retirement of the overlay pattern: no
 # OVERLAID-AT-REGISTRATION marker may remain under argocd/apps/spoke/ — that
@@ -77,6 +81,64 @@ for f in "$SPOKE_DIR"/*.yaml; do
   done < <(grep -o '"\?k8-platform\.io/[a-z-]*"\?:' "$f" | sed 's/"//g; s/k8-platform\.io\///; s/://' | sort -u)
 done
 
+# ── 2b. PRODUCER: the Composition emits exactly the contract keys ───────────
+COMP="$ROOT/crossplane/compositions/xspokeaccess.yaml"
+if [ ! -f "$COMP" ]; then
+  echo "FAIL: $COMP missing (the producer half has no source)"; FAIL=1
+else
+  # annotation keys the spoke-cluster-secret Object patches write
+  PRODUCED_ANN=$(grep -o 'manifest\.metadata\.annotations\[k8-platform\.io/[a-z-]*\]' "$COMP" \
+    | sed 's/.*k8-platform\.io\///; s/\]//' | sort -u)
+  # label keys: patched ones + the base-manifest literals
+  PRODUCED_LBL=$( (grep -o 'manifest\.metadata\.labels\[k8-platform\.io/[a-z-]*\]' "$COMP" \
+      | sed 's/.*k8-platform\.io\///; s/\]//'; \
+    yq -r '.spec.pipeline[] | select(.functionRef.name=="function-patch-and-transform")
+           | .input.resources[] | select(.name=="spoke-cluster-secret")
+           | .base.spec.forProvider.manifest.metadata.labels
+           | keys | .[]' "$COMP" 2>/dev/null \
+      | grep '^k8-platform\.io/' | sed 's/k8-platform\.io\///') | sort -u)
+
+  # bidirectional: produced == contract, both directions
+  for k in $ANNOTATION_KEYS; do
+    echo "$PRODUCED_ANN" | grep -qx "$k" \
+      && echo "ok[producer]: contract annotation '$k' emitted" \
+      || { echo "FAIL[producer]: contract annotation '$k' NOT emitted by the Composition"; FAIL=1; }
+  done
+  for k in $PRODUCED_ANN; do
+    # shellcheck disable=SC2086
+    in_list "$k" $ANNOTATION_KEYS \
+      || { echo "FAIL[producer]: Composition emits annotation k8-platform.io/$k — NOT in the contract"; FAIL=1; }
+  done
+  for k in $LABEL_KEYS; do
+    echo "$PRODUCED_LBL" | grep -qx "$k" \
+      && echo "ok[producer]: contract label '$k' emitted" \
+      || { echo "FAIL[producer]: contract label '$k' NOT emitted by the Composition"; FAIL=1; }
+  done
+  for k in $PRODUCED_LBL; do
+    # shellcheck disable=SC2086
+    in_list "$k" $LABEL_KEYS \
+      || { echo "FAIL[producer]: Composition emits label k8-platform.io/$k — NOT in the contract"; FAIL=1; }
+  done
+
+  # complete-or-absent: every patch on the Secret Object is Required
+  SC_SEL='.spec.pipeline[] | select(.functionRef.name=="function-patch-and-transform") | .input.resources[] | select(.name=="spoke-cluster-secret")'
+  P_TOTAL=$(yq -r "${SC_SEL} | .patches | length" "$COMP")
+  P_REQ=$(yq -r "${SC_SEL} | .patches[] | select(.policy.fromFieldPath==\"Required\") | .toFieldPath" "$COMP" | grep -vc '^---$')
+  if [ "$P_TOTAL" -gt 0 ] && [ "$P_TOTAL" = "$P_REQ" ]; then
+    echo "ok[producer]: all $P_TOTAL Secret patches are Required (complete-or-absent)"
+  else
+    echo "FAIL[producer]: $P_REQ/$P_TOTAL Secret patches are Required — a partial Secret write is possible"; FAIL=1
+  fi
+
+  # registration name contract: <subdomain>-spoke
+  N_FMT=$(yq -r "${SC_SEL} | .patches[] | select(.toFieldPath==\"spec.forProvider.manifest.metadata.name\") | .transforms[0].string.fmt" "$COMP")
+  if [ "$N_FMT" = "%s-spoke" ]; then
+    echo "ok[producer]: registration name fmt is %s-spoke (AppProject allowlist contract)"
+  else
+    echo "FAIL[producer]: registration name fmt '$N_FMT' != %s-spoke — generated destinations would be rejected by the platform-spoke AppProject"; FAIL=1
+  fi
+fi
+
 # ── 3. the overlay pattern is structurally retired ──────────────────────────
 if grep -rn "OVERLAID-AT-REGISTRATION" "$SPOKE_DIR"; then
   echo "FAIL: OVERLAID-AT-REGISTRATION marker under argocd/apps/spoke/ — the hand-overlay pattern is retired (ADR-0010)"; FAIL=1
@@ -99,5 +161,5 @@ else
   echo "FAIL: $HELLO missing"; FAIL=1
 fi
 
-[ "$FAIL" -eq 0 ] && echo "PASS: cluster-facts contract (consumer side)" || echo "FAILED"
+[ "$FAIL" -eq 0 ] && echo "PASS: cluster-facts contract (bidirectional: consumer + producer)" || echo "FAILED"
 exit "$FAIL"

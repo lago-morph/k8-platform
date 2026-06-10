@@ -102,6 +102,10 @@
           "type": "string",
           "description": "OIDC issuer URL. Phase 3 creates the aws_iam_openid_connect_provider against this issuer so workloads on the cluster can use IRSA."
         },
+        "clusterCaData": {
+          "type": "string",
+          "description": "Base64-encoded cluster CA certificate (provider-emitted, public material \u2014 safe on status). Read by the XSpokeAccess Composition's cluster-facts Observe Object to assemble the ArgoCD cluster Secret's tlsClientConfig (ADR-0010 PR-2 / OI-2026-06-07-1)."
+        },
         "nodeGroupArn": {
           "type": "string",
           "description": "ARN of the managed node group."

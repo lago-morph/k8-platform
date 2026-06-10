@@ -228,6 +228,14 @@ MANIFEST
 resource "terraform_data" "crossplane_provider_kubernetes" {
   triggers_replace = [
     var.crossplane_provider_kubernetes_version,
+    # Bump when the embedded manifest body changes (the version var alone
+    # doesn't cover a manifest-shape edit — same trap as
+    # helm.tf:crossplane_aws_provider). 2026-06-10 (ADR-0010 PR-2): pinned
+    # the provider SA name via DeploymentRuntimeConfig and replaced the
+    # legacy kubernetes.crossplane.io ProviderConfig with the
+    # kubernetes.m.crossplane.io ClusterProviderConfig the namespaced
+    # Object MRs reference.
+    "adr0010-pr2-namespaced-object-2026-06-10",
   ]
 
   provisioner "local-exec" {
@@ -237,26 +245,51 @@ resource "terraform_data" "crossplane_provider_kubernetes" {
         --region ${var.aws_region} \
         --kubeconfig /tmp/k8-platform-kubeconfig
       KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl apply -f - <<'MANIFEST'
+      apiVersion: pkg.crossplane.io/v1beta1
+      kind: DeploymentRuntimeConfig
+      metadata:
+        name: provider-kubernetes-config
+      spec:
+        serviceAccountTemplate:
+          metadata:
+            # Pin the SA name so the RoleBindings in
+            # crossplane/rbac/02-provider-kubernetes-spoke-cluster-secret.yaml
+            # (argocd Secret writes + platform XPlatformCluster reads for the
+            # ADR-0010 PR-2 registration-Secret producer) match. Without the
+            # pin, Crossplane derives a revision-hash-suffixed SA name and
+            # the bindings never bind — the same failure mode the
+            # upbound-provider-family-aws pin in helm.tf prevents for IRSA.
+            name: provider-kubernetes
+      ---
       apiVersion: pkg.crossplane.io/v1
       kind: Provider
       metadata:
         name: provider-kubernetes
       spec:
         package: "xpkg.upbound.io/crossplane-contrib/provider-kubernetes:${var.crossplane_provider_kubernetes_version}"
+        runtimeConfigRef:
+          apiVersion: pkg.crossplane.io/v1beta1
+          kind: DeploymentRuntimeConfig
+          name: provider-kubernetes-config
       MANIFEST
       # Wait for the provider to become Healthy so its CRDs
-      # (kubernetes.crossplane.io) are registered before we apply the
-      # ProviderConfig below.
+      # (kubernetes.m.crossplane.io) are registered before we apply the
+      # ClusterProviderConfig below.
       KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl wait \
         --for=condition=Healthy --timeout=300s \
         provider.pkg.crossplane.io/provider-kubernetes
       KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl apply -f - <<'MANIFEST'
-      apiVersion: kubernetes.crossplane.io/v1alpha1
-      kind: ProviderConfig
+      apiVersion: kubernetes.m.crossplane.io/v1alpha1
+      kind: ClusterProviderConfig
       metadata:
-        # Hub-local config: provider-kubernetes writes objects (the ArgoCD
-        # spoke cluster Secret) into THIS management cluster using the
-        # in-cluster SA. The XSpokeAccess add-on apps reference this config.
+        # Hub-local config: provider-kubernetes reads/writes objects (the
+        # cluster-facts Observe Object + the ArgoCD spoke registration
+        # Secret) in THIS management cluster as its own pod SA
+        # (InjectedIdentity). Referenced by the xspokeaccess-aws
+        # Composition's Object MRs. NOTE: the namespaced Object kind
+        # (kubernetes.m.crossplane.io) resolves providerConfigRef in its
+        # OWN group — the legacy kubernetes.crossplane.io ProviderConfig
+        # cannot be referenced by it (ADR-0010 PR-2 brief, Decision 1).
         name: hub
       spec:
         credentials:
