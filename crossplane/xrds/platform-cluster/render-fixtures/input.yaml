@@ -34,3 +34,12 @@ spec:
     desiredSize: 2
     minSize: 1
     maxSize: 3
+# Probe status values for the Required cross-resource patches on the
+# cluster-cert-validation MR (certificateArn / validation-record FQDN ride
+# the composite — never the provider's external-name reference extractor,
+# which the v2.5.0 ACM provider leaves empty; OI-2026-06-10-1). Populating
+# them here keeps the golden rendering the COMPLETE validation resource.
+# Deterministic stubs (account 000000000000), not account-ephemeral data.
+status:
+  certificateArn: arn:aws:acm:us-east-1:000000000000:certificate/00000000-0000-0000-0000-000000000000
+  certValidationRecordFqdn: _0000000000000000000000000000probe.platform.render-probe.example.test

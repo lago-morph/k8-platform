@@ -566,9 +566,20 @@ spec:
                 fieldPath: status.atProvider.fqdn
 
           # ---------- 11. ACM certificate validation -----------------
-          # Gates on the cert reaching ISSUED. certificateArnSelector
-          # resolves to the Certificate MR (9) by controller-ref + label;
-          # validationRecordFqdns is the FQDN of the record (10). When this
+          # Gates on the cert reaching ISSUED. certificateArn is patched
+          # DIRECTLY from the XR status (status.certificateArn, published
+          # by the Certificate MR's status.atProvider.arn) — the
+          # established "cross-resource refs travel via the composite"
+          # idiom, same as the validation Record (10). It was previously a
+          # certificateArnSelector, but the v2.5.0 ACM provider leaves the
+          # Certificate's crossplane.io/external-name annotation EMPTY
+          # (the resource-identity bug class of tf-aws#45303), and the
+          # selector's reference extractor reads exactly that annotation —
+          # so resolution failed forever ("referenced field was empty")
+          # while the real cert sat ISSUED (found on the 2026-06-10 S1
+          # clean build; OI-2026-06-10-1). Both fact patches are Required:
+          # the MR is simply not created until its inputs are published
+          # (complete-or-absent, the ADR-0010 PR-2 semantics). When this
           # MR is Ready the cert is confirmed issued — this is the
           # "confirm the cert" step, done as part of provisioning.
           - name: cluster-cert-validation
@@ -581,10 +592,6 @@ spec:
               spec:
                 forProvider:
                   region: us-east-1
-                  certificateArnSelector:
-                    matchControllerRef: true
-                    matchLabels:
-                      platform.k8-platform.io/role: cluster-certificate
                 managementPolicies: [Observe, Create, Update, Delete]
                 providerConfigRef:
                   kind: ClusterProviderConfig
@@ -594,8 +601,15 @@ spec:
                 fromFieldPath: spec.region
                 toFieldPath: spec.forProvider.region
               - type: FromCompositeFieldPath
+                fromFieldPath: status.certificateArn
+                toFieldPath: spec.forProvider.certificateArn
+                policy:
+                  fromFieldPath: Required
+              - type: FromCompositeFieldPath
                 fromFieldPath: status.certValidationRecordFqdn
                 toFieldPath: spec.forProvider.validationRecordFqdns[0]
+                policy:
+                  fromFieldPath: Required
             readinessChecks:
               - type: MatchCondition
                 matchCondition:
