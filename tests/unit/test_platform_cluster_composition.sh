@@ -54,19 +54,22 @@ assert_eq "composition_env_config_ref_cluster_network" "cluster-network" "$ENV_R
 FN_REF=$(yq -r '.spec.pipeline[] | select(.functionRef.name == "function-patch-and-transform") | .functionRef.name' "$COMP")
 assert_eq "composition_function_ref" "function-patch-and-transform" "$FN_REF"
 
-# ---- 3. Fourteen resources rendered -----------------------------------
+# ---- 3. Fifteen resources rendered -----------------------------------
 # 2 roles, 4 attachments, cluster, node group, + 3 cert resources
 # (acm Certificate, route53 validation Record, acm CertificateValidation),
 # + 3 sandbox kubectl access resources (SecurityGroupRule,
-# AccessEntry, AccessPolicyAssociation — docs/decisions/0008).
+# AccessEntry, AccessPolicyAssociation — docs/decisions/0008),
+# + the hub→hosted-cluster EKS-API 443 rule (hub-eks-api-ingress,
+# OI-2026-06-07-4 — gated in depth by test_hub_spoke_api_ingress.sh).
 RES_COUNT=$(yq -r "${PT}.resources | length" "$COMP")
-assert_eq "composition_resource_count" "14" "$RES_COUNT"
+assert_eq "composition_resource_count" "15" "$RES_COUNT"
 
 # Names — fixed set gives readable test failures.
 for n in cluster-role cluster-role-policy node-role node-worker-policy \
          node-cni-policy node-ecr-policy eks-cluster eks-nodegroup \
          cluster-certificate cluster-cert-validation-record cluster-cert-validation \
-         kube-relay-ingress sandbox-access-entry sandbox-access-policy; do
+         kube-relay-ingress sandbox-access-entry sandbox-access-policy \
+         hub-eks-api-ingress; do
   c=$(yq -r "${PT}.resources[] | select(.name == \"$n\") | .name" "$COMP")
   assert_eq "composition_has_resource_${n//-/_}" "$n" "$c"
 done
