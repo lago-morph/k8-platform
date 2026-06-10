@@ -31,6 +31,7 @@ is the sequence number for that date.
 
 | ID | One-line | Note |
 |----|----------|------|
+| OI-2026-06-10-1 | **NEW** — ACM provider v2.5.0 leaves Certificate `crossplane.io/external-name` EMPTY → `certificateArnSelector` never resolves | Composition fixed (direct ARN patch via the composite); WHY external-name stays empty is undiagnosed — see entry |
 | OI-2026-06-09-1 | **NEW** — narrowed `iam:GetRole` broke EKS nodegroup SLR create | **FIXED** PR #213, proven live (nodegroup ACTIVE after fix); pending merge |
 | OI-2026-06-08-1 | Crossplane `Resource:"*"` (RDS/EC2) follow-up | IAM resolved (#203); RDS PR #211 (applied live, ongoing-reconcile green), EC2 PR #212 (draft) |
 | OI-2026-06-08-2 | hub→spoke e2e not behaviorally tested | check authored PR #210; blocked on OI-2026-06-07-2 for clean-build validation |
@@ -103,6 +104,40 @@ provider + Roles + RolePolicy + AccessEntries + AccessPolicyAssociations all
   (placeholders won't overlay durably). Also a transient: a Kyverno webhook blip
   (`kyverno-svc: no endpoints`) briefly errored the xdatabase XR reconcile (not a
   code bug; the RDS Instance itself is `Ready`).
+
+---
+
+## OI-2026-06-10-1 — ACM Certificate external-name left empty by provider v2.5.0; selector-based references to it never resolve
+
+**Status:** Composition-level fix BUILT 2026-06-10 (direct `status.certificateArn` patch via the composite, replacing `certificateArnSelector`) — the *provider anomaly itself* remains open/undiagnosed.
+**Surfaced:** 2026-06-10, the first S1 clean build (fresh account 341221860475 <!-- noqa: account-id - run provenance, account rotates -->).
+
+**What happened (observation):** the platform cluster XR stalled at `Ready=False,
+Unready resources: cluster-cert-validation` for 50+ minutes. The real ACM cert
+was ISSUED and its Certificate MR was `Synced=True, Ready=True` with
+`status.atProvider.arn` populated — but its `crossplane.io/external-name`
+annotation was **empty**. The CertificateValidation's `certificateArnSelector`
+reference extractor reads exactly that annotation, so resolution retried
+forever with "referenced field was empty (referenced resource may not yet be
+ready)". Same v2.5.0 resource-identity bug class as the SecurityGroupIngressRule
+observation (tf-aws#45303, docs/decisions/0008) — identity works internally,
+external-name never written back.
+
+**Durable fix (shipped):** the Composition patches
+`spec.forProvider.certificateArn` directly from `status.certificateArn`
+(Required policy; the composite-routed idiom the sibling validation Record
+already uses). No live object was hand-edited; GitOps propagation of the
+Composition unsticks the live MR.
+
+**Still open (hypothesis, undiagnosed):** whether the empty external-name harms
+the Certificate MR's own lifecycle (update/delete paths) on v2.5.0, and whether
+other selector-based references in the estate can hit the same class. Next
+step: check upstream provider-aws issues for the ACM identity fix; audit the
+Compositions for remaining `*Selector` references to provider-identity fields
+(`grep -n 'Selector:' crossplane/compositions/` — the remaining uses are
+roleArnSelector/clusterNameSelector/nodeRoleArnSelector/certificateArnSelector-
+class; each is a candidate for the same composite-routed replacement if it
+bites).
 
 ---
 

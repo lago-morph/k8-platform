@@ -90,11 +90,10 @@ metadata:
   namespace: default
 spec:
   forProvider:
-    certificateArnSelector:
-      matchControllerRef: true
-      matchLabels:
-        platform.k8-platform.io/role: cluster-certificate
+    certificateArn: arn:aws:acm:us-east-1:000000000000:certificate/00000000-0000-0000-0000-000000000000
     region: us-east-1
+    validationRecordFqdns:
+      - _0000000000000000000000000000probe.platform.render-probe.example.test
   managementPolicies:
     - Observe
     - Create
@@ -479,6 +478,8 @@ spec:
   region: us-east-1
   version: "1.32"
 status:
+  certValidationRecordFqdn: _0000000000000000000000000000probe.platform.render-probe.example.test
+  certificateArn: arn:aws:acm:us-east-1:000000000000:certificate/00000000-0000-0000-0000-000000000000
   conditions:
     - reason: WatchCircuitClosed
       status: "True"
