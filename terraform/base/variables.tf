@@ -27,6 +27,22 @@ variable "availability_zones" {
   default     = ["us-east-1a", "us-east-1b"]
 }
 
+variable "hosted_cluster_names" {
+  description = <<-EOT
+    EKS cluster names (beyond the management cluster) that share this VPC's
+    subnets. Each name gets a kubernetes.io/cluster/<name>=shared tag on the
+    public (role/elb) and private (role/internal-elb) subnets so that
+    cluster's in-tree AWS cloud provider can place load balancers — without
+    the tag it EXCLUDES subnets tagged for other clusters and ELB/NLB
+    provisioning fails with "could not find any suitable subnets"
+    (OI-2026-06-07-3). Names here are stable committed identifiers
+    (XPlatformCluster spec.name), not account-ephemeral values. The
+    management cluster tag is always applied and is not listed here.
+  EOT
+  type        = list(string)
+  default     = ["k8-platform-services", "k8-platform-workload1"]
+}
+
 variable "route53_zone_id" {
   description = <<-EOT
     ID of a pre-existing Route53 public hosted zone for var.domain.

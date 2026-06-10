@@ -8,6 +8,57 @@ last, the current state, and the next concrete steps. Keep it factual
 
 ## NEW SESSION QUICKSTART (read this first)
 
+> ## ▶ 2026-06-10 (latest) — ALL FOUR DURABLE FIXES NOW AUTHORED (ADR-0010 PR-2 + rows 2/3)
+> Three stacked PRs (base→tip: `claude/adr-0010-durable-fixes-hg7909` →
+> `…-sg-443` → `…-subnet-tags`) complete the durable-fix backlog
+> (`SUBSTRATE-READINESS.md` rows 2, 3, 5; row 4's producer dependency now
+> built). **Everything is `pending clean-build verification` — zero live
+> evidence exists; the live-evidence gate on these PRs is RED by design
+> (fail-closed, the PRs touch crossplane/** + terraform/**).**
+> 1. **Row 5 / OI-2026-06-07-1 (ADR-0010 PR-2, the producer):** the spoke
+>    ArgoCD registration Secret is now composed by `xspokeaccess-aws` via two
+>    provider-kubernetes Objects — a cluster-facts OBSERVE Object reading the
+>    PAIRED XPlatformCluster (same XR name/namespace; readiness requires all
+>    four facts → loud wait-state) and the complete-or-absent
+>    `spoke-cluster-secret` writer (every manifest patch Required; name
+>    `<subdomain>-spoke`; five contract annotations + selector labels;
+>    config = awsAuthConfig/clusterName + observed caData). The
+>    `spec.oidcIssuer` placeholder overlay is RETIRED (XRD rejects it).
+>    Four deferred ADR-0010 decisions resolved + recorded in ADR-0010
+>    "PR-2 resolutions" (mechanism fork → provider-kubernetes, amending
+>    ADR-0005's Alternatives in place; region → spec.region; keycloak DB
+>    host/port stay out of contract, extraEnvVarsSecret direction rides
+>    OI-2026-06-07-5; single-writer honestly framed as convergence control).
+>    Brief + 2 adversarial review rounds:
+>    `planning/adr-0010-cluster-facts/adr0010-pr2-producer-brief.md`.
+>    New plumbing: kubernetes.m.crossplane.io ClusterProviderConfig `hub`
+>    replaces the legacy-group ProviderConfig (terraform), pinned
+>    `provider-kubernetes` SA, namespaced RBAC (`crossplane/rbac/02-*`),
+>    k8-platform AppProject whitelists Role/RoleBinding.
+> 2. **Row 2 / OI-2026-06-07-4:** `hub-eks-api-ingress` (classic
+>    SecurityGroupRule — upjet v2.5.0 can't observe SecurityGroupIngressRule)
+>    in the platform-cluster Composition; `managementNodeSecurityGroupId`
+>    added to the cluster-network EnvironmentConfig.
+> 3. **Row 3 / OI-2026-06-07-3:** terraform/base tags
+>    `kubernetes.io/cluster/<name>=shared` on elb+internal-elb subnets for
+>    every `hosted_cluster_names` entry (default = every committed
+>    XPlatformCluster spec.name; the new lint caught workload1 immediately).
+> Gates: full unit suite green on every branch; terraform validate green
+> (base + management); render goldens regenerated (xspokeaccess golden now
+> renders the COMPLETE Secret from a status-populated input); chainsaw
+> `xspokeaccess/00-xrd-establishes` authored (v2 CRD-boundary change,
+> ADR-0001) — dispatch status in the PR threads. New live oracle authored:
+> `tests/live/checks/after/spoke-cluster-secret-live.sh` (registry
+> `kubernetes.m.crossplane.io/Object`).
+> **NEXT SESSION = the build loop (`ai/LESSONS.md` §5 S1):** merge the stack
+> in order (or rebuild from the tip branch), then tear down / take a fresh
+> account and rebuild 0→1→spoke from committed source with ZERO manual
+> steps; fill the SUBSTRATE evidence columns by run ID. Watch specifically:
+> spoke-access sync now needs NO oidcIssuer patch (the observe path does
+> it); the registration Secret must appear labeled+complete on its own; the
+> hub→spoke ArgoCD reachability and the spoke NLB must come up with zero
+> hand-fixes.
+
 > ## ▶ 2026-06-10 (later) — KEYSTONE CONSUMER HALF SHIPPED (ADR-0010)
 > **OI-2026-06-07-2 mechanism decided + consumer half implemented** (owner-ratified;
 > ADR-0010 — supersedes ADR-0005's "cluster-facts ConfigMap" carrier, which
