@@ -40,6 +40,17 @@ must not be back-edited into evidence files.
 - `SUMMARY-FOR-OWNER.md` — plain-language account of what happened, good and bad
 - `TURNAROUND-OUTLINE.md` — plain-language sketch of paths to project completion
 
+## Round log (checkpoints)
+
+| Round | Closed | Checkpoint commit | Scope |
+|---|---|---|---|
+| 1 | 2026-06-10 | `6c6df8d` (content) / closure commit titled "close round 1" | Evidence corpus (6 files), synthesis (REPORT, HYPOTHESES, OPEN-QUESTIONS), owner-facing summary + turnaround outline, round-1 owner feedback folded in |
+
+Each future round closes the same way: fold owner feedback in, add a row here with the
+closing commit, and title that commit "forensics: close round N". (Git tags would be
+preferable, but the sandbox push credential only accepts branch refs — checkpoint by
+commit message convention instead.)
+
 ## Owner feedback log (durable record of round reviews)
 
 - **2026-06-10 (round-1 review).** (a) Design-intent clarification: the platform is
