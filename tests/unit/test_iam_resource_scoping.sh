@@ -28,6 +28,21 @@ resource_for_sid() {
   ' "$TF"
 }
 
+# block_for_sid <Sid> — print every line of that Sid's statement block (from the
+# Sid line until the next Sid line). Used to assert Condition-key narrowing,
+# which resource_for_sid (Resource line only) cannot see — auto-016-001.
+block_for_sid() {
+  awk -v want="$1" '
+    /Sid[[:space:]]*=[[:space:]]*"/ {
+      if (match($0,/"[^"]+"/)) {
+        cur=substr($0,RSTART+1,RLENGTH-2)
+        if (cur==want) { grab=1; print; next } else { grab=0 }
+      }
+    }
+    grab==1 { print }
+  ' "$TF"
+}
+
 echo "── irsa.tf IAM Resource scoping (Sid-anchored) ──────────────"
 
 ROLE_RES="$(resource_for_sid IAMRoles)"
@@ -42,12 +57,32 @@ assert_eq "IAMOIDCProviders is NOT a bare wildcard" "false" \
   "$(printf '%s' "$OIDC_RES" | grep -Eq 'Resource[[:space:]]*=[[:space:]]*"\*"' && echo true || echo false)"
 
 # (2) the deliberately-broad statements must STAY "*" (catches a premature
-# over-narrow that would silently break the next bring-up — non-derivable ARNs).
-for sid in EKS EC2Networking ACM RDS; do
+# over-narrow that would silently break the next bring-up). EKS/ACM are opaque
+# ARNs; EC2Networking is still "*" until the EC2 narrowing lands; RDSDescribe is
+# list-shaped (no resource-level ARN) so it is INTENTIONALLY "*".
+for sid in EKS EC2Networking ACM RDSDescribe; do
   res="$(resource_for_sid "$sid")"
-  assert_eq "$sid Resource stays \"*\" (non-derivable; narrowing it is a separate, validated change)" "true" \
+  assert_eq "$sid Resource stays \"*\" (non-derivable/list-shaped; intentional wildcard)" "true" \
     "$(printf '%s' "$res" | grep -Eq 'Resource[[:space:]]*=[[:space:]]*"\*"' && echo true || echo false)"
 done
+
+# (2b) auto-016-001 — the narrowed RDS write/modify statements must NOT be bare
+# wildcards, must be ARN-type-scoped to db:*/subgrp:*, and the destructive
+# instance ops must carry the rds:db-tag/ManagedBy=crossplane condition.
+RDSWRITE_RES="$(resource_for_sid RDSWrite)"
+RDSMOD_BLOCK="$(block_for_sid RDSModifyInstance)"
+RDSMOD_RES="$(resource_for_sid RDSModifyInstance)"
+assert_eq "RDSWrite is NOT a bare wildcard" "false" \
+  "$(printf '%s' "$RDSWRITE_RES" | grep -Eq 'Resource[[:space:]]*=[[:space:]]*"\*"' && echo true || echo false)"
+assert_contains "RDSWrite scoped to rds db ARN" ':db:*' "$(block_for_sid RDSWrite)"
+assert_contains "RDSWrite scoped to rds subgrp ARN" ':subgrp:*' "$(block_for_sid RDSWrite)"
+assert_eq "RDSModifyInstance is NOT a bare wildcard" "false" \
+  "$(printf '%s' "$RDSMOD_RES" | grep -Eq 'Resource[[:space:]]*=[[:space:]]*"\*"' && echo true || echo false)"
+assert_contains "RDSModifyInstance scoped to rds db ARN" ':db:*' "$RDSMOD_RES"
+assert_contains "RDSModifyInstance carries the db-tag ManagedBy condition" \
+  'rds:db-tag/ManagedBy' "$RDSMOD_BLOCK"
+assert_eq "RDSWrite statement present" "true" "$([ -n "$RDSWRITE_RES" ] && echo true || echo false)"
+assert_eq "RDSModifyInstance statement present" "true" "$([ -n "$RDSMOD_RES" ] && echo true || echo false)"
 
 # Sanity: the two narrowed statements actually exist (the split happened).
 assert_eq "IAMRoles statement present" "true"          "$([ -n "$ROLE_RES" ] && echo true || echo false)"
