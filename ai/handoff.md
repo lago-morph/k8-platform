@@ -8,7 +8,43 @@ last, the current state, and the next concrete steps. Keep it factual
 
 ## NEW SESSION QUICKSTART (read this first)
 
-> ## ▶ 2026-06-10 (latest) — ALL FOUR DURABLE FIXES NOW AUTHORED (ADR-0010 PR-2 + rows 2/3)
+> ## ▶ 2026-06-10 (latest) — 🟢 CLEAN BUILD #1 GREEN: the substrate built itself from `main` with ZERO manual steps
+> **The S1 loop ran end-to-end on fresh account `341221860475`** <!-- noqa: account-id - run provenance, account rotates -->
+> after merging the durable-fix stack (#220/#221/#222) + the mid-build fix
+> (#223). Full evidence + run IDs: `SUBSTRATE-READINESS.md` (rows 1-5 and 8
+> now hold clean-build evidence; **the gate is green ONCE — owner posture
+> needs it green TWICE before unattended volume runs resume**).
+> - Chain: base CI run 27305258998 -> management CI run 27305788371 (both
+>   `apply-and-verify` green from `main`) -> `platform-cluster-claim` synced
+>   from `main` -> `spoke-access` synced from `main` **with NO oidcIssuer
+>   patch** (the ADR-0010 PR-2 Observe path supplied it) -> registration
+>   Secret appeared complete (all 3 labels + 5 contract annotations) -> all 7
+>   ApplicationSets generated -> spoke hello/ingress-nginx/external-dns
+>   Synced+Healthy -> `hello.platform.<domain>` **HTTP 200, verified public
+>   chain**. Oracles on this build: `hello-e2e-live.sh` PASS (first-ever
+>   run), `spoke-cluster-secret-live.sh` PASS, `sandbox-kubectl-relay.sh`
+>   (spoke, 2 Ready nodes) PASS.
+> - **The loop caught a real defect mid-build** (working as designed):
+>   OI-2026-06-10-1 — ACM provider v2.5.0 leaves the Certificate
+>   external-name EMPTY, so `certificateArnSelector` never resolves; fixed
+>   in code (PR #223, ARN routed via the composite) and converged by GitOps,
+>   no hand-edits.
+> - Observed non-gate states on the live spoke (NOT silently skipped, NOT
+>   investigated this session): `spoke-keycloak` Progressing (expected —
+>   OI-2026-06-07-5 DB host/port unbuilt, PLACEHOLDER_DB_HOST stands),
+>   `spoke-observability-kube-prometheus-stack` Degraded,
+>   `spoke-observability-loki` Progressing, `hub-observability-alloy`
+>   OutOfSync/Missing. Next session: diagnose alloy + the observability pair.
+> - **NEXT SESSION:** (1) clean build #2 on the next fresh account (same
+>   recipe, zero manual steps) to satisfy the green-twice posture;
+>   (2) OI-2026-06-07-5 (keycloak-db PushSecret->ASM->ExternalSecret + the
+>   recorded extraEnvVarsSecret direction with a helm-render fixture —
+>   ADR-0010 PR-2 Decision 3) which unlocks SUBSTRATE row 6 (RDS CREATE
+>   path); (3) dispatch `live-verify.yml` on this account so the
+>   live-evidence PR gate finally has a green producer; (4) the alloy/
+>   observability diagnoses above.
+
+> ## ▶ 2026-06-10 (earlier) — ALL FOUR DURABLE FIXES AUTHORED (ADR-0010 PR-2 + rows 2/3)
 > Three stacked PRs (base→tip: `claude/adr-0010-durable-fixes-hg7909` →
 > `…-sg-443` → `…-subnet-tags`) complete the durable-fix backlog
 > (`SUBSTRATE-READINESS.md` rows 2, 3, 5; row 4's producer dependency now

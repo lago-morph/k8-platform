@@ -46,18 +46,38 @@ A live hand-fix is **NOT** evidence. It validates the *mechanism*, never the *ar
 
 ---
 
-## The readiness checklist (current state: nothing earned yet)
+## The readiness checklist
+
+**Clean build #1 — 2026-06-10, fresh account `341221860475`** <!-- noqa: account-id - run provenance, account rotates -->
+**(the first ever from-scratch build with zero manual steps).** Source: merged
+`main` (`a68b858` = PRs #220/#221/#222 + prior; the mid-build Composition fix
+#223 `c8fddb8` reached the hub by GitOps propagation, not hand-edit). Build
+chain: base = CI run **27305258998**, management = CI run **27305788371**
+(both `apply-and-verify`, green), spoke = ArgoCD sync of
+`platform-cluster-claim` then `spoke-access` from committed `main` (the two
+designed deliberate-sync gates; **no value overlays, no REST registration, no
+aws-CLI mutations, no kubectl applies**). Terminal state:
+`https://hello.platform.<domain>` → **HTTP 200, verified public chain**, with
+the committed oracles passing on this build: `hello-e2e-live.sh` PASS,
+`spoke-cluster-secret-live.sh` PASS, `sandbox-kubectl-relay.sh` (spoke) PASS.
+The owner posture requires the gate green **twice**; this is green ONCE.
 
 | # | Item / known gap | Durable fix | Clean-build evidence | Status |
 |---|---|---|---|---|
-| 1 | EKS service-linked-role `iam:GetRole` (zero-node spoke) | PR #213 (committed `irsa.tf`) | **RETRACTED.** The earlier "VALIDATED" was a **selective nodegroup recreate inside an environment the agent had hand-modified all night** — a poke certified as a clean build (see `retrospective/2026-06-09-214-a.md`). It proves nothing. **No clean-build evidence exists.** | **pending clean-build verification** (the only valid proof is a from-scratch bring-up from committed source in an uncompromised environment) |
-| 2 | Hub→spoke EKS-API SG 443 (OI-2026-06-07-4) | BUILT 2026-06-10 (`hub-eks-api-ingress` classic SecurityGroupRule in the platform-cluster Composition; mgmt node SG published via the cluster-network EnvironmentConfig). Unit lint + render golden committed with it. | — | **pending clean-build verification** |
-| 3 | Shared ELB subnet tags (OI-2026-06-07-3) | BUILT 2026-06-10 (terraform/base tags `kubernetes.io/cluster/<name>=shared` on the elb + internal-elb subnets for every hosted cluster, var `hosted_cluster_names`). Unit lint cross-checks the default against every committed XPlatformCluster spec.name. | — | **pending clean-build verification** |
-| 4 | Placeholder overlays vs bootstrap selfHeal (OI-2026-06-07-2, **ADR-0010** cluster-facts via cluster-Secret annotations + ApplicationSets — supersedes ADR-0005's ConfigMap corollary) | consumer half COMMITTED (the spoke apps are ApplicationSets templating the five-fact contract; no hand-overlay surface remains). Producer half = row 5 (now built). | — (needs the clean build) | **pending clean-build verification** |
-| 5 | Spoke ArgoCD cluster-Secret durable form (OI-2026-06-07-1) | BUILT 2026-06-10 (ADR-0010 PR-2: provider-kubernetes Observe + writer Objects in the xspokeaccess Composition; also retires the spec.oidcIssuer overlay — a banned manual step). Unit contract lint + render golden + chainsaw scenario + live oracle (`spoke-cluster-secret-live.sh`) committed with it. | — | **pending clean-build verification** |
-| 6 | RDS narrowing safe on the CREATE path (#211) | PR #211 (committed) | — (DB pre-existed; only ongoing-reconcile seen) | **pending clean-build verification** |
+| 1 | EKS service-linked-role `iam:GetRole` (zero-node spoke) | PR #213 (committed `irsa.tf`) | Clean build #1: the spoke nodegroup was created from scratch under the committed narrowed policy on a fresh account — 2 Ready nodes (`sandbox-kubectl-relay.sh` PASS). (The earlier auto-016 "VALIDATED" stays retracted — see `retrospective/2026-06-09-214-a.md`.) | **DONE (1× clean build)** |
+| 2 | Hub→spoke EKS-API SG 443 (OI-2026-06-07-4) | `hub-eks-api-ingress` classic SecurityGroupRule (PR #221) | Clean build #1: hub ArgoCD synced every spoke-* Application on the spoke's private endpoint with zero `authorize-security-group-ingress` hand-fixes; `hello-e2e-live.sh` asserts `spoke-hello` Synced+Healthy from the hub. | **DONE (1× clean build)** |
+| 3 | Shared ELB subnet tags (OI-2026-06-07-3) | terraform/base `hosted_cluster_names` tags (PR #222) | Clean build #1: the spoke ingress NLB provisioned in the shared subnets with zero `create-tags` hand-fixes (hello 200 terminates on that NLB with the spoke's ACM cert). | **DONE (1× clean build)** |
+| 4 | Placeholder overlays vs bootstrap selfHeal (OI-2026-06-07-2, **ADR-0010**) | ApplicationSets consumer half (PR #218) + row-5 producer | Clean build #1: all seven ApplicationSets generated from the registration Secret's contract annotations; spoke-hello/-ingress-nginx/-external-dns Synced+Healthy with **no hand overlay anywhere** (the overlay surface no longer exists). | **DONE (1× clean build)** |
+| 5 | Spoke ArgoCD cluster-Secret durable form (OI-2026-06-07-1) | ADR-0010 PR-2 producer (PR #220; retires the spec.oidcIssuer overlay) | Clean build #1: `platform-spoke` Secret produced by the Composition (Observe→writer Objects), all 3 labels + all 5 contract annotations real; `spoke-cluster-secret-live.sh` PASS; ArgoCD connection Successful (apps synced through it). | **DONE (1× clean build)** |
+| 6 | RDS narrowing safe on the CREATE path (#211) | PR #211 (committed) | — (the keycloak-db XDatabase was NOT provisioned in clean build #1 — phase-5 scope, gated on OI-2026-06-07-5) | **pending clean-build verification** |
 | 7 | EC2 narrowing safe on the CREATE path (#212) | PR #212 (committed) | — (never applied live) | **pending clean-build verification** |
-| 8 | Hello hub→spoke e2e (OI-2026-06-08-2) | PR #210 (check authored) | — (never run) | **pending clean-build verification** |
+| 8 | Hello hub→spoke e2e (OI-2026-06-08-2) | PR #210 (check authored) | Clean build #1: first-ever execution — PASS (HTTP 200 + body marker + hub-side `spoke-hello` Synced+Healthy). | **DONE (1× clean build)** |
+
+Clean build #1 also caught and durably fixed a NEW defect mid-build —
+**OI-2026-06-10-1** (ACM provider v2.5.0 leaves the Certificate external-name
+empty; `certificateArnSelector` could never resolve; fixed in PR #223 by
+routing the ARN through the composite) — which is the build loop working as
+designed: the failure produced a code fix, not a hand-fix.
 
 **No row may flip to DONE without filling its evidence column.** The agent does not
 get to assert these are fixed; you (or anyone) can audit each one by clicking the
@@ -65,20 +85,24 @@ run ID.
 
 ---
 
-## The order of operations to actually finish (no test work until this is green)
+## The order of operations to actually finish
 
-1. Build the four missing durable fixes (#2–#5). #4 (cluster facts, ADR-0010) is
-   the keystone — its consumer half is committed; #5 (the labeled registration
-   Secret, ADR-0010 PR-2) is now what blocks hello.
-2. Put #213 + #211 + #212 + #2–#5 on one integration branch.
-3. **Tear down to a clean state (or take a fresh account) and rebuild from that branch
-   with ZERO manual steps.** This is the part that has never been done. The point of a
-   long unattended window is to *spend it here*, not to declare victory at the first
-   green demo.
-4. Fill in the evidence column from that clean build. Only now are these items done.
-5. Then — and only then — resume the test-overhaul work (the SKIP-kind flips, the live
-   evidence gate, Track B) on a substrate that actually works from nothing.
+1. ~~Build the four missing durable fixes (#2–#5).~~ **DONE** (PRs #218/#220/#221/#222).
+2. ~~Integration branch + rebuild from committed source with ZERO manual steps.~~
+   **DONE ONCE** — clean build #1 above (2026-06-10). The mid-build defect it
+   caught (OI-2026-06-10-1) was fixed in code (PR #223) and converged by GitOps.
+3. **Second green clean build** (owner posture: the gate must be green twice
+   before unattended volume runs resume). On the next fresh account: phases
+   0→1 via `apply-and-verify`, sync the claim + spoke-access, expect hello 200
+   with zero manual steps and the three oracles passing.
+4. Rows 6/7 (RDS/EC2 narrowing on the CREATE path) ride the phase-5/keycloak
+   work: OI-2026-06-07-5 (DB secret + host/port via extraEnvVarsSecret) is the
+   remaining unbuilt feature, then `keycloak-db` provisions and row 6 can earn
+   its evidence.
+5. Then resume the test-overhaul work (SKIP-kind flips, the live-evidence
+   producer green on this account so the PR gate flips, Track B) on a substrate
+   that demonstrably works from nothing.
 
-A fix that cannot be validated this way in the current session stays
-`pending clean-build verification` and is carried as a **blocker**, not silently
-deferred into the open-issues graveyard.
+A fix that cannot be validated this way stays `pending clean-build
+verification` and is carried as a **blocker**, not silently deferred into the
+open-issues graveyard.
