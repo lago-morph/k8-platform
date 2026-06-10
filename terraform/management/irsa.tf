@@ -43,22 +43,54 @@ resource "aws_iam_policy" "crossplane_aws" {
         Action   = ["eks:*"]
         Resource = "*"
       },
+      # EC2 networking — the platform-cluster Composition creates subnets, route
+      # tables, and the kube-relay-ingress SecurityGroupRule in the shared base
+      # VPC. auto-016-001 (OI-2026-06-08-1 follow-up) splits the former single
+      # Resource:"*" `EC2Networking` Sid into a VPC-conditioned set and an
+      # unconditioned set. Two adversarial rounds (6 reviewers) established that
+      # the ec2:Vpc condition key is ONLY present in the auth context for actions
+      # whose request carries a VPC-bearing resource — applying it to the others
+      # (route/association/route-table-delete, subnet delete/modify) would deny a
+      # real MR (absent-key + StringEquals = deny). Do NOT rename these Sids
+      # without updating tests/unit/test_iam_resource_scoping.sh.
       {
-        Sid    = "EC2Networking"
+        # EC2VpcScoped — only the actions confirmed to carry ec2:Vpc:
+        # CreateSubnet + CreateRouteTable (request carries VpcId) and
+        # Authorize/RevokeSecurityGroupIngress (the SG resolves to its VPC).
+        # Pinned to the base VPC so Crossplane cannot create networking in any
+        # other VPC. (DeleteSubnet/ModifySubnetAttribute do NOT carry ec2:Vpc —
+        # they live in EC2Unconditioned below.)
+        Sid    = "EC2VpcScoped"
+        Effect = "Allow"
+        Action = [
+          "ec2:CreateSubnet", "ec2:CreateRouteTable",
+          "ec2:AuthorizeSecurityGroupIngress", "ec2:RevokeSecurityGroupIngress",
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "ec2:Vpc" = "arn:aws:ec2:${local.region}:${local.account_id}:vpc/${local.base_vpc_id}"
+          }
+        }
+      },
+      {
+        # EC2Unconditioned — Describe* is list-shaped (no resource-level ARN);
+        # the route/association/route-table-delete and subnet delete/modify
+        # actions do NOT carry the ec2:Vpc condition key (their request targets a
+        # route-table/subnet id, not a VpcId), and CreateTags/DeleteTags span
+        # mixed resource types where the VPC is not reliably in context. These
+        # stay Resource:"*" by necessity — an INTENTIONAL wildcard (lint
+        # allow-lists this Sid in the must-stay-"*" group). The meaningful
+        # blast-radius reduction is the VPC-bound creates above.
+        Sid    = "EC2Unconditioned"
         Effect = "Allow"
         Action = [
           "ec2:Describe*",
-          "ec2:CreateSubnet", "ec2:DeleteSubnet", "ec2:ModifySubnetAttribute",
-          "ec2:CreateRouteTable", "ec2:DeleteRouteTable",
+          "ec2:DeleteSubnet", "ec2:ModifySubnetAttribute",
+          "ec2:DeleteRouteTable",
           "ec2:CreateRoute", "ec2:DeleteRoute",
           "ec2:AssociateRouteTable", "ec2:DisassociateRouteTable",
           "ec2:CreateTags", "ec2:DeleteTags",
-          # Security-group ingress rules: the platform-cluster Composition's
-          # kube-relay-ingress MR (SecurityGroupRule) admits the shared SSM
-          # relay to each cluster's API SG on 443 (docs/decisions/0008).
-          # Without these the MR fails create with UnauthorizedOperation
-          # (found by the ADR-0006 behavioral test, not any static lint).
-          "ec2:AuthorizeSecurityGroupIngress", "ec2:RevokeSecurityGroupIngress",
         ]
         Resource = "*"
       },
@@ -113,22 +145,22 @@ resource "aws_iam_policy" "crossplane_aws" {
         ]
         Resource = "arn:aws:iam::${local.account_id}:oidc-provider/*"
       },
+      # auto-016 — EKS service-linked roles. When Crossplane creates the
+      # SPOKE EKS NodeGroup, EKS's CreateNodegroup validates (and, first time,
+      # creates) the service-linked role AWSServiceRoleForAmazonEKSNodegroup,
+      # which requires iam:GetRole on that SLR. The auto-015 IAMRoles Sid
+      # narrowed iam:GetRole to role/k8-platform-*, which does NOT cover the
+      # SLR path role/aws-service-role/eks-nodegroup.amazonaws.com/* — so a
+      # fresh-account spoke bring-up under the narrowed policy fails closed:
+      #   InvalidRequestException: Failed to validate if SLR:
+      #   AWSServiceRoleForAmazonEKSNodegroup already exists due to missing
+      #   permissions for 'iam:GetRole'
+      # (found live on the spoke nodegroup CREATE path, auto-016 — NOT a lint;
+      # auto-015 only validated the spoke-access path, where the nodegroup SLR
+      # is not exercised). Scope GetRole + CreateServiceLinkedRole to the EKS
+      # service-linked-role path only. Keep this Sid name in sync with
+      # tests/unit/test_iam_resource_scoping.sh.
       {
-        # auto-016 — EKS service-linked roles. When Crossplane creates the
-        # SPOKE EKS NodeGroup, EKS's CreateNodegroup validates (and, first time,
-        # creates) the service-linked role AWSServiceRoleForAmazonEKSNodegroup,
-        # which requires iam:GetRole on that SLR. The auto-015 IAMRoles Sid
-        # narrowed iam:GetRole to role/k8-platform-*, which does NOT cover the
-        # SLR path role/aws-service-role/eks-nodegroup.amazonaws.com/* — so a
-        # fresh-account spoke bring-up under the narrowed policy fails closed:
-        #   InvalidRequestException: Failed to validate if SLR:
-        #   AWSServiceRoleForAmazonEKSNodegroup already exists due to missing
-        #   permissions for 'iam:GetRole'
-        # (found live on the spoke nodegroup CREATE path, auto-016 — NOT a lint;
-        # auto-015 only validated the spoke-access path, where the nodegroup SLR
-        # is not exercised). Scope GetRole + CreateServiceLinkedRole to the EKS
-        # service-linked-role path only. Keep this Sid name in sync with
-        # tests/unit/test_iam_resource_scoping.sh.
         Sid    = "EKSServiceLinkedRoles"
         Effect = "Allow"
         Action = [
@@ -137,22 +169,60 @@ resource "aws_iam_policy" "crossplane_aws" {
         ]
         Resource = "arn:aws:iam::${local.account_id}:role/aws-service-role/eks*.amazonaws.com/*"
       },
+      # RDS — the XDatabase Composition (phase 5) provisions an RDS Postgres
+      # Instance for Keycloak. auto-016-001 (OI-2026-06-08-1 follow-up) narrows
+      # the former single Resource:"*" `RDS` Sid into three Sids. The narrowing
+      # was decided across two adversarial review rounds (6 real reviewers) —
+      # planning/test-overhaul/decisions/auto-016-001-*. Do NOT rename these
+      # Sids without updating tests/unit/test_iam_resource_scoping.sh (the
+      # Sid-anchored source lint keys off these exact names).
       {
-        # RDS — the XDatabase Composition (phase 5) provisions an RDS
-        # Postgres Instance for Keycloak via the AWS provider. The crossplane
-        # policy carried no rds:* actions at all, so the Instance MR failed
-        # closed at create (auto-012, same class as the OIDC-provider perms).
-        # DB instance/subnet-group identifiers are not known ahead of create,
-        # so management actions are account-wide; these are control-plane
-        # operations, not in-database data access.
-        Sid    = "RDS"
+        # RDSWrite — create + tag, plus the (today-unexercised) subnet-group
+        # mutations. UNCONDITIONED on purpose: the Upbound provider may apply
+        # the ManagedBy tag in the CreateDBInstance request OR a later
+        # AddTagsToResource pass; a create-time aws:RequestTag/ResourceTag
+        # condition would deny the very call that establishes the tag
+        # (chicken-and-egg) — a fail-closed trap the reviewers flagged. We scope
+        # by ARN *type* instead (db:* / subgrp:* in this account+region), which
+        # is the meaningful narrowing vs Resource:"*". The XDatabase Composition
+        # composes no DBSubnetGroup MR, so the subnet-group mutates are never
+        # exercised today (left here for a future explicit subnet-group MR).
+        Sid    = "RDSWrite"
         Effect = "Allow"
         Action = [
-          "rds:CreateDBInstance", "rds:DeleteDBInstance", "rds:ModifyDBInstance",
-          "rds:RebootDBInstance", "rds:DescribeDBInstances",
-          "rds:CreateDBSubnetGroup", "rds:DeleteDBSubnetGroup",
-          "rds:ModifyDBSubnetGroup", "rds:DescribeDBSubnetGroups",
+          "rds:CreateDBInstance",
           "rds:AddTagsToResource", "rds:RemoveTagsFromResource",
+          "rds:CreateDBSubnetGroup", "rds:ModifyDBSubnetGroup",
+          "rds:DeleteDBSubnetGroup",
+        ]
+        Resource = [
+          "arn:aws:rds:${local.region}:${local.account_id}:db:*",
+          "arn:aws:rds:${local.region}:${local.account_id}:subgrp:*",
+        ]
+      },
+      {
+        # RDSModifyInstance — the destructive post-create instance ops, gated on
+        # the RDS-native tag key rds:db-tag/ManagedBy=crossplane (NOT the global
+        # aws:ResourceTag, which the RDS SAR does not list for these actions —
+        # an absent key with StringEquals = deny). These only fire on an
+        # already-created, already-tagged Instance, so the condition is always
+        # satisfied for our MRs and denies anyone else's untagged DB instance.
+        Sid    = "RDSModifyInstance"
+        Effect = "Allow"
+        Action = [
+          "rds:ModifyDBInstance", "rds:DeleteDBInstance", "rds:RebootDBInstance",
+        ]
+        Resource  = "arn:aws:rds:${local.region}:${local.account_id}:db:*"
+        Condition = { StringEquals = { "rds:db-tag/ManagedBy" = "crossplane" } }
+      },
+      {
+        # RDSDescribe — list/observe operations are list-shaped (no resource-level
+        # ARN), so they stay Resource:"*". This is an INTENTIONAL wildcard, not a
+        # lazy one (the lint allow-lists this Sid in the must-stay-"*" group).
+        Sid    = "RDSDescribe"
+        Effect = "Allow"
+        Action = [
+          "rds:DescribeDBInstances", "rds:DescribeDBSubnetGroups",
           "rds:ListTagsForResource",
         ]
         Resource = "*"
@@ -212,6 +282,18 @@ resource "aws_iam_policy" "crossplane_aws" {
       },
     ]
   })
+
+  # auto-016-001: the EC2VpcScoped statement embeds the base VPC ARN in its
+  # ec2:Vpc condition. If base hasn't been applied (vpc_id == ""), the condition
+  # value becomes ".../vpc/" and would DENY every VPC-scoped EC2 action — a
+  # silent fail-closed. Fail fast at plan time instead. (Management always
+  # applies after base in a normal bring-up, so this only fires on misuse.)
+  lifecycle {
+    precondition {
+      condition     = local.base_vpc_id != ""
+      error_message = "base VPC id is empty — apply terraform/base first so the EC2VpcScoped ec2:Vpc condition resolves to a real VPC ARN."
+    }
+  }
 }
 
 module "irsa_crossplane" {

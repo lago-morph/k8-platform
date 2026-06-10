@@ -11,41 +11,95 @@ is the sequence number for that date.
 
 ---
 
-## Status index (updated 2026-06-07, auto-012)
+## Status index (audited 2026-06-09, auto-016)
 
-**OPEN / actionable:**
+**TRULY OPEN — real work outstanding:**
 
 | ID | One-line | Note |
 |----|----------|------|
-| OI-2026-06-07-1 | ArgoCD cluster Secret durable form | decided (ADR 0005); implement new session |
-| OI-2026-06-07-2 | cluster facts + ESO into the cluster XRD | decided (ADR 0005); implement new session |
-| OI-2026-06-07-3 | shared-VPC subnet tags | decided; implement new session |
-| OI-2026-06-07-4 | hub→spoke SG rule durable form | decided; implement new session |
-| OI-2026-06-07-5 | cross-cluster Keycloak DB secret | decided (ADR 0005); implement new session |
-| OI-2026-06-07-6 | **static assertions masquerade as tests; built resources never verified live** | **HIGH PRIORITY — being addressed by the test overhaul (auto-013 P1 scaffold, #170–#176)** |
-| OI-2026-06-07-7 | test-overhaul P0-spike: `spec.crossplane.resourceRefs` on a *live* v2 XR + drive-a-claim⇒AccessDenied not yet confirmed | identity spine confirmed live (run 27085946167); needs a provisioned XR. See run-summary-auto-013.md |
-| OI-2026-06-07-8 | test-overhaul jentic workflow-integration capstone deferred (wire tests/live/run.sh into terraform-test.yml + evidence emission + push gates) | DEFERRED — must be dispatch-validated before merge; scripts ready (#171–#176). First task next session |
-| OI-2026-06-08-1 | Crossplane provider role `Resource:"*"` (IAM/RDS/EKS/EC2/ACM) not tightened; §14.3 deny tests deferred | **IAM RESOLVED** (auto-015-001, PR #203) — IAM narrowed to `role/k8-platform-*` + `oidc-provider/*`, **validated on the spoke CREATE path** (run 27157161037; the hub Crossplane created the spoke OIDC provider + external-dns Role + inline RolePolicy under the narrowed policy, all crossplane-tagged; cluster reconciles Synced=True; lint 10/0). **FOLLOW-UP (still open):** RDS + EC2 narrowing — auto-015-001 Round-2 corrected the stale "RDS non-derivable" claim (`xdatabase.yaml` pins external-name to the XR name ⇒ `db:<xr-name>` derivable; EC2 has an `ec2:Vpc` condition key), each gated on the provision that exercises it; `eks:*` action-scope is a separate concern. EKS/ACM stay `*` (opaque ARNs). |
-| OI-2026-06-08-2 | hub→spoke end-to-end (real request reaches a spoke workload) not behaviorally tested | DEFERRED (auto-014-003 brief) — spoke covered after-the-fact; ship LATER as a HARD bounded-poll check (not a self-gating SKIP stub); investigate the public-NLB path first |
-| OI-2026-06-06-3 | XDatabase `<xr>-master` secret not GC'd on delete | open, low-severity cleanup |
+| OI-2026-06-07-2 | placeholder overlays fought by bootstrap selfHeal | **NOW BLOCKING** — decided (ADR 0005 cluster-facts ConfigMap), not implemented; auto-016 confirmed it blocks the hello e2e (cert/domain overlays won't stick) |
+| OI-2026-06-07-1 | spoke ArgoCD cluster Secret has no GitOps form | open; hand-bootstrapped live again in auto-016 |
+| OI-2026-06-07-3 | shared-VPC ELB subnet tags | **RECURRED auto-016** (NLB couldn't place) — live-fixed; durable base-terraform fix owed |
+| OI-2026-06-07-4 | hub→spoke EKS-API SG rule | **RECURRED auto-016** (ArgoCD→spoke 443 timeout) — live-fixed; durable Composition fix owed |
+| OI-2026-06-07-5 | cross-cluster Keycloak DB secret | open; Keycloak not yet booted against RDS |
+| OI-2026-06-07-6 | **static assertions masquerade as tests** | umbrella — the test overhaul executes against this; not a single bug |
+| OI-2026-06-07-7 | P0-spike `resourceRefs`⇒AccessDenied not confirmed | needs a provisioned XR |
+| OI-2026-06-07-8 | jentic workflow-integration capstone deferred | not started |
+| OI-2026-06-06-3 | XDatabase `<xr>-master` secret not GC'd | open, low-severity cleanup |
+
+**IN FLIGHT (open but actively closing — auto-016 PRs):**
+
+| ID | One-line | Note |
+|----|----------|------|
+| OI-2026-06-09-1 | **NEW** — narrowed `iam:GetRole` broke EKS nodegroup SLR create | **FIXED** PR #213, proven live (nodegroup ACTIVE after fix); pending merge |
+| OI-2026-06-08-1 | Crossplane `Resource:"*"` (RDS/EC2) follow-up | IAM resolved (#203); RDS PR #211 (applied live, ongoing-reconcile green), EC2 PR #212 (draft) |
+| OI-2026-06-08-2 | hub→spoke e2e not behaviorally tested | check authored PR #210; blocked on OI-2026-06-07-2 for clean-build validation |
+
+**ENVIRONMENTAL / MITIGATED (known limitations, not active bugs):**
+
+| ID | One-line | Note |
+|----|----------|------|
 | OI-2026-06-05-6 | can't create/modify `.github/workflows` here | environmental; workaround = jentic Contents-PUT |
-| OI-2026-06-05-2 | `charts.crossplane.io` 403 on the runner | mitigated (vendored); root cause still hypothesis |
-| OI-2026-05-28-1 (Issue A) | chainsaw `composition-drift` first-scenario timeout | hypothesis-level; Issue B resolved |
+| OI-2026-06-05-2 | `charts.crossplane.io` 403 on the runner | mitigated (vendored chart); root cause still hypothesis |
 
 **RESOLVED (kept for the rationale record):**
 
 | ID | One-line | Resolved by |
 |----|----------|-------------|
-| OI-2026-06-05-5 | ArgoCD unreachable from sandbox | `*.management` ACM cert (auto-007 #149) — **re-confirmed reachable this session** (argocd login + healthz 200) |
-| OI-2026-06-05-3 | provider-family-aws install race | #156 — **re-confirmed this session** (providers healthy, XSpokeAccess MRs reconciled) |
-| OI-2026-06-05-4 | v2.5.0 family-provider Deployment label | provisioner no longer depends on the label — confirmed this session |
-| OI-2026-06-06-2 | mgmt provider bootstrap deadlock | #156 — **re-confirmed this session** (12 crossplane pods healthy, all AWS MRs reconciled) |
+| OI-2026-06-06-4 | real-AWS chainsaw nightly-gating | mechanism EXCISED (auto-014 #188); verified gone from `tests/` in auto-016 |
+| OI-2026-05-28-1 (Issue A) | chainsaw claim-deletion-cleanup flake | bounded-poll fix (#184); verified present in `01-claim-deletion-cleanup` in auto-016 |
+| OI-2026-06-05-5 | ArgoCD unreachable from sandbox | `*.management` ACM cert (auto-007 #149) — re-confirmed reachable (argocd login + healthz 200) |
+| OI-2026-06-05-3 | provider-family-aws install race | #156 — re-confirmed (providers healthy, XSpokeAccess MRs reconciled) |
+| OI-2026-06-05-4 | v2.5.0 family-provider Deployment label | provisioner no longer depends on the label |
+| OI-2026-06-06-2 | mgmt provider bootstrap deadlock | #156 — re-confirmed (single provider, all AWS MRs reconciled) |
 | OI-2026-06-06-1 | `crossplane render` floating `:stable` | #153 (version pin) |
 | OI-2026-06-05-1 | `yq/awk \| grep -q` pipefail flake | here-string fix (auto-005) |
 | OI-2026-05-28-1 (Issue B + B-adjacent) | chainsaw cleanup-path / ASM trap | auto-004/005 |
 
 > Convention reminder: RESOLVED entries are retained here as the rationale record;
 > prune them once they've been stable across a couple of account rebuilds.
+
+
+---
+
+## auto-016 update (2026-06-09) — fresh-account bring-up surfaced 1 regression + 3 recurrences
+
+A clean fresh-account bring-up with the auto-015 narrowed Crossplane policy applied
+**from the start** (account `471112679140`) brought base + hub + spoke EKS up and
+**re-validated OI-2026-06-08-1's identity narrowing on the CREATE path** (spoke OIDC
+provider + Roles + RolePolicy + AccessEntries + AccessPolicyAssociations all
+`Ready=True` under the narrowed policy). It also surfaced:
+
+- **OI-2026-06-09-1 (NEW, FIXED) — narrowed `iam:GetRole` broke EKS nodegroup
+  create.** `iam:GetRole` was scoped to `role/k8-platform-*`, but EKS
+  `CreateNodegroup` validates the SLR `AWSServiceRoleForAmazonEKSNodegroup` via
+  `iam:GetRole` on `role/aws-service-role/eks-nodegroup.amazonaws.com/*` → fail-closed,
+  spoke came up with **0 nodes**. auto-015 only validated the spoke-*access* path
+  (no nodegroup SLR). Fixed: PR #213 adds an `EKSServiceLinkedRoles` Sid scoped to
+  the EKS SLR path; proven live (nodegroup ACTIVE immediately after). Merge #213.
+- **OI-2026-06-08-1 RDS/EC2 follow-up** — RDS narrowed (PR #211, applied live, clean
+  plan diff, ongoing-reconcile green under it; pristine CREATE proof deferred — the
+  Instance pre-existed the narrowing). EC2 narrowed (PR #212, draft; one reviewer
+  recommends defer). Both sentinel-gated drafts.
+- **OI-2026-06-07-4 (hub→spoke SG) — RECURRED.** Composition only admits the SSM
+  relay to the spoke API, NOT the hub nodes → ArgoCD `dial tcp …:443 i/o timeout`.
+  Live-fixed (authorized 443 hub-SG + VPC-CIDR → spoke cluster SG). **Durable
+  Composition fix still owed.**
+- **OI-2026-06-07-3 (ELB subnet tags) — RECURRED.** Shared ELB subnets not tagged
+  `kubernetes.io/cluster/k8-platform-services=shared` → NLB "could not find any
+  suitable subnets". Live-fixed (tagged 6 subnets). **Durable base-terraform fix still owed.**
+- **OI-2026-06-07-2 (overlay vs bootstrap) — RECURRED, now BLOCKING.** Spoke apps
+  carry placeholders (`domain`, `aws-load-balancer-ssl-cert` = `PLACEHOLDER_…`)
+  meant to be overlaid at registration, but `bootstrap` self-heal reverts the
+  overlays. Hand-overlaying domain + cert did NOT stick → the spoke NLB never gets a
+  valid cert → `hello.platform.<domain>` unreachable. **This blocks the OI-2026-06-08-2
+  hello e2e from a clean-build validation.** Needs the ADR-0005 cluster-facts
+  ConfigMap solution (not another hand-overlay).
+- **OI-2026-06-08-2 (hello e2e)** — the HARD bounded-poll check is authored + merge-ready
+  (PR #210), but CANNOT be clean-build-validated until OI-2026-06-07-2 is fixed
+  (placeholders won't overlay durably). Also a transient: a Kyverno webhook blip
+  (`kyverno-svc: no endpoints`) briefly errored the xdatabase XR reconcile (not a
+  code bug; the RDS Instance itself is `Ready`).
 
 ---
 
@@ -394,7 +448,14 @@ user confirmation per §6.5.
 
 ### Issue A — `composition-drift`'s XR takes >245s to become Ready (first run only)
 
-**Status:** still hypothesis-level. The Issue B diagnosis does NOT explain
+**Status:** **RESOLVED** (auto-016 audit) — the flaky `claim-deletion-cleanup`
+ASM-secret-gone check was made a bounded poll (NotFound **or** `DeletedDate` ⇒ pass)
+folded into #184; verified present in
+`tests/chainsaw/platform-secret/01-claim-deletion-cleanup/chainsaw-test.yaml`
+and chainsaw went green (auto-014). Re-run on a fresh account if it recurs. The
+historical hypothesis text is retained below as the rationale record.
+
+**(historical)** still hypothesis-level. The Issue B diagnosis does NOT explain
 Issue A — in run `26552671925` the XR was Unready at `wait for XR Ready`'s
 245s timeout BEFORE composition-drift could reach the mutation step. The
 asm-secret MR had `status.Ready=False, reason=Creating`. In run
@@ -865,7 +926,15 @@ SA present, then merge. Decision brief + Round-1 adversarial review in
 
 <!-- appended auto-010 -->
 ### OI-2026-06-06-4 — phase-5 xdatabase real-AWS chainsaw scenarios were nightly-gated (REOPENED — nightly is the disease, excise it)
-**Status:** REOPENED 2026-06-07 (owner-directed). The previous "resolution" —
+**Status:** **RESOLVED** (auto-016 audit) — the nightly-gating mechanism was EXCISED
+in auto-014 #188 (deleted the `CHAINSAW_INCLUDE_REALAWS` exclusion block + the two
+`REAL-AWS / NIGHTLY` `xdatabase/{01-claim-creates-rds,02-deletion-cleanup}`
+scenarios). Verified in auto-016: `grep CHAINSAW_INCLUDE_REALAWS tests/` returns
+nothing and `tests/chainsaw/xdatabase/` holds only `00-xrd-establishes`. The gating
+RDS live check is carried by `tests/live/` (the live-suite capstone), not a nightly
+lane. Historical detail retained below.
+
+**(historical)** REOPENED 2026-06-07 (owner-directed). The previous "resolution" —
 tagging `xdatabase/01-claim-creates-rds` + `02-deletion-cleanup` `REAL-AWS / NIGHTLY`
 and excluding them from the gating run via `CHAINSAW_INCLUDE_REALAWS`, with
 render-fixtures + a unit test standing in for behavioral coverage — **is exactly

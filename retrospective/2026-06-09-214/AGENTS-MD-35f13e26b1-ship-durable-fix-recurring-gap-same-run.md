@@ -1,0 +1,13 @@
+# agent instruction
+
+**Ship the durable fix for a recurring bring-up gap in the same run.** When a fresh-account bring-up requires a manual unblock for a problem that is already documented in `docs/open-issues.md` as a known gap with a decided fix, ship the durable code fix as a PR in the SAME run. Do not re-apply the live workaround and move on. If the durable fix is genuinely too large for the current run, explicitly re-escalate the open issue as blocking (updating its status and rationale in `docs/open-issues.md`) rather than silently re-paying the cost. A gap that has been live-fixed and deferred without a code PR will recur on every subsequent fresh account.
+
+*Grounded in: auto-016 — the hub→spoke SG rule (OI-2026-06-07-4), ELB subnet tags (OI-2026-06-07-3), and placeholder-overlay-vs-bootstrap (OI-2026-06-07-2) were each live-fixed in auto-012 but not given durable code fixes; all three recurred in auto-016 and required another round of manual unblocking.*
+
+# justification
+
+auto-012 found and live-fixed three bring-up gaps: the hub→spoke SG rule (ArgoCD couldn't reach the spoke API on 443), the ELB subnet tags (spoke NLB couldn't be placed), and the placeholder overlay vs. bootstrap selfHeal conflict (spoke apps would revert to placeholders). All three were documented in `docs/open-issues.md` with decisions and next steps. None received a durable code fix. In auto-016, a fresh-account bring-up hit all three again in exactly the same form, requiring the same live interventions — adding a SG rule, tagging 6 subnets, attempting hand-overlays — plus the additional diagnosis time to re-confirm that these were the same known gaps.
+
+The pattern is: "decide + document → live fix → move on → next account pays the cost again." After two accounts pay the same cost, the pattern is established. The rule breaks the cycle by requiring the code fix to land in the same run that applies the live fix, or by explicitly re-escalating the issue as blocking (which triggers a different response than "open issue, deferred").
+
+The marginal cost of adopting this rule: at unblock time, spend the 30–90 minutes to author and open the code PR (the Composition edit for the SG rule, the Terraform variable for the subnet tags, the cluster-facts ConfigMap for the overlay gap). This is more work than a live fix alone. The cost of not adopting it: every subsequent fresh-account run re-pays the full investigation + live-fix cost, and the gap grows in severity over time (in auto-016, OI-2026-06-07-2 escalated from "workaround available" to "now blocking the hello e2e"). Asymmetry: one extra PR per gap vs. unbounded recurrence cost per fresh account.
