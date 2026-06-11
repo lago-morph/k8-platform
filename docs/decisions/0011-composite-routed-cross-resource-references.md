@@ -1,10 +1,13 @@
-# ADR: Composite-routed cross-resource references over provider reference selectors
+# 0011 — Composite-routed cross-resource references over provider reference selectors
 
 - **ID**: ADR-0e5ccd45c3
-- **Status**: Draft (not yet adopted to docs/decisions/)
+- **Status**: Accepted (owner-ratified 2026-06-11)
 - **Date**: 2026-06-11
-- **Source retrospective**: ../2026-06-11-224.md
+- **Source retrospective**: [`../../retrospective/2026-06-11-224.md`](../../retrospective/2026-06-11-224.md)
 - **PRs covered**: #223 (the fix), #220 (the pattern's other user)
+- **Mechanical enforcement**: pending — the retrospective's R1 lint proposal
+  (flag reference-selectors whose target MR lacks an explicit external-name
+  patch); until it lands, this ADR is prose-only guidance
 
 ## Context
 
@@ -69,7 +72,7 @@ worked throughout because their external-names are patched from `spec.name`.
 
 ## References
 
-- [`../2026-06-11-224.md`](../2026-06-11-224.md) — the source retrospective (Phase 4).
+- [`../../retrospective/2026-06-11-224.md`](../../retrospective/2026-06-11-224.md) — the source retrospective (Phase 4).
 - `docs/open-issues.md` OI-2026-06-10-1 — the live evidence + undiagnosed upstream half.
 - `crossplane/compositions/platform-cluster.yaml` (cluster-cert-validation, PR #223) and `crossplane/compositions/xspokeaccess.yaml` (spoke-cluster-secret, PR #220) — the two in-tree users of the idiom.
 - docs/decisions/0008 — the prior v2.5.0 identity-bug observation this generalizes.
