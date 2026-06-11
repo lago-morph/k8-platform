@@ -12,8 +12,17 @@
 #   - managementPolicies: [Observe, Create, Update, Delete] (full lifecycle)
 #   - providerConfigRef.kind: ClusterProviderConfig (one shared IRSA config)
 #
-# Renders ONE managed resource:
-#   1. rds.aws.m.upbound.io Instance — the Postgres instance. The instance
+# Renders FOUR managed resources:
+#   0a. rds SubnetGroup — base-VPC private subnets (from the cluster-network
+#       EnvironmentConfig). Without it AWS places the instance in the
+#       account DEFAULT VPC, unreachable from the platform clusters
+#       (observed live 2026-06-11; the fix for OI-2026-06-07-5's
+#       "RDS networking" note).
+#   0b. ec2 SecurityGroup — dedicated <xr>-rds group in the base VPC.
+#   0c. ec2 SecurityGroupRule — ingress 5432 from the VPC CIDR (classic
+#       rule kind; v2.5.0 cannot observe SecurityGroupIngressRule).
+#   1. rds.aws.m.upbound.io Instance — the Postgres instance, placed in the
+#      subnet group + SG above. The instance
 #      class is mapped from the abstract `size` (small → db.t4g.micro,
 #      medium → db.t4g.small) per the AWS-account constraints in
 #      ai/testing-guidelines §1 (micro/small only, single-AZ, ≤100GB). The
@@ -61,6 +70,25 @@ spec:
     kind: XDatabase
   mode: Pipeline
   pipeline:
+    # ---------- step 0: load account-ephemeral network values --------------
+    # The cluster-network EnvironmentConfig (terraform/management/
+    # crossplane-phase3.tf) supplies privateSubnetIds + vpcId + vpcCidr so
+    # the database lands IN the base VPC. Without this the Instance sets no
+    # subnet group and AWS places it in the account DEFAULT VPC (172.31/16),
+    # unreachable from the platform clusters (10.0/16) — observed live on
+    # the 2026-06-11 fresh-account build; the consuming workload could
+    # never connect.
+    - step: load-environment
+      functionRef:
+        name: function-environment-configs
+      input:
+        apiVersion: environmentconfigs.fn.crossplane.io/v1beta1
+        kind: Input
+        spec:
+          environmentConfigs:
+            - type: Reference
+              ref:
+                name: cluster-network
     - step: patch-and-transform
       functionRef:
         name: function-patch-and-transform
@@ -68,6 +96,144 @@ spec:
         apiVersion: pt.fn.crossplane.io/v1beta1
         kind: Resources
         resources:
+
+          # ---------- 0a. DB subnet group (base-VPC private subnets) --
+          - name: db-subnet-group
+            base:
+              apiVersion: rds.aws.m.upbound.io/v1beta1
+              kind: SubnetGroup
+              metadata:
+                labels:
+                  platform.k8-platform.io/role: rds-subnet-group
+              spec:
+                forProvider:
+                  description: "k8-platform XDatabase subnet group (base-VPC private subnets)"
+                  region: us-east-1
+                  tags:
+                    ManagedBy: crossplane
+                    PlatformAbstraction: XDatabase
+                managementPolicies: [Observe, Create, Update, Delete]
+                providerConfigRef:
+                  kind: ClusterProviderConfig
+                  name: default
+            patches:
+              # Deterministic AWS name <xr>-rds; the Instance references it
+              # by the same Format (no cross-ref needed — the Role/RolePolicy
+              # linkage idiom).
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: metadata.annotations[crossplane.io/external-name]
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-rds"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+              # Required: never create the group with an empty subnet list
+              # (an unapplied/stale EnvironmentConfig holds this back loudly).
+              - type: FromEnvironmentFieldPath
+                fromFieldPath: privateSubnetIds
+                toFieldPath: spec.forProvider.subnetIds
+                policy:
+                  fromFieldPath: Required
+            readinessChecks:
+              - type: MatchCondition
+                matchCondition:
+                  type: Ready
+                  status: "True"
+
+          # ---------- 0b. dedicated RDS security group ----------------
+          - name: db-security-group
+            base:
+              apiVersion: ec2.aws.m.upbound.io/v1beta1
+              kind: SecurityGroup
+              metadata:
+                labels:
+                  platform.k8-platform.io/role: rds-security-group
+              spec:
+                forProvider:
+                  description: "k8-platform XDatabase: postgres from the base VPC"
+                  region: us-east-1
+                  tags:
+                    ManagedBy: crossplane
+                    PlatformAbstraction: XDatabase
+                managementPolicies: [Observe, Create, Update, Delete]
+                providerConfigRef:
+                  kind: ClusterProviderConfig
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: spec.forProvider.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-rds"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+              # Required: the SG must live in the base VPC, never the default
+              # one (which is exactly the bug this resource fixes).
+              - type: FromEnvironmentFieldPath
+                fromFieldPath: vpcId
+                toFieldPath: spec.forProvider.vpcId
+                policy:
+                  fromFieldPath: Required
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.id
+                toFieldPath: status.securityGroupId
+            readinessChecks:
+              - type: NonEmpty
+                fieldPath: status.atProvider.id
+
+          # ---------- 0c. ingress 5432 from the base VPC --------------
+          # Classic SecurityGroupRule — provider-aws-ec2 v2.5.0 cannot
+          # observe SecurityGroupIngressRule (tf-aws#45303; same constraint
+          # the kube-relay-ingress + hub-eks-api-ingress rules document).
+          # CIDR-scoped to the VPC: every in-VPC consumer (spoke pods via
+          # node ENIs, hub) reaches postgres; nothing outside the VPC does.
+          - name: db-ingress-5432
+            base:
+              apiVersion: ec2.aws.m.upbound.io/v1beta1
+              kind: SecurityGroupRule
+              metadata:
+                labels:
+                  platform.k8-platform.io/role: rds-ingress-5432
+              spec:
+                forProvider:
+                  type: ingress
+                  fromPort: 5432
+                  toPort: 5432
+                  protocol: tcp
+                  region: us-east-1
+                managementPolicies: [Observe, Create, Update, Delete]
+                providerConfigRef:
+                  kind: ClusterProviderConfig
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+              # Both Required: the rule waits for the SG id to travel the
+              # composite and for the VPC CIDR to be in the environment.
+              - type: FromCompositeFieldPath
+                fromFieldPath: status.securityGroupId
+                toFieldPath: spec.forProvider.securityGroupId
+                policy:
+                  fromFieldPath: Required
+              - type: FromEnvironmentFieldPath
+                fromFieldPath: vpcCidr
+                toFieldPath: spec.forProvider.cidrBlocks[0]
+                policy:
+                  fromFieldPath: Required
+            readinessChecks:
+              - type: MatchCondition
+                matchCondition:
+                  type: Ready
+                  status: "True"
 
           # ---------- 1. RDS Postgres Instance -----------------------
           - name: rds-instance
@@ -159,6 +325,27 @@ spec:
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.region
                 toFieldPath: spec.forProvider.region
+
+              # In-VPC placement (the default-VPC bug fix): subnet group by
+              # its deterministic name (db-subnet-group's external-name
+              # Format) + the dedicated SG via the composite. Both Required —
+              # the Instance must never be created in the default VPC, so
+              # creation waits for the SG id to land on the composite.
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: spec.forProvider.dbSubnetGroupName
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-rds"
+                policy:
+                  fromFieldPath: Required
+              - type: FromCompositeFieldPath
+                fromFieldPath: status.securityGroupId
+                toFieldPath: spec.forProvider.vpcSecurityGroupIds[0]
+                policy:
+                  fromFieldPath: Required
 
               # Generated-password Secret name = <XR name>-master, resolved
               # in the XR namespace (the ref carries no namespace field —

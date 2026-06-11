@@ -55,7 +55,8 @@ resource "aws_iam_policy" "crossplane_aws" {
       # without updating tests/unit/test_iam_resource_scoping.sh.
       {
         # EC2VpcScoped — only the actions confirmed to carry ec2:Vpc:
-        # CreateSubnet + CreateRouteTable (request carries VpcId) and
+        # CreateSubnet + CreateRouteTable (request carries VpcId),
+        # Create/DeleteSecurityGroup (request/SG resolves to its VPC) and
         # Authorize/RevokeSecurityGroupIngress (the SG resolves to its VPC).
         # Pinned to the base VPC so Crossplane cannot create networking in any
         # other VPC. (DeleteSubnet/ModifySubnetAttribute do NOT carry ec2:Vpc —
@@ -64,6 +65,7 @@ resource "aws_iam_policy" "crossplane_aws" {
         Effect = "Allow"
         Action = [
           "ec2:CreateSubnet", "ec2:CreateRouteTable",
+          "ec2:CreateSecurityGroup", "ec2:DeleteSecurityGroup",
           "ec2:AuthorizeSecurityGroupIngress", "ec2:RevokeSecurityGroupIngress",
         ]
         Resource = "*"

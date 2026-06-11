@@ -33,3 +33,5 @@ acm:DescribeCertificate
 acm:DeleteCertificate
 route53:ChangeResourceRecordSets
 route53:GetChange
+ec2:CreateSecurityGroup
+ec2:DeleteSecurityGroup
