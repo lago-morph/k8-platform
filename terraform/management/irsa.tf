@@ -56,16 +56,21 @@ resource "aws_iam_policy" "crossplane_aws" {
       {
         # EC2VpcScoped — only the actions confirmed to carry ec2:Vpc:
         # CreateSubnet + CreateRouteTable (request carries VpcId),
-        # Create/DeleteSecurityGroup (request/SG resolves to its VPC) and
+        # DeleteSecurityGroup (the SG resolves to its VPC) and
         # Authorize/RevokeSecurityGroupIngress (the SG resolves to its VPC).
         # Pinned to the base VPC so Crossplane cannot create networking in any
         # other VPC. (DeleteSubnet/ModifySubnetAttribute do NOT carry ec2:Vpc —
-        # they live in EC2Unconditioned below.)
+        # they live in EC2Unconditioned below. CreateSecurityGroup gets its
+        # own Sid below: it authorizes against the security-group AND the
+        # vpc resource, and the VPC resource type does NOT carry the
+        # ec2:Vpc condition key — conditioning it here is absent-key +
+        # StringEquals = deny. Proven live 2026-06-11: UnauthorizedOperation
+        # on vpc/<base-vpc> for the XDatabase rds SG under this Sid.)
         Sid    = "EC2VpcScoped"
         Effect = "Allow"
         Action = [
           "ec2:CreateSubnet", "ec2:CreateRouteTable",
-          "ec2:CreateSecurityGroup", "ec2:DeleteSecurityGroup",
+          "ec2:DeleteSecurityGroup",
           "ec2:AuthorizeSecurityGroupIngress", "ec2:RevokeSecurityGroupIngress",
         ]
         Resource = "*"
@@ -74,6 +79,20 @@ resource "aws_iam_policy" "crossplane_aws" {
             "ec2:Vpc" = "arn:aws:ec2:${local.region}:${local.account_id}:vpc/${local.base_vpc_id}"
           }
         }
+      },
+      {
+        # CreateSecurityGroup authorizes against TWO resources: the
+        # to-be-created security-group AND the target vpc. Scoping rides
+        # the resource-pinned VPC ARN (creating in any other VPC fails on
+        # the vpc resource) — no condition, because the vpc resource type
+        # lacks the ec2:Vpc auth-context key.
+        Sid    = "EC2CreateSecurityGroupInBaseVpc"
+        Effect = "Allow"
+        Action = ["ec2:CreateSecurityGroup"]
+        Resource = [
+          "arn:aws:ec2:${local.region}:${local.account_id}:security-group/*",
+          "arn:aws:ec2:${local.region}:${local.account_id}:vpc/${local.base_vpc_id}",
+        ]
       },
       {
         # EC2Unconditioned — Describe* is list-shaped (no resource-level ARN);
