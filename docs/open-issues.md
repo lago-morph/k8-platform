@@ -31,7 +31,9 @@ is the sequence number for that date.
 
 | ID | One-line | Note |
 |----|----------|------|
-| OI-2026-06-11-1 | **NEW** — XDatabase RDS Instance lands in the account DEFAULT VPC (no subnet group/SG composed) → unreachable from the platform clusters | found by clean build #2 (RDS Ready but in 172.31/16 while the platform is in 10.0/16); durable fix AUTHORED in PR #226 (SubnetGroup+SG+5432 rule composed from the cluster-network EnvironmentConfig vpcId/vpcCidr/privateSubnetIds) — `pending clean-build verification` |
+| OI-2026-06-11-1 | XDatabase RDS Instance lands in the account DEFAULT VPC (no subnet group/SG composed) → unreachable from the platform clusters | fix MERGED (#226) + two follow-up IAM multi-resource-auth catches in PR #227 (ec2:CreateSecurityGroup vpc-resource; rds:ModifyDBInstance subgrp-resource — both proven live by the fail-closed narrowed policy); convergence (instance → base VPC) in flight on 608553548146 <!-- noqa: account-id - run provenance, account rotates --> |
+| OI-2026-06-11-2 | **NEW** — kyverno admission controller OOM-CrashLoop + ALL report-cleanup jobs ImagePullBackOff (bitnami/kubectl pullback) → fail-closed webhook blocks hub applies in down-windows | durable helm-values fix (bitnamilegacy images + 768Mi) authored in PR #227, applied via branch CI runs 27384384429+27384541609 (the first hit the webhook's own bootstrap deadlock; manifests landed, re-run recorded the release) — see entry |
+| OI-2026-06-11-3 | **NEW** — spoke clusters ship NO CSI driver / StorageClass → every PVC-bearing add-on Pending forever (kube-prometheus-stack Degraded, loki Progressing on builds #1 AND #2 — now DIAGNOSED) | open; durable fix = EBS CSI + default StorageClass (+ CSI IRSA) in the platform-cluster Composition — feature-sized, next session |
 | OI-2026-06-10-1 | ACM provider v2.5.0 leaves Certificate `crossplane.io/external-name` EMPTY → `certificateArnSelector` never resolves | Composition fix MERGED (#223) + validated on clean builds #1 AND #2 (cert chain verified on hello 200 both); WHY external-name stays empty remains undiagnosed — see entry |
 | OI-2026-06-09-1 | **NEW** — narrowed `iam:GetRole` broke EKS nodegroup SLR create | **FIXED** PR #213, proven live (nodegroup ACTIVE after fix); pending merge |
 | OI-2026-06-08-1 | Crossplane `Resource:"*"` (RDS/EC2) follow-up | IAM resolved (#203); RDS PR #211 (applied live, ongoing-reconcile green), EC2 PR #212 (draft) |
@@ -143,6 +145,83 @@ the honest path is XR delete/recreate FROM GIT, never a hand AWS call.
 
 **Next step:** merge PR #226 → dispatch management `apply-and-verify` → watch
 the MRs converge → the Keycloak-boots-against-RDS oracle.
+
+**2026-06-11 follow-ups (the fail-closed narrowed policy caught BOTH, live):**
+(1) `ec2:CreateSecurityGroup` authorizes against the security-group AND the
+vpc resource; the vpc resource type carries no `ec2:Vpc` condition key, so
+the conditioned EC2VpcScoped Allow never matched it → new
+`EC2CreateSecurityGroupInBaseVpc` Sid pins the vpc HALF by direct Resource
+ARN. (2) `rds:ModifyDBInstance` with a DBSubnetGroupName parameter
+authorizes against the SUBGRP resource; the tag-conditioned db:*-only Sid
+cannot cover it (subnet groups carry no rds:db-tag) → new
+`RDSModifyInstanceSubnetGroup` Sid. Both in PR #227; both validated by
+branch `apply-and-verify` runs. The multi-resource-auth class (one API
+call, several resources, conditions valid on only some) is now twice
+documented — check the SAR resource table before conditioning any new
+action.
+
+---
+
+## OI-2026-06-11-2 — kyverno admission controller OOM-CrashLoop; report-cleanup jobs unpullable; fail-closed webhook blocks hub applies
+
+**Status:** durable fix AUTHORED in PR #227 + applied live via branch CI
+(`apply-and-verify` runs 27384384429 → 27384541609) — `pending clean-build verification`.
+**Surfaced:** 2026-06-11 clean build #2, when the OI-2026-06-11-1 composition
+fix could not reconcile ("failed calling webhook validate.kyverno.svc-fail:
+no endpoints").
+
+**What happened (observation → root cause):** the kyverno admission
+controller OOM-crashlooped from install (+12 restarts/76 min, OOMKilled
+~2.5 min after each start, limit 384Mi), and ALL five report-cleanup
+CronJobs + the policyReportsCleanup hook Job sat in ImagePullBackOff on
+`docker.io/bitnami/kubectl:1.28.5` — unpullable since the Bitnami catalog
+pullback — so admission/ephemeral reports were NEVER cleaned and the
+accumulation kept the controller OOMing. Its `validate.kyverno.svc-fail`
+webhook is FAIL-CLOSED, so every hub apply during down-windows errored —
+including Crossplane composite reconciles (the xdatabase XR) and, in a
+perfect bootstrap deadlock, the kyverno helm upgrade's own post-upgrade
+hook (first fix apply failed exactly there; the manifests had already
+landed, so the recovered controller let the re-run record the release).
+
+**Durable fix (PR #227):** helm.tf pins all seven kubectl-image consumers
+to the relocated `bitnamilegacy/kubectl` archive and raises the admission
+controller memory limit to 768Mi; `test_helm_render.sh` renders the chart
+with these values and pins no non-legacy bitnami/kubectl survives anywhere.
+
+**Bitnami-pullback CLASS note:** the same root cause separately bit the
+spoke keycloak chart image (`bitnami/keycloak:24.0.5-debian-12-r0` →
+`bitnamilegacy/`, fixed in PR #227 values). Any chart pinning an old
+docker.io/bitnami/* tag is suspect — check at version-bump time.
+
+**Still open:** whether 768Mi is the right steady-state limit once cleanup
+runs (observe across a rebuild); kyverno 3.3+ charts moved off
+bitnami/kubectl entirely — fold into the next deliberate chart bump.
+
+---
+
+## OI-2026-06-11-3 — spoke clusters ship no CSI driver / StorageClass; every PVC-bearing add-on stays Pending
+
+**Status:** **open — DIAGNOSED 2026-06-11** (was the undiagnosed
+"kube-prometheus-stack Degraded / loki Progressing" carried since build #1).
+**Surfaced:** builds #1 + #2 (identical states both builds).
+
+**Diagnosis (observation):** prometheus, alertmanager and loki pods are
+Pending with "pod has unbound immediate PersistentVolumeClaims"; their PVCs
+show NO storage class. Spoke clusters (platform-cluster Composition) install
+no EBS CSI driver and no StorageClass — the EKS auto-installed addons do not
+include storage, and unlike the hub (whose workloads are PVC-free) the
+phase-4 observability stack needs volumes.
+
+**Durable fix (next session, feature-sized):** compose the EBS CSI addon +
+its IRSA role + a default gp3 StorageClass into the platform-cluster
+Composition (or an eks-addon MR + the addon's pod identity), with a
+render/chainsaw layer and a live oracle asserting a Bound PVC.
+
+**Not in scope of this entry:** `hub-observability-alloy` OutOfSync/Missing
+— different shape (hub-destined ApplicationSet), still undiagnosed; and
+`workload1-cluster` OutOfSync (new on build #2), likely the kyverno
+webhook down-windows blocking its sync retries (OI-2026-06-11-2) — re-check
+after the kyverno fix settles.
 
 ---
 
