@@ -1,5 +1,6 @@
 acm.aws.m.upbound.io/Certificate
 acm.aws.m.upbound.io/CertificateValidation
+ec2.aws.m.upbound.io/SecurityGroup
 ec2.aws.m.upbound.io/SecurityGroupRule
 eks.aws.m.upbound.io/AccessEntry
 eks.aws.m.upbound.io/AccessPolicyAssociation
@@ -12,5 +13,6 @@ iam.aws.m.upbound.io/RolePolicy
 iam.aws.m.upbound.io/RolePolicyAttachment
 kubernetes.m.crossplane.io/Object
 rds.aws.m.upbound.io/Instance
+rds.aws.m.upbound.io/SubnetGroup
 route53.aws.m.upbound.io/Record
 secretsmanager.aws.m.upbound.io/Secret

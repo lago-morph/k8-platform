@@ -11,13 +11,18 @@
 #
 # The DB endpoint (externalDatabase.host/port) is deliberately NOT a cluster
 # fact — it is database connection data from the XDatabase XR and travels the
-# keycloak-db connection-Secret path (ADR-0010 "out of contract"; wired in
-# PR-2 alongside the registration Secret). Until then the committed
-# PLACEHOLDER_DB_HOST stands.
+# keycloak-db connection-Secret path (ADR-0010 "out of contract"): hub
+# PushSecret → ASM k8-platform/keycloak-db → the spoke ExternalSecret in the
+# third (directory) source below, with HOST/PORT overriding the chart's
+# ConfigMap placeholders via extraEnvVarsSecret (envFrom last-source-wins —
+# premise pinned by tests/unit/test_keycloak_db_env_precedence.sh).
 #
-# Admin + OIDC client secrets are NOT here — they are provisioned by the
-# XPlatformSecret XRs in platform-services/keycloak/secrets/ and consumed via
-# existingSecret.
+# The third source (platform-services/keycloak/spoke/) also delivers the
+# realm-import ConfigMap and the generated keycloak-admin Secret (ESO
+# Password generator — see that file for why NOT XPlatformSecret). All its
+# manifests ride wave -1 (before the chart's wave-0 resources; ArgoCD waits
+# for wave health before advancing, so secrets/CM the pods mount must never
+# land in a LATER wave than the StatefulSet).
 #
 # INERT until a labeled cluster Secret exists; producer = OI-2026-06-07-1.
 apiVersion: argoproj.io/v1alpha1
@@ -60,6 +65,12 @@ spec:
         - repoURL: https://github.com/lago-morph/k8-platform.git
           targetRevision: main
           ref: values
+        # Spoke-side keycloak manifests: keycloak-db ExternalSecret (the
+        # OI-2026-06-07-5 consumer half), the generated keycloak-admin
+        # Secret, and the realm-import ConfigMap.
+        - repoURL: https://github.com/lago-morph/k8-platform.git
+          targetRevision: main
+          path: platform-services/keycloak/spoke
       destination:
         name: '{{.name}}'
         namespace: keycloak

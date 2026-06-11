@@ -55,7 +55,8 @@ resource "aws_iam_policy" "crossplane_aws" {
       # without updating tests/unit/test_iam_resource_scoping.sh.
       {
         # EC2VpcScoped — only the actions confirmed to carry ec2:Vpc:
-        # CreateSubnet + CreateRouteTable (request carries VpcId) and
+        # CreateSubnet + CreateRouteTable (request carries VpcId),
+        # Create/DeleteSecurityGroup (request/SG resolves to its VPC) and
         # Authorize/RevokeSecurityGroupIngress (the SG resolves to its VPC).
         # Pinned to the base VPC so Crossplane cannot create networking in any
         # other VPC. (DeleteSubnet/ModifySubnetAttribute do NOT carry ec2:Vpc —
@@ -64,6 +65,7 @@ resource "aws_iam_policy" "crossplane_aws" {
         Effect = "Allow"
         Action = [
           "ec2:CreateSubnet", "ec2:CreateRouteTable",
+          "ec2:CreateSecurityGroup", "ec2:DeleteSecurityGroup",
           "ec2:AuthorizeSecurityGroupIngress", "ec2:RevokeSecurityGroupIngress",
         ]
         Resource = "*"
@@ -318,17 +320,35 @@ module "irsa_crossplane" {
 
 resource "aws_iam_policy" "eso" {
   name        = "${var.cluster_name}-eso"
-  description = "ESO read-only access to Secrets Manager for the management cluster"
+  description = "ESO access to Secrets Manager for the management cluster (read + PushSecret write on the platform path)"
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
+        Sid    = "ESORead"
         Effect = "Allow"
         Action = [
           "secretsmanager:GetSecretValue",
           "secretsmanager:DescribeSecret",
           "secretsmanager:ListSecretVersionIds",
+        ]
+        Resource = "arn:aws:secretsmanager:${local.region}:${local.account_id}:secret:k8-platform/*"
+      },
+      {
+        # PushSecret (hub → ASM) for cross-cluster secret movement
+        # (OI-2026-06-07-5: the keycloak-db connection secret travels hub
+        # PushSecret → ASM → spoke ExternalSecret, ADR-0005). Write stays
+        # scoped to the same k8-platform/* path; spokes get read-only
+        # (XSpokeAccess eso-policy). No DeleteSecret: PushSecret
+        # deletionPolicy stays None — orphaned pushes are reaped by account
+        # rotation, never by ESO.
+        Sid    = "ESOPushSecretWrite"
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:CreateSecret",
+          "secretsmanager:PutSecretValue",
+          "secretsmanager:TagResource",
         ]
         Resource = "arn:aws:secretsmanager:${local.region}:${local.account_id}:secret:k8-platform/*"
       },

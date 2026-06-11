@@ -42,7 +42,14 @@ metadata:
   name: keycloak-realm-platform
   namespace: keycloak
   annotations:
-    argocd.argoproj.io/sync-wave: "36"
+    # Wave -1: delivered by the keycloak ApplicationSet's directory source
+    # (platform-services/keycloak/spoke/) BEFORE the chart's wave-0
+    # resources — the StatefulSet mounts this ConfigMap, and ArgoCD waits
+    # for wave health before advancing, so a later wave would deadlock the
+    # first sync. (Was wave 36 when this file was designed for a hub-side
+    # syncer that never existed — no Application ever synced it until the
+    # OI-2026-06-07-5 build.)
+    argocd.argoproj.io/sync-wave: "-1"
 data:
   platform-realm.json: |
     {

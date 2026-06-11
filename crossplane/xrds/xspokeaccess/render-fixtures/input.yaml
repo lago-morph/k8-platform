@@ -34,3 +34,4 @@ status:
   clusterCaData: UkVOREVSLVBST0JFLUNBLURBVEE=
   clusterCertificateArn: arn:aws:acm:us-east-1:000000000000:certificate/00000000-0000-0000-0000-000000000000
   externalDnsRoleArn: arn:aws:iam::000000000000:role/k8-platform-render-probe-external-dns
+  esoRoleArn: arn:aws:iam::000000000000:role/k8-platform-render-probe-eso

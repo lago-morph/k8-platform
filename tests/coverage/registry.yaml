@@ -42,6 +42,10 @@ kinds:
     lane: aws
     cost: slow
     defended_by: tests/live/checks/after/acm-certificate-validation-live.sh
+  ec2.aws.m.upbound.io/SecurityGroup:
+    lane: aws
+    cost: singleton-coupled   # the dedicated <xr>-rds group (OI-2026-06-11-1); created with the XDatabase
+    defended_by: tests/live/checks/after/rds-instance-live.sh   # behavioral: instance available IN a non-default VPC (placement = the SubnetGroup+SG in effect)
   ec2.aws.m.upbound.io/SecurityGroupRule:
     lane: aws
     cost: singleton-coupled   # admits the shared SSM relay to the cluster API; created with the cluster (docs/decisions/0008)
@@ -92,6 +96,10 @@ kinds:
     lane: aws
     cost: slow            # multi-minute — AFTER-THE-FACT only
     defended_by: tests/live/checks/after/rds-instance-live.sh
+  rds.aws.m.upbound.io/SubnetGroup:
+    lane: aws
+    cost: singleton-coupled   # base-VPC private-subnet group (OI-2026-06-11-1); created with the XDatabase
+    defended_by: tests/live/checks/after/rds-instance-live.sh   # behavioral: instance available IN a non-default VPC
   route53.aws.m.upbound.io/Record:
     lane: aws
     cost: singleton-coupled   # coupled to the singleton hosted zone

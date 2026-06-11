@@ -41,6 +41,7 @@ XSpokeAccess pair).
 | `certificate-arn` | XPlatformCluster → `status.certificateArn` | `platform-cluster.yaml:501-503` |
 | `external-dns-role-arn` | XSpokeAccess → `status.externalDnsRoleArn` | `xspokeaccess.yaml:200-202` |
 | `region` | `XSpokeAccess.spec.region` (PR-2 resolution — region is per-cluster, not account-global; the EnvironmentConfig sketch below was the deferral placeholder) | PR-2 §Decision 2; `xspokeaccess.yaml` spec.region (validated, defaulted) |
+| `eso-role-arn` | XSpokeAccess → `status.esoRoleArn` (PR-3 amendment, 2026-06-11: ESO is baseline on every spoke per ADR-0005, so its IRSA role ARN is a genuine per-cluster fact with the same producer, writer, and per-Secret completeness as `external-dns-role-arn`. This does NOT reopen Decision 3: that closure excluded **XDatabase** facts — host/port — from the contract; the ESO role is XSpokeAccess's own composed resource.) | `xspokeaccess.yaml` eso-role → status.esoRoleArn; consumer `argocd/apps/spoke/eso.yaml` |
 
 **Explicitly out of contract:** keycloak's `externalDatabase.host`/`port`
 (`platform-services/keycloak/values.yaml:62-63`). They are database connection
@@ -236,7 +237,11 @@ everything below: **pending clean-build verification** (SUBSTRATE row 5).
    `extraEnvVarsSecret`. The duplicate-env-name precedence (chart-rendered
    env vs extraEnvVarsSecret) is an unverified premise — labeled hypothesis;
    OI-5's implementation must prove it with a helm-render fixture. The
-   contract closes at five keys.
+   contract closes at five keys. (2026-06-11, PR-3: closed against
+   *XDatabase* facts specifically — the ESO-baseline `eso-role-arn`
+   amendment in the fact table above adds a sixth key whose producer is
+   XSpokeAccess itself; the host/port exclusion this decision records is
+   unchanged.)
 4. **Single writer / partial writes.** Writer of record = the
    `spoke-cluster-secret` Object under the pinned `provider-kubernetes` SA
    (DeploymentRuntimeConfig), RBAC-granted argocd-namespace Secret writes +

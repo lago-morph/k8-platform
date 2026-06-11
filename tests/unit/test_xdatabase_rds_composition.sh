@@ -59,9 +59,28 @@ assert_eq "composition_typeRef_kind" "XDatabase" "$(yq -r '.spec.compositeTypeRe
 assert_eq "composition_typeRef_apiVersion" "platform.k8-platform.io/v1alpha1" \
   "$(yq -r '.spec.compositeTypeRef.apiVersion' "$COMP")"
 
-# ---- 3. Single Instance base on rds.aws.m.upbound.io/v1beta1 -------------
+# ---- 3. Four resources: networking trio + the Instance -------------------
+# (db-subnet-group + db-security-group + db-ingress-5432 place the DB in
+# the base VPC — the default-VPC unreachability fix, 2026-06-11.)
 RES_COUNT=$(yq -r "${PT}.resources | length" "$COMP")
-assert_eq "composition_single_resource" "1" "$RES_COUNT"
+assert_eq "composition_resource_count" "4" "$RES_COUNT"
+assert_eq "composition_subnet_group_kind" "SubnetGroup" \
+  "$(yq -r "${PT}.resources[] | select(.name==\"db-subnet-group\") | .base.kind" "$COMP")"
+assert_eq "composition_subnet_group_subnets_required" "Required" \
+  "$(yq -r "${PT}.resources[] | select(.name==\"db-subnet-group\") | .patches[] | select(.toFieldPath==\"spec.forProvider.subnetIds\") | .policy.fromFieldPath" "$COMP")"
+assert_eq "composition_sg_vpc_required" "Required" \
+  "$(yq -r "${PT}.resources[] | select(.name==\"db-security-group\") | .patches[] | select(.toFieldPath==\"spec.forProvider.vpcId\") | .policy.fromFieldPath" "$COMP")"
+# classic SecurityGroupRule (v2.5.0 cannot observe SecurityGroupIngressRule)
+assert_eq "composition_ingress_rule_kind" "SecurityGroupRule" \
+  "$(yq -r "${PT}.resources[] | select(.name==\"db-ingress-5432\") | .base.kind" "$COMP")"
+assert_eq "composition_ingress_port" "5432" \
+  "$(yq -r "${PT}.resources[] | select(.name==\"db-ingress-5432\") | .base.spec.forProvider.fromPort" "$COMP")"
+# the Instance is pinned into the composed subnet group + SG (both Required
+# — never created in the default VPC)
+assert_eq "composition_instance_subnet_group_required" "Required" \
+  "$(yq -r "${INST} | .patches[] | select(.toFieldPath==\"spec.forProvider.dbSubnetGroupName\") | .policy.fromFieldPath" "$COMP")"
+assert_eq "composition_instance_sg_required" "Required" \
+  "$(yq -r "${INST} | .patches[] | select(.toFieldPath==\"spec.forProvider.vpcSecurityGroupIds[0]\") | .policy.fromFieldPath" "$COMP")"
 assert_eq "composition_instance_api" "rds.aws.m.upbound.io/v1beta1" \
   "$(yq -r "${INST} | .base.apiVersion" "$COMP")"
 assert_eq "composition_instance_kind" "Instance" \

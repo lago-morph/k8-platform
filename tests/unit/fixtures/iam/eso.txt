@@ -3,3 +3,8 @@
 secretsmanager:GetSecretValue
 secretsmanager:DescribeSecret
 secretsmanager:ListSecretVersionIds
+# PushSecret (hub -> ASM, OI-2026-06-07-5 keycloak-db path; ADR-0005).
+# Write is scoped to the k8-platform/* path in irsa.tf (Sid ESOPushSecretWrite).
+secretsmanager:CreateSecret
+secretsmanager:PutSecretValue
+secretsmanager:TagResource

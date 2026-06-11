@@ -168,6 +168,13 @@ locals {
       privateSubnetIds = try(data.terraform_remote_state.base.outputs.private_subnet_ids, [])
       route53ZoneId    = try(data.terraform_remote_state.base.outputs.route53_zone_id, "")
       domain           = var.domain
+      # Base-VPC identity for Compositions that place non-EKS resources
+      # in-VPC (first consumer: the XDatabase RDS SubnetGroup/SecurityGroup —
+      # without these the RDS Instance lands in the account DEFAULT VPC,
+      # unreachable from the platform clusters; observed live on the
+      # 2026-06-11 fresh-account build).
+      vpcId   = try(data.terraform_remote_state.base.outputs.vpc_id, "")
+      vpcCidr = try(data.terraform_remote_state.base.outputs.vpc_cidr, "")
       # auto-008 C3 — the XSpokeAccess Composition reads accountId +
       # argocdRoleArn from this same EnvironmentConfig (FromEnvironment
       # FieldPath / CombineFromEnvironment) to build the external-dns IRSA

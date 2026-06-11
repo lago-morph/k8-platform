@@ -20,6 +20,10 @@
 #      policy + the OIDC provider ARN in the trust policy are built from
 #      the cluster-network EnvironmentConfig (accountId, route53ZoneId) +
 #      spec.oidcIssuer via patches, NOT literals (AGENTS §8.1).
+#   2b. external-secrets (ESO) IAM Role + INLINE RolePolicy — same trust
+#      shape, :sub = system:serviceaccount:external-secrets:external-secrets;
+#      ASM read scoped to k8-platform/* in this account+region (ADR-0005
+#      ESO-baseline; ARN rides the contract as k8-platform.io/eso-role-arn).
 #   3. EKS AccessEntry + AccessPolicyAssociation (auto-008 C3) mapping the
 #      management cluster's ${clusterName}-argocd IAM role (the FULL ARN
 #      from the EnvironmentConfig) to AmazonEKSClusterAdminPolicy on the
@@ -33,7 +37,7 @@
 #      status. Replaces the retired spec.oidcIssuer operator overlay.
 #   5. spoke-cluster-secret Object (ADR-0010 PR-2 / OI-2026-06-07-1):
 #      the durable ArgoCD registration Secret in the argocd namespace,
-#      carrying the five-fact contract annotations + selector labels the
+#      carrying the six-fact contract annotations + selector labels the
 #      consumer ApplicationSets template. COMPLETE-OR-ABSENT: every patch
 #      into the Secret manifest carries policy.fromFieldPath: Required —
 #      under function-patch-and-transform v0.10.6 a Required patch that
@@ -127,6 +131,13 @@ spec:
                   string:
                     type: TrimPrefix
                     trim: "https://"
+            # spec.region → environment so the ESO inline-policy combine can
+            # pin the ASM ARN to <region>+<accountId> (a combine reads ONE
+            # source — composite values must travel via the environment to
+            # join accountId, the same idiom as oidcHost above).
+            - type: FromCompositeFieldPath
+              fromFieldPath: spec.region
+              toFieldPath: region
         resources:
 
           # ---------- 0. cluster-facts Observe Object ----------------
@@ -375,6 +386,143 @@ spec:
                       }
                 toFieldPath: spec.forProvider.policy
 
+          # ---------- 3b. external-secrets (ESO) IRSA Role -----------
+          # ADR-0005 ESO-baseline corollary: every spoke runs ESO with an
+          # IRSA-backed ClusterSecretStore so committed ExternalSecrets can
+          # pull ASM material (first consumer: the keycloak-db connection
+          # secret, OI-2026-06-07-5). Same trust shape as external-dns
+          # (StringEquals on BOTH :sub and :aud — auto-008 S2); :sub pins
+          # the ESO chart's pinned SA external-secrets/external-secrets.
+          # ARN → status.esoRoleArn → the k8-platform.io/eso-role-arn
+          # contract annotation (ADR-0010 amendment) the spoke `eso`
+          # ApplicationSet templates into the chart's SA annotation.
+          - name: eso-role
+            base:
+              apiVersion: iam.aws.m.upbound.io/v1beta1
+              kind: Role
+              metadata:
+                labels:
+                  platform.k8-platform.io/role: spoke-eso-role
+              spec:
+                forProvider:
+                  tags:
+                    ManagedBy: crossplane
+                    PlatformAbstraction: XSpokeAccess
+                managementPolicies: [Observe, Create, Update, Delete]
+                providerConfigRef:
+                  kind: ClusterProviderConfig
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.clusterName
+                toFieldPath: metadata.annotations[crossplane.io/external-name]
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "k8-platform-%s-eso"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.clusterName
+                toFieldPath: spec.forProvider.tags.ClusterName
+              # IRSA trust policy from the environment, exactly like the
+              # external-dns Role above. Required: never create an IAM Role
+              # with an empty trust policy — wait for the observed issuer.
+              - type: CombineFromEnvironment
+                policy:
+                  fromFieldPath: Required
+                combine:
+                  variables:
+                    - fromFieldPath: accountId
+                    - fromFieldPath: oidcHost
+                    - fromFieldPath: oidcHost
+                    - fromFieldPath: oidcHost
+                  strategy: string
+                  string:
+                    fmt: |
+                      {
+                        "Version": "2012-10-17",
+                        "Statement": [{
+                          "Effect": "Allow",
+                          "Principal": {"Federated": "arn:aws:iam::%s:oidc-provider/%s"},
+                          "Action": "sts:AssumeRoleWithWebIdentity",
+                          "Condition": {"StringEquals": {
+                            "%s:sub": "system:serviceaccount:external-secrets:external-secrets",
+                            "%s:aud": "sts.amazonaws.com"
+                          }}
+                        }]
+                      }
+                toFieldPath: spec.forProvider.assumeRolePolicy
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.arn
+                toFieldPath: status.esoRoleArn
+            readinessChecks:
+              - type: NonEmpty
+                fieldPath: status.atProvider.arn
+
+          # ---------- 3c. ESO inline RolePolicy ----------------------
+          # Read-only Secrets Manager access scoped to the platform's ASM
+          # path k8-platform/* in THIS account+region — the same scope the
+          # hub ESO policy grants (terraform/management/irsa.tf
+          # aws_iam_policy.eso); spokes never get write (PushSecret runs on
+          # the hub only). Inline RolePolicy because the crossplane IRSA
+          # has iam:PutRolePolicy, NOT iam:CreatePolicy (auto-008 C4).
+          - name: eso-policy
+            base:
+              apiVersion: iam.aws.m.upbound.io/v1beta1
+              kind: RolePolicy
+              metadata:
+                labels:
+                  platform.k8-platform.io/role: spoke-eso-policy
+              spec:
+                forProvider: {}
+                managementPolicies: [Observe, Create, Update, Delete]
+                providerConfigRef:
+                  kind: ClusterProviderConfig
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.clusterName
+                toFieldPath: metadata.annotations[crossplane.io/external-name]
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-eso"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.clusterName
+                toFieldPath: spec.forProvider.role
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "k8-platform-%s-eso"
+              # ASM read scoped to <region>:<accountId>:secret:k8-platform/*.
+              # region rides the environment (top-level patch above) so it
+              # can join accountId in one combine.
+              - type: CombineFromEnvironment
+                policy:
+                  fromFieldPath: Required
+                combine:
+                  variables:
+                    - fromFieldPath: region
+                    - fromFieldPath: accountId
+                  strategy: string
+                  string:
+                    fmt: |
+                      {
+                        "Version": "2012-10-17",
+                        "Statement": [{
+                          "Effect": "Allow",
+                          "Action": [
+                            "secretsmanager:GetSecretValue",
+                            "secretsmanager:DescribeSecret",
+                            "secretsmanager:ListSecretVersionIds"
+                          ],
+                          "Resource": "arn:aws:secretsmanager:%s:%s:secret:k8-platform/*"
+                        }]
+                      }
+                toFieldPath: spec.forProvider.policy
+
           # ---------- 4. EKS AccessEntry ----------------------------
           # Maps the management cluster's ${clusterName}-argocd IAM role
           # (FULL ARN from the EnvironmentConfig argocdRoleArn) onto the
@@ -467,7 +615,7 @@ spec:
           # function-patch-and-transform v0.10.6, a Required patch that
           # cannot resolve skips creating this one composed resource and
           # leaves the siblings untouched — so the Secret only ever
-          # appears fully assembled (labels, five contract annotations,
+          # appears fully assembled (labels, six contract annotations,
           # server, config), never partially (ADR-0010 consequence (b)).
           #
           # The contract keys here are gated bidirectionally against the
@@ -532,7 +680,7 @@ spec:
                 toFieldPath: spec.forProvider.manifest.metadata.labels[k8-platform.io/short-name]
                 policy:
                   fromFieldPath: Required
-              # ---- the five-fact contract annotations ----
+              # ---- the six-fact contract annotations ----
               - type: FromEnvironmentFieldPath
                 fromFieldPath: domain
                 toFieldPath: spec.forProvider.manifest.metadata.annotations[k8-platform.io/domain]
@@ -556,6 +704,11 @@ spec:
               - type: FromCompositeFieldPath
                 fromFieldPath: status.externalDnsRoleArn
                 toFieldPath: spec.forProvider.manifest.metadata.annotations[k8-platform.io/external-dns-role-arn]
+                policy:
+                  fromFieldPath: Required
+              - type: FromCompositeFieldPath
+                fromFieldPath: status.esoRoleArn
+                toFieldPath: spec.forProvider.manifest.metadata.annotations[k8-platform.io/eso-role-arn]
                 policy:
                   fromFieldPath: Required
               # ---- the ArgoCD connection fields ----
