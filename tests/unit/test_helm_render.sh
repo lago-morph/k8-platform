@@ -160,6 +160,41 @@ else
   fail "eso: helm template failed" "$(cat "$OUT.err" 2>/dev/null | tail -10)"
 fi
 
+echo "── helm-render: kyverno ──────────────────────────────────────────"
+# OI-2026-06-11-2: chart 3.2.6 defaults the report-cleanup CronJobs (and
+# webhooksCleanup) to docker.io/bitnami/kubectl:1.28.5 — unpullable since
+# the Bitnami catalog pullback, so reports never get cleaned and the
+# accumulation OOM-kills the fail-closed admission controller. helm.tf
+# overrides every such image to the relocated bitnamilegacy archive; this
+# render pins that NO non-legacy bitnami/kubectl image survives, and the
+# OOM headroom override is present.
+KYVERNO_VERSION="3.2.6"
+OUT="$TMP/kyverno.yaml"
+if helm_render   "https://kyverno.github.io/kyverno/"   "kyverno"   "$KYVERNO_VERSION"   "$OUT"   "admissionController.container.resources.limits.memory=768Mi"   "admissionController.container.resources.limits.cpu=100m"   "webhooksCleanup.image.repository=bitnamilegacy/kubectl"   "cleanupJobs.admissionReports.image.repository=bitnamilegacy/kubectl"   "cleanupJobs.clusterAdmissionReports.image.repository=bitnamilegacy/kubectl"   "cleanupJobs.ephemeralReports.image.repository=bitnamilegacy/kubectl"   "cleanupJobs.clusterEphemeralReports.image.repository=bitnamilegacy/kubectl"   "cleanupJobs.updateRequests.image.repository=bitnamilegacy/kubectl" \
+  "policyReportsCleanup.image.repository=bitnamilegacy/kubectl"; then
+
+  # No rendered workload may reference the unpullable non-legacy image.
+  BAD_IMAGES="$(grep -oE 'image: "?[^"]*bitnami/kubectl[^"]*' "$OUT" | grep -v bitnamilegacy || true)"
+  if [ -z "$BAD_IMAGES" ]; then
+    pass "kyverno: no unpullable bitnami/kubectl image in render (all legacy)"
+  else
+    fail "kyverno: unpullable bitnami/kubectl image rendered" "$BAD_IMAGES"
+  fi
+
+  # Every cleanup CronJob rides the legacy archive.
+  CRON_IMGS="$(yq -r 'select(.kind=="CronJob") | .spec.jobTemplate.spec.template.spec.containers[0].image' "$OUT" | grep -v '^---$' | grep -v '^null$' | sort -u)"
+  if [ -n "$CRON_IMGS" ] && ! grep -qv "bitnamilegacy/kubectl" <<<"$CRON_IMGS"; then
+    pass "kyverno: all cleanup CronJobs use bitnamilegacy/kubectl ($(wc -l <<<"$CRON_IMGS") image variant(s))"
+  else
+    fail "kyverno: cleanup CronJob image drift" "$CRON_IMGS"
+  fi
+
+  # The admission controller carries the OOM-headroom limit.
+  assert_yq_eq "$OUT"     'select(.kind=="Deployment" and .metadata.name=="kyverno-admission-controller") | .spec.template.spec.containers[0].resources.limits.memory'     "768Mi"     "kyverno: admission controller memory limit 768Mi (OI-2026-06-11-2 OOM headroom)"
+else
+  fail "kyverno: helm template failed" "$(cat "$OUT.err" 2>/dev/null | tail -10)"
+fi
+
 echo "── helm-render: ingress-nginx ────────────────────────────────────"
 OUT="$TMP/ingress-nginx.yaml"
 if helm_render \
