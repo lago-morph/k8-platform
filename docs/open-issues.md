@@ -31,6 +31,7 @@ is the sequence number for that date.
 
 | ID | One-line | Note |
 |----|----------|------|
+| OI-2026-06-11-1 | **NEW** — CI-harness hardening queue (retro 2026-06-11-224 R2/R3/R4) | deferred deliberately: a concurrent session is live against these workflows; see entry |
 | OI-2026-06-10-1 | **NEW** — ACM provider v2.5.0 leaves Certificate `crossplane.io/external-name` EMPTY → `certificateArnSelector` never resolves | Composition fix MERGED (#223) + validated on clean build #1 (the stuck MR resolved via GitOps propagation, XR Ready=True); WHY external-name stays empty remains undiagnosed — see entry |
 | OI-2026-06-09-1 | **NEW** — narrowed `iam:GetRole` broke EKS nodegroup SLR create | **FIXED** PR #213, proven live (nodegroup ACTIVE after fix); pending merge |
 | OI-2026-06-08-1 | Crossplane `Resource:"*"` (RDS/EC2) follow-up | IAM resolved (#203); RDS PR #211 (applied live, ongoing-reconcile green), EC2 PR #212 (draft) |
@@ -104,6 +105,38 @@ provider + Roles + RolePolicy + AccessEntries + AccessPolicyAssociations all
   (placeholders won't overlay durably). Also a transient: a Kyverno webhook blip
   (`kyverno-svc: no endpoints`) briefly errored the xdatabase XR reconcile (not a
   code bug; the RDS Instance itself is `Ready`).
+
+---
+
+## OI-2026-06-11-1 — CI-harness hardening queue (retro 2026-06-11-224 remedies R2/R3/R4)
+
+**Status:** queued — owner-approved 2026-06-11; deferred ONLY because a
+concurrent session was actively dispatching against these workflows (changing
+verifier/chainsaw behavior mid-flight, or pushing R4's throwaway probe
+branches, would interfere with it). Implement in the next session with no
+concurrent CI consumer. Full designs: `retrospective/2026-06-11-224.md` Part 3.
+
+1. **R2 — chainsaw-verify waits for an in-flight run.** Extract the lookup
+   into `.github/scripts/` (hermetically unit-tested, like the live-evidence
+   gate), bounded poll ~10 min: green run → pass; queued/in-progress run for
+   the HEAD SHA → wait; nothing/terminal-failure only → fail with the dispatch
+   instructions. Observed race: verifier red at PR-open, 4 min before the
+   already-dispatched chainsaw run (27310302147) went green; remedy was a
+   manual lookup re-run.
+2. **R3 — pin the kind download to GitHub releases.** `chainsaw.yml`:
+   `kind.sigs.k8s.io/dl/...` → `github.com/kubernetes-sigs/kind/releases/download/...`
+   (+ `--retry 3`), version still from versions.env. Observed: a 268s connect
+   timeout killed run 27301407702 before any scenario executed.
+3. **R4 — diagnose verifier non-trigger on new-branch first pushes.**
+   Inconsistent observation (3 stack branches: zero verifier runs on first
+   push despite matching paths; #223's branch: triggered fine). Reproduce
+   with a throwaway branch BEFORE changing anything; likely fix = add
+   `pull_request` triggers with the same path filters.
+
+Routing note: R2/R3 edit `.github/workflows/**` — the push token and the
+GitHub MCP write tools refuse those paths; route through the jentic
+`ext-github` bridge. R2's script logic gets a unit test in the same PR
+(audit-before-enforce).
 
 ---
 

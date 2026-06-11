@@ -5,9 +5,9 @@
 - **Date**: 2026-06-11
 - **Source retrospective**: [`../../retrospective/2026-06-11-224.md`](../../retrospective/2026-06-11-224.md)
 - **PRs covered**: #223 (the fix), #220 (the pattern's other user)
-- **Mechanical enforcement**: pending — the retrospective's R1 lint proposal
-  (flag reference-selectors whose target MR lacks an explicit external-name
-  patch); until it lands, this ADR is prose-only guidance
+- **Mechanical enforcement**: `tests/unit/test_composition_selector_identity.sh`
+  (landed green tree-wide in the same PR, audit-before-enforce; includes a
+  negative selftest reproducing the OI-2026-06-10-1 shape)
 
 ## Context
 
