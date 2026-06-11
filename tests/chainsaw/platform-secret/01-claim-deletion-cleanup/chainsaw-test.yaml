@@ -76,10 +76,10 @@ spec:
         - script:
             content: |
               # v2: XR is namespaced and shares the user's resource
-              # name (no v1 claim → XR promotion pointer).
+              # name; the ASM key is the deterministic
+              # k8-platform/<namespace>/<name> (2026-06-11).
               xr="${CLAIM_NAME}"
-              uid=$(kubectl get xplatformsecret -n default "$xr" -o jsonpath='{.metadata.uid}')
-              echo "k8-platform/${uid}" > /tmp/scenario01-asm-key.txt
+              echo "k8-platform/default/${xr}" > /tmp/scenario01-asm-key.txt
               echo "captured: $(cat /tmp/scenario01-asm-key.txt)"
             env:
               - name: CLAIM_NAME

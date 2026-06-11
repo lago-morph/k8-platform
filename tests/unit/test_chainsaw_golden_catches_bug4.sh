@@ -70,6 +70,16 @@ hits = 0
 i = 0
 while i < len(lines):
     if re.match(r'^\s+string:\s*$', lines[i]):
+        # A `string:` block under `strategy: string` is a COMBINE block —
+        # the correct combine syntax has fmt: directly (no type:
+        # discriminator exists there). Only TRANSFORM string blocks carry
+        # the Bug 4 shape. Look back for the strategy line.
+        k = i - 1
+        while k >= 0 and (lines[k].strip() == '' or lines[k].lstrip().startswith('#')):
+            k -= 1
+        if k >= 0 and lines[k].strip() == 'strategy: string':
+            i += 1
+            continue
         # look at the immediately following non-blank, non-comment line
         j = i + 1
         while j < len(lines) and (lines[j].strip() == '' or lines[j].lstrip().startswith('#')):

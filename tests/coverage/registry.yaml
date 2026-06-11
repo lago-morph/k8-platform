@@ -108,6 +108,14 @@ kinds:
     lane: aws
     cost: hermetic
     defended_by: tests/live/checks/after/secretsmanager-secret-live.sh
+  external-secrets.io/PushSecret:
+    lane: non-aws
+    cost: singleton-coupled   # platform-secret material chain (writes the generated value into the MR-owned ASM container)
+    defended_by: tests/live/checks/after/secretsmanager-secret-live.sh   # behavioral: the pushed value IS the AWSCURRENT version the check requires
+  generators.external-secrets.io/Password:
+    lane: non-aws
+    cost: singleton-coupled   # platform-secret material source (ADR-0005 generatorRef)
+    defended_by: tests/live/checks/after/secretsmanager-secret-live.sh   # behavioral: generated material lands as the AWSCURRENT version
   external-secrets.io/ExternalSecret:
     lane: non-aws         # no IAM action to simulate (FINAL-PLAN §4.5)
     # auto-014-001 (decision brief): NOT hermetic -- ESO continuously reconciles

@@ -7,6 +7,8 @@ eks.aws.m.upbound.io/AccessPolicyAssociation
 eks.aws.m.upbound.io/Cluster
 eks.aws.m.upbound.io/NodeGroup
 external-secrets.io/ExternalSecret
+external-secrets.io/PushSecret
+generators.external-secrets.io/Password
 iam.aws.m.upbound.io/OpenIDConnectProvider
 iam.aws.m.upbound.io/Role
 iam.aws.m.upbound.io/RolePolicy

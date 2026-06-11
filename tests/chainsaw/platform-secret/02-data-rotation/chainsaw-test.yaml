@@ -80,10 +80,10 @@ spec:
               set -eu
               # chainsaw runs scripts under /bin/sh; pipefail is bash-only.
               # v2: XR is namespaced and shares the user's resource
-              # name (no v1 claim → XR promotion pointer).
+              # name; the ASM key is the deterministic
+              # k8-platform/<namespace>/<name> (2026-06-11).
               xr="${CLAIM_NAME}"
-              uid=$(kubectl get xplatformsecret -n default "$xr" -o jsonpath='{.metadata.uid}')
-              key="k8-platform/${uid}"
+              key="k8-platform/default/${xr}"
               echo "$key" > /tmp/scenario02-asm-key.txt
               # The XR is Ready, but ASM create is eventually consistent, so the
               # first put can race the secret becoming observable. Retry on a
