@@ -22,7 +22,7 @@ ADR="$ROOT/docs/decisions/0010-cluster-facts-via-cluster-secret-annotations-and-
 FAIL=0
 
 # ── the contract (single source for this lint; mirrors the ADR table) ───────
-ANNOTATION_KEYS="domain subdomain certificate-arn external-dns-role-arn region"
+ANNOTATION_KEYS="domain subdomain certificate-arn external-dns-role-arn region eso-role-arn"
 LABEL_KEYS="cluster-role short-name"
 
 [ -d "$SPOKE_DIR" ] || { echo "FAIL: $SPOKE_DIR missing"; exit 1; }

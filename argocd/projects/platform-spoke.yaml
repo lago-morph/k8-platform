@@ -49,6 +49,9 @@ spec:
     # VERSION is pinned in argocd/apps/spoke/keycloak.yaml (Bitnami keycloak
     # 21.4.4 → Keycloak 24.0.x).
     - "https://charts.bitnami.com/bitnami"
+    # ESO baseline on every spoke (ADR-0005 corollary; argocd/apps/spoke/
+    # eso.yaml pins chart 0.9.13 = the hub's terraform eso_version).
+    - "https://charts.external-secrets.io"
   # Destinations: spoke clusters only. Explicitly NOT
   # https://kubernetes.default.svc (the hub in-cluster destination) — that is
   # `k8-platform`'s exclusive territory. Spokes are addressed by NAME (the
@@ -83,6 +86,11 @@ spec:
     # is not permitted in project platform-spoke" (auto-012).
     - group: "networking.k8s.io"
       kind: "IngressClass"
+    # ClusterSecretStore is CLUSTER-scoped; the eso ApplicationSet delivers
+    # the spoke `aws-secrets-manager` store (ADR-0005 ESO-baseline). The
+    # namespaced external-secrets.io/* whitelist below does NOT cover it.
+    - group: "external-secrets.io"
+      kind: "ClusterSecretStore"
   namespaceResourceWhitelist:
     - group: ""
       kind: "*"
@@ -99,6 +107,10 @@ spec:
     - group: "batch"
       kind: "*"
     - group: "external-secrets.io"
+      kind: "*"
+    # ESO generators (Password for the keycloak-admin bootstrap secret —
+    # platform-services/keycloak/spoke/; ADR-0005 generatorRef default).
+    - group: "generators.external-secrets.io"
       kind: "*"
     - group: "monitoring.coreos.com"
       kind: "*"
