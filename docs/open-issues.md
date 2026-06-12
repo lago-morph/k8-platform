@@ -21,7 +21,7 @@ is the sequence number for that date.
 | OI-2026-06-07-1 | spoke ArgoCD cluster Secret has no GitOps form | **RESOLVED — 1× clean-build evidence 2026-06-10** (SUBSTRATE row 5): Composition-produced Secret, full contract, `spoke-cluster-secret-live.sh` PASS on clean build #1 |
 | OI-2026-06-07-3 | shared-VPC ELB subnet tags | **RESOLVED — 1× clean-build evidence 2026-06-10** (SUBSTRATE row 3): spoke NLB placed with zero create-tags on clean build #1 |
 | OI-2026-06-07-4 | hub→spoke EKS-API SG rule | **RESOLVED — 1× clean-build evidence 2026-06-10** (SUBSTRATE row 2): hub ArgoCD synced the spoke with zero authorize-sg-ingress on clean build #1 |
-| OI-2026-06-07-5 | cross-cluster Keycloak DB secret | open; Keycloak not yet booted against RDS |
+| OI-2026-06-07-5 | cross-cluster Keycloak DB secret | IMPLEMENTED in PR #226 (hub PushSecret→ASM→spoke ExternalSecret + extraEnvVarsSecret host/port, premise proven by render fixture; spoke ESO baseline + eso-role-arn contract key) — `pending clean-build verification`; Keycloak-boots-against-RDS is the oracle, gated on OI-2026-06-11-1's fix landing |
 | OI-2026-06-07-6 | **static assertions masquerade as tests** | umbrella — the test overhaul executes against this; not a single bug |
 | OI-2026-06-07-7 | P0-spike `resourceRefs`⇒AccessDenied not confirmed | needs a provisioned XR |
 | OI-2026-06-07-8 | jentic workflow-integration capstone deferred | not started |
@@ -31,8 +31,9 @@ is the sequence number for that date.
 
 | ID | One-line | Note |
 |----|----------|------|
-| OI-2026-06-11-1 | **NEW** — CI-harness hardening queue (retro 2026-06-11-224 R2/R3/R4) | deferred deliberately: a concurrent session is live against these workflows; see entry |
-| OI-2026-06-10-1 | **NEW** — ACM provider v2.5.0 leaves Certificate `crossplane.io/external-name` EMPTY → `certificateArnSelector` never resolves | Composition fix MERGED (#223) + validated on clean build #1 (the stuck MR resolved via GitOps propagation, XR Ready=True); WHY external-name stays empty remains undiagnosed — see entry |
+| OI-2026-06-11-4 | **NEW** — CI-harness hardening queue (retro 2026-06-11-224 R2/R3/R4) | deferred deliberately: a concurrent session is live against these workflows; see entry. (Renumbered from the retro branch's -1 at merge: the concurrent build session took OI-2026-06-11-1..-3.) |
+| OI-2026-06-11-1 | **NEW** — XDatabase RDS Instance lands in the account DEFAULT VPC (no subnet group/SG composed) → unreachable from the platform clusters | found by clean build #2 (RDS Ready but in 172.31/16 while the platform is in 10.0/16); durable fix AUTHORED in PR #226 (SubnetGroup+SG+5432 rule composed from the cluster-network EnvironmentConfig vpcId/vpcCidr/privateSubnetIds) — `pending clean-build verification` |
+| OI-2026-06-10-1 | ACM provider v2.5.0 leaves Certificate `crossplane.io/external-name` EMPTY → `certificateArnSelector` never resolves | Composition fix MERGED (#223) + validated on clean builds #1 AND #2 (cert chain verified on hello 200 both); WHY external-name stays empty remains undiagnosed — see entry |
 | OI-2026-06-09-1 | **NEW** — narrowed `iam:GetRole` broke EKS nodegroup SLR create | **FIXED** PR #213, proven live (nodegroup ACTIVE after fix); pending merge |
 | OI-2026-06-08-1 | Crossplane `Resource:"*"` (RDS/EC2) follow-up | IAM resolved (#203); RDS PR #211 (applied live, ongoing-reconcile green), EC2 PR #212 (draft) |
 | OI-2026-06-08-2 | hub→spoke e2e not behaviorally tested | **RESOLVED 2026-06-10**: first execution of `hello-e2e-live.sh` PASS on clean build #1 (SUBSTRATE row 8) |
@@ -108,7 +109,7 @@ provider + Roles + RolePolicy + AccessEntries + AccessPolicyAssociations all
 
 ---
 
-## OI-2026-06-11-1 — CI-harness hardening queue (retro 2026-06-11-224 remedies R2/R3/R4)
+## OI-2026-06-11-4 — CI-harness hardening queue (retro 2026-06-11-224 remedies R2/R3/R4)
 
 **Status:** queued — owner-approved 2026-06-11; deferred ONLY because a
 concurrent session was actively dispatching against these workflows (changing
@@ -137,6 +138,42 @@ Routing note: R2/R3 edit `.github/workflows/**` — the push token and the
 GitHub MCP write tools refuse those paths; route through the jentic
 `ext-github` bridge. R2's script logic gets a unit test in the same PR
 (audit-before-enforce).
+
+## OI-2026-06-11-1 — XDatabase RDS Instance lands in the account DEFAULT VPC; unreachable from the platform clusters
+
+**Status:** durable fix AUTHORED in PR #226 (2026-06-11) — `pending clean-build verification`.
+**Surfaced:** 2026-06-11, clean build #2 (fresh account 608553548146 <!-- noqa: account-id - run provenance, account rotates -->), while preparing the OI-2026-06-07-5 keycloak DB path.
+
+**What happened (observation → exclusion):** the `keycloak-db` XDatabase
+auto-synced and reached Synced+Ready=True (the row-6 IAM CREATE-path
+evidence), but `aws rds describe-db-instances` showed the instance in
+subnet group `default` of the account **default VPC** (172.31.0.0/16,
+default SG) while every platform cluster lives in the base VPC
+(10.0.0.0/16). Different VPCs, no peering — the spoke's Keycloak pods can
+NEVER reach the endpoint. This is the "RDS networking" note in
+OI-2026-06-07-5, upgraded from "unverified" to a verified defect.
+
+**Root cause:** the xdatabase-rds Composition set neither
+`dbSubnetGroupName` nor `vpcSecurityGroupIds`, so AWS defaulted both.
+
+**Durable fix (authored, PR #226):** the Composition now loads the
+`cluster-network` EnvironmentConfig (new step) and composes a SubnetGroup
+(base-VPC private subnets), a dedicated `<xr>-rds` SecurityGroup (base
+VPC), and a classic SecurityGroupRule (ingress 5432 from the VPC CIDR;
+v2.5.0 cannot observe SecurityGroupIngressRule), with the Instance pinned
+into both via Required patches (never created in the default VPC again).
+terraform/management publishes `vpcId`+`vpcCidr` into the EnvironmentConfig;
+the crossplane policy gains `ec2:Create/DeleteSecurityGroup` (EC2VpcScoped,
+base-VPC-conditioned).
+
+**Convergence note for the LIVE instance:** AWS ModifyDBInstance supports a
+subnet-group change; the provider should converge the existing instance
+into the base VPC after merge + the next management apply (which must run
+first to publish vpcId/vpcCidr). If the provider cannot modify it in place,
+the honest path is XR delete/recreate FROM GIT, never a hand AWS call.
+
+**Next step:** merge PR #226 → dispatch management `apply-and-verify` → watch
+the MRs converge → the Keycloak-boots-against-RDS oracle.
 
 ---
 

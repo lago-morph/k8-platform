@@ -104,6 +104,10 @@ run_suite tests/unit/test_xdatabase_xrd.sh
 run_suite tests/unit/test_xdatabase_rds_composition.sh
 run_suite tests/unit/test_keycloak_db_secret_contract.sh
 run_suite tests/unit/test_keycloak_db_xr.sh
+# OI-2026-06-07-5 cross-cluster DB path: the envFrom-precedence premise
+# (render fixture, network like test_helm_render.sh) + the push/pull chain.
+run_suite tests/unit/test_keycloak_db_env_precedence.sh
+run_suite tests/unit/test_keycloak_db_push_pull_contract.sh
 # auto-008 phase-3 spoke GitOps access (XSpokeAccess XRD + Composition + XR)
 run_suite tests/unit/test_xspokeaccess.sh
 # auto-013 test-overhaul P1: derived coverage manifest (FINAL-PLAN §4.5)

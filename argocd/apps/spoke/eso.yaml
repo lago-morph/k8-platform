@@ -1,0 +1,80 @@
+# ArgoCD ApplicationSet — External Secrets Operator on every spoke cluster
+# (ADR-0005 ESO-baseline corollary: ESO is a baseline component in EVERY
+# cluster, not hub-only; ADR-0010 contract amendment k8-platform.io/eso-role-arn).
+#
+# The cluster generator selects every registered spoke's cluster Secret and
+# templates the spoke's ESO IRSA role (XSpokeAccess status.esoRoleArn via the
+# contract annotation) into the chart's ServiceAccount annotation. The second
+# source delivers the IRSA-backed ClusterSecretStore `aws-secrets-manager`
+# (platform-services/eso/spoke/) — the name every committed spoke
+# ExternalSecret references (first consumer: keycloak-db, OI-2026-06-07-5).
+#
+# releaseName is pinned to `external-secrets` so the chart's ServiceAccount is
+# external-secrets/external-secrets — the EXACT subject the XSpokeAccess
+# eso-role trust policy pins (:sub StringEquals) and the ClusterSecretStore's
+# serviceAccountRef names. The generated Application name stays
+# <short-name>-eso.
+#
+# Wave 10: before ingress-nginx/external-dns (20) and keycloak (40) — the
+# ClusterSecretStore must be Ready before keycloak's ExternalSecrets reconcile.
+# The CSS rides the same app as the chart; first-pass sync can race CRD
+# establishment, the retry/selfHeal loop converges it (same pattern as the hub:
+# terraform installs the chart, management-cluster-config retries the CSS).
+#
+# INERT until a labeled cluster Secret exists; producer = the xspokeaccess
+# Composition (OI-2026-06-07-1).
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: eso
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  syncPolicy:
+    preserveResourcesOnDeletion: true
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            k8-platform.io/cluster-role: spoke
+  template:
+    metadata:
+      name: '{{index .metadata.labels "k8-platform.io/short-name"}}-eso'
+      annotations:
+        argocd.argoproj.io/sync-wave: "10"
+    spec:
+      project: platform-spoke
+      sources:
+        - repoURL: https://charts.external-secrets.io
+          chart: external-secrets
+          # PINNED to the hub's chart version (terraform/management
+          # variables.tf eso_version) — one ESO version platform-wide.
+          targetRevision: 0.9.13
+          helm:
+            releaseName: external-secrets
+            # Cluster-facts contract (ADR-0010): the spoke's ESO IRSA role.
+            valuesObject:
+              installCRDs: true
+              serviceAccount:
+                annotations:
+                  eks.amazonaws.com/role-arn: '{{index .metadata.annotations "k8-platform.io/eso-role-arn"}}'
+        - repoURL: https://github.com/lago-morph/k8-platform.git
+          targetRevision: main
+          path: platform-services/eso/spoke
+      destination:
+        name: '{{.name}}'
+        namespace: external-secrets
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 5m

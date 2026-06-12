@@ -72,6 +72,19 @@ if [ "$found_status" != "available" ]; then
   exit 1
 fi
 
+# In-VPC placement (OI-2026-06-11-1, found by clean build #2): the instance
+# must sit in a NON-default VPC (the base VPC the platform clusters share) —
+# in the default VPC it is unreachable from every consumer. This is the
+# behavioral oracle for the composed SubnetGroup + SecurityGroup (coverage
+# registry defended_by for rds SubnetGroup / ec2 SecurityGroup).
+inst_vpc="$(aws rds describe-db-instances --db-instance-identifier "$found_id"   --region "$REGION" --query 'DBInstances[0].DBSubnetGroup.VpcId' --output text 2>/dev/null)"
+vpc_is_default="$(aws ec2 describe-vpcs --vpc-ids "$inst_vpc"   --region "$REGION" --query 'Vpcs[0].IsDefault' --output text 2>/dev/null)"
+if [ "$vpc_is_default" != "false" ]; then
+  ng "XDatabase RDS instance '$found_id' is in VPC '$inst_vpc' (IsDefault=$vpc_is_default) — the default-VPC placement bug (OI-2026-06-11-1); composed SubnetGroup/SecurityGroup not in effect"
+  exit 1
+fi
+log "instance '$found_id' is in non-default VPC $inst_vpc (composed SubnetGroup placement in effect)"
+
 ok "XDatabase-provisioned RDS instance '$found_id' is available"
 covers "$KIND"
 exit "$LIVE_RC_PASS"

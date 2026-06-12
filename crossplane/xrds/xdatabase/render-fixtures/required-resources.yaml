@@ -1,0 +1,22 @@
+# EnvironmentConfig consumed by the xdatabase-rds Composition's
+# function-environment-configs step, supplied to `crossplane render` via
+# --required-resources (SPEC-S9). In production this is the SAME
+# `cluster-network` EnvironmentConfig the cluster + spoke-access
+# Compositions read (terraform/management/crossplane-phase3.tf), which
+# carries the base-VPC identity (vpcId/vpcCidr/privateSubnetIds) the RDS
+# SubnetGroup + SecurityGroup need. Deterministic probe values only — NOT
+# real account-ephemeral data (AGENTS §8.1).
+apiVersion: apiextensions.crossplane.io/v1beta1
+kind: EnvironmentConfig
+metadata:
+  name: cluster-network
+data:
+  privateSubnetIds:
+    - subnet-00000000000000001
+    - subnet-00000000000000002
+  vpcId: vpc-000000000000probe0
+  vpcCidr: 10.0.0.0/16
+  route53ZoneId: Z00000000000000000000Q
+  domain: render-probe.example.test
+  accountId: "000000000000"
+  argocdRoleArn: arn:aws:iam::000000000000:role/k8-platform-services-argocd

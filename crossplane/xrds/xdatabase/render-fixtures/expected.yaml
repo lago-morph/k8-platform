@@ -15,6 +15,7 @@ spec:
     applyImmediately: true
     autoGeneratePassword: true
     dbName: keycloak
+    dbSubnetGroupName: render-probe-db-rds
     engine: postgres
     engineVersion: "15"
     instanceClass: db.t4g.micro
@@ -28,6 +29,8 @@ spec:
       ManagedBy: crossplane
       PlatformAbstraction: XDatabase
     username: keycloak
+    vpcSecurityGroupIds:
+      - sg-00000000000000rds
   managementPolicies:
     - Observe
     - Create
@@ -38,6 +41,90 @@ spec:
     name: default
   writeConnectionSecretToRef:
     name: render-probe-db
+apiVersion: ec2.aws.m.upbound.io/v1beta1
+kind: SecurityGroup
+metadata:
+  annotations: {}
+  generateName: render-probe-db-
+  labels:
+    crossplane.io/composite: render-probe-db
+    platform.k8-platform.io/role: rds-security-group
+  name: render-probe-db-df7b585cd0fa
+  namespace: default
+spec:
+  forProvider:
+    description: 'k8-platform XDatabase: postgres from the base VPC'
+    name: render-probe-db-rds
+    region: us-east-1
+    tags:
+      ManagedBy: crossplane
+      PlatformAbstraction: XDatabase
+    vpcId: vpc-000000000000probe0
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
+apiVersion: ec2.aws.m.upbound.io/v1beta1
+kind: SecurityGroupRule
+metadata:
+  annotations: {}
+  generateName: render-probe-db-
+  labels:
+    crossplane.io/composite: render-probe-db
+    platform.k8-platform.io/role: rds-ingress-5432
+  name: render-probe-db-d06db82d478f
+  namespace: default
+spec:
+  forProvider:
+    cidrBlocks:
+      - 10.0.0.0/16
+    fromPort: 5432
+    protocol: tcp
+    region: us-east-1
+    securityGroupId: sg-00000000000000rds
+    toPort: 5432
+    type: ingress
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
+apiVersion: rds.aws.m.upbound.io/v1beta1
+kind: SubnetGroup
+metadata:
+  annotations:
+    crossplane.io/external-name: render-probe-db-rds
+  generateName: render-probe-db-
+  labels:
+    crossplane.io/composite: render-probe-db
+    platform.k8-platform.io/role: rds-subnet-group
+  name: render-probe-db-cb4f0493d44c
+  namespace: default
+spec:
+  forProvider:
+    description: k8-platform XDatabase subnet group (base-VPC private subnets)
+    region: us-east-1
+    subnetIds:
+      - subnet-00000000000000001
+      - subnet-00000000000000002
+    tags:
+      ManagedBy: crossplane
+      PlatformAbstraction: XDatabase
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
 ---
 apiVersion: platform.k8-platform.io/v1alpha1
 kind: XDatabase
@@ -47,9 +134,18 @@ metadata:
 spec:
   crossplane:
     resourceRefs:
+      - apiVersion: ec2.aws.m.upbound.io/v1beta1
+        kind: SecurityGroupRule
+        name: render-probe-db-d06db82d478f
+      - apiVersion: ec2.aws.m.upbound.io/v1beta1
+        kind: SecurityGroup
+        name: render-probe-db-df7b585cd0fa
       - apiVersion: rds.aws.m.upbound.io/v1beta1
         kind: Instance
         name: render-probe-db-d34e0f25f0cc
+      - apiVersion: rds.aws.m.upbound.io/v1beta1
+        kind: SubnetGroup
+        name: render-probe-db-cb4f0493d44c
   databaseName: keycloak
   engine: postgres
   region: us-east-1
@@ -64,7 +160,8 @@ status:
     - reason: ReconcileSuccess
       status: "True"
       type: Synced
-    - message: 'Unready resources: rds-instance'
+    - message: 'Unready resources: db-ingress-5432, db-security-group, db-subnet-group, and 1 more'
       reason: Creating
       status: "False"
       type: Ready
+  securityGroupId: sg-00000000000000rds

@@ -8,7 +8,62 @@ last, the current state, and the next concrete steps. Keep it factual
 
 ## NEW SESSION QUICKSTART (read this first)
 
-> ## ▶ 2026-06-10 (latest) — 🟢 CLEAN BUILD #1 GREEN: the substrate built itself from `main` with ZERO manual steps
+> ## ▶ 2026-06-11 (latest) — 🟢🟢 CLEAN BUILD #2 GREEN: the green-twice gate is SATISFIED
+> **The S1 loop ran end-to-end a second time on fresh account `608553548146`** <!-- noqa: account-id - run provenance, account rotates -->
+> from unmodified `main` (`582761f`), zero manual steps. Chain: probe
+> test-e2e 27379831475 (CI creds → new account confirmed) → base
+> 27379934113 → management 27380296208 (both `apply-and-verify` green) →
+> `platform-cluster-claim` synced from `main` (XR Ready ~14 min) →
+> `spoke-access` synced from `main`, NO oidcIssuer patch → registration
+> Secret complete on its own → `hello.platform.<domain>` **HTTP 200,
+> verified chain, first poll**. Oracles on this build: `hello-e2e-live.sh`
+> PASS, `spoke-cluster-secret-live.sh` PASS, `sandbox-kubectl-relay.sh`
+> (spoke, 2 Ready) PASS. `SUBSTRATE-READINESS.md` rows 1-5+8 now **DONE
+> (2×)**; rows 6+7 earned first CREATE-path evidence (keycloak-db RDS +
+> the SG rules provisioned from scratch under the fully narrowed policy,
+> `rds-instance-live.sh` PASS). **The owner's green-twice posture gate is
+> met — unattended volume runs unblock per AGENTS "Current operating
+> posture".**
+> - **The loop caught a NEW defect** (working as designed):
+>   **OI-2026-06-11-1** — the RDS Instance lands in the account DEFAULT
+>   VPC (no subnet group/SG composed) → unreachable from the platform
+>   clusters. Durable fix AUTHORED (not yet merged) in **PR #226**.
+> - **PR #226** (branch `claude/clever-hamilton-b9kol3`) carries, all
+>   unit-green + chainsaw green (run 27381691574 for 30a2a87; re-dispatch
+>   for the final HEAD after the RDS-fix commit):
+>   (1) OI-2026-06-07-5 keycloak DB path — hub PushSecret→ASM
+>   `k8-platform/keycloak-db`→spoke ExternalSecret; extraEnvVarsSecret
+>   host/port override, the envFrom-last-wins premise PROVEN by
+>   `test_keycloak_db_env_precedence.sh` (12/12) against pinned chart
+>   21.4.4; connection-secret key names verified against the LIVE provider
+>   output (host = bare hostname). keycloak-admin via ESO Password
+>   generator (the XPlatformSecret XRs were never synced + provision
+>   EMPTY shells = manual-step material, banned); realm CM moved to
+>   `platform-services/keycloak/spoke/` (was never synced by anything),
+>   all spoke-dir manifests wave -1 (wave>0 would deadlock the first sync
+>   behind StatefulSet health). (2) Spoke ESO baseline (ADR-0005): eso
+>   ApplicationSet + ClusterSecretStore + XSpokeAccess eso-role/eso-policy
+>   + SIXTH contract key `eso-role-arn` (ADR-0010 amended). (3) The
+>   OI-2026-06-11-1 RDS networking fix (SubnetGroup+SG+5432 rule from the
+>   EnvironmentConfig; terraform publishes vpcId/vpcCidr; crossplane
+>   policy + ec2:Create/DeleteSecurityGroup).
+> - **NEXT:** (1) merge #226 → dispatch management `apply-and-verify`
+>   (publishes vpcId/vpcCidr + the ESO write policy — REQUIRED before the
+>   PushSecret/RDS-move converge) → watch GitOps converge (spoke eso app,
+>   keycloak secrets, RDS into the base VPC) → **the keycloak-boot oracle**
+>   (auth.platform.<domain> through the spoke ingress against RDS).
+>   (2) Task 3 live-verify: BLOCKED on a real gap found this session — the
+>   expect-full set derives from committed Compositions, so
+>   `secretsmanager Secret` requires a VALUED XPlatformSecret (AWSCURRENT
+>   + PlatformSecret tags); the abstraction provisions EMPTY shells with
+>   uid-based ASM names that committed manifests can't reference. Needs an
+>   XPlatformSecret materialization redesign (generator+deterministic
+>   naming sketch in session notes / PR #226 thread) BEFORE live-verify
+>   can ever go green. (3) Non-gate diagnoses (same states both builds):
+>   hub-observability-alloy OutOfSync/Missing, kube-prometheus-stack
+>   Degraded, loki Progressing; also workload1-cluster OutOfSync (new).
+
+> ## ▶ 2026-06-10 (superseded by build #2 above) — 🟢 CLEAN BUILD #1 GREEN: the substrate built itself from `main` with ZERO manual steps
 > **The S1 loop ran end-to-end on fresh account `341221860475`** <!-- noqa: account-id - run provenance, account rotates -->
 > after merging the durable-fix stack (#220/#221/#222) + the mid-build fix
 > (#223). Full evidence + run IDs: `SUBSTRATE-READINESS.md` (rows 1-5 and 8
@@ -42,7 +97,7 @@ last, the current state, and the next concrete steps. Keep it factual
 >   ADR-0010 PR-2 Decision 3) which unlocks SUBSTRATE row 6 (RDS CREATE
 >   path); (3) dispatch `live-verify.yml` on this account so the
 >   live-evidence PR gate finally has a green producer; (4) the alloy/
->   observability diagnoses above; (5) **OI-2026-06-11-1** — the CI-harness
+>   observability diagnoses above; (5) **OI-2026-06-11-4** — the CI-harness
 >   hardening queue (chainsaw-verify wait loop, kind-URL pin, verifier
 >   trigger diagnosis; owner-approved, deferred only for session
 >   concurrency — do these when no other session is using CI).

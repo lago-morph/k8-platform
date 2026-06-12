@@ -28,3 +28,10 @@ spec:
   storageGB: 20
   databaseName: keycloak
   region: us-east-1
+# The status block carries a deterministic PROBE value for the field the
+# db-security-group resource mirrors at runtime (status.securityGroupId →
+# the ingress rule + the Instance read it back via Required patches).
+# Populating it here renders ALL FOUR resources into the golden. Stub
+# value, not account data (AGENTS §8.1).
+status:
+  securityGroupId: sg-00000000000000rds

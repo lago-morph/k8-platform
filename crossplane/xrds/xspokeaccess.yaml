@@ -140,6 +140,13 @@ spec:
                     ARN of the external-dns IRSA Role, echoed for
                     observability (referenced by the spoke external-dns
                     ServiceAccount annotation at registration time).
+                esoRoleArn:
+                  type: string
+                  description: >-
+                    ARN of the external-secrets (ESO) IRSA Role, stamped as
+                    the k8-platform.io/eso-role-arn contract annotation so
+                    the spoke ESO ServiceAccount can assume it (ADR-0005
+                    ESO-baseline corollary; ADR-0010 contract amendment).
                 accessEntryArn:
                   type: string
                   description: >-
