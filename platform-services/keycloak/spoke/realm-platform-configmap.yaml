@@ -36,6 +36,23 @@
 #   - COGNITO_CLIENT_ID / COGNITO_CLIENT_SECRET  ← cognito_client_id /
 #     cognito_client_secret outputs, secret delivered via XPlatformSecret.
 #   - <domain> in the kubernetes client redirect URIs.
+#
+# NOTE (clean build #3, 2026-06-12): documentation lives HERE, never as
+# `"comment"` fields inside the JSON — Keycloak's strict parser rejects
+# unknown fields on every representation and ABORTS the realm import
+# (pinned by tests/unit/test_keycloak_realm_json.sh). Per-object notes:
+#   - realm `platform`: broker-only realm; users/groups live in Cognito
+#     (REQ-AUTH-03/08).
+#   - identityProviderMapper `cognito-groups-to-groups`: REQ-AUTH-08 —
+#     copy the Cognito group claim into a `groups` attribute on the
+#     brokered user; no group state is created in Keycloak.
+#   - client `kubernetes`: REQ-AUTH-07 — public PKCE client for kubectl
+#     via oidc-login; no secret.
+#   - protocolMapper `groups`: REQ-AUTH-08 — surface the brokered
+#     `groups` attribute as a `groups` claim in the ID token consumed by
+#     the EKS API server.
+#   - protocolMapper `username`: REQ-AUTH-07 — username claim is
+#     preferred_username.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -55,7 +72,6 @@ data:
     {
       "realm": "platform",
       "enabled": true,
-      "comment": "Broker-only realm; users/groups live in Cognito (REQ-AUTH-03/08).",
       "identityProviders": [
         {
           "alias": "cognito",
@@ -87,7 +103,6 @@ data:
           "name": "cognito-groups-to-groups",
           "identityProviderAlias": "cognito",
           "identityProviderMapper": "oidc-advanced-group-idp-mapper",
-          "comment": "REQ-AUTH-08: copy the Cognito group claim into a `groups` attribute on the brokered user; no group state is created in Keycloak.",
           "config": {
             "syncMode": "FORCE",
             "claims": "[{\"key\":\"cognito:groups\",\"value\":\".*\"}]",
@@ -99,7 +114,6 @@ data:
       "clients": [
         {
           "clientId": "kubernetes",
-          "comment": "REQ-AUTH-07: public PKCE client for kubectl via oidc-login. No secret.",
           "enabled": true,
           "protocol": "openid-connect",
           "publicClient": true,
@@ -117,7 +131,6 @@ data:
               "name": "groups",
               "protocol": "openid-connect",
               "protocolMapper": "oidc-usermodel-attribute-mapper",
-              "comment": "REQ-AUTH-08: surface the brokered `groups` attribute as a `groups` claim in the ID token consumed by the EKS API server.",
               "config": {
                 "user.attribute": "groups",
                 "claim.name": "groups",
@@ -132,7 +145,6 @@ data:
               "name": "username",
               "protocol": "openid-connect",
               "protocolMapper": "oidc-usermodel-property-mapper",
-              "comment": "REQ-AUTH-07: username claim is preferred_username.",
               "config": {
                 "user.attribute": "username",
                 "claim.name": "preferred_username",
