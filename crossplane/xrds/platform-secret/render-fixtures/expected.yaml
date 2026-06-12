@@ -98,7 +98,6 @@ spec:
       Description: Render fixture probe - not a real secret
       ManagedBy: crossplane
       PlatformAbstraction: PlatformSecret
-      managed-by: external-secrets
   managementPolicies:
     - Observe
     - Create
