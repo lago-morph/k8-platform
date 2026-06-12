@@ -6,53 +6,36 @@
 # to Cognito and shapes tokens; NO users or groups are created or maintained in
 # Keycloak itself (REQ-AUTH-03/08).
 #
-# This realm config encodes three contracts:
+# This realm currently encodes ONE contract:
 #
-#   1. Cognito as an OIDC identity provider (alias `cognito`, REQ-AUTH-02). The
-#      issuer/authorization/token/jwks/userInfo URLs and the confidential client
-#      id/secret are account-EPHEMERAL (AGENTS §8.1) — they are TODO placeholders
-#      here. LIVE WIRING IS DEFERRED: at live-coupling time, source them from
-#      terraform/base outputs (cognito_issuer_url, cognito_client_id,
-#      cognito_client_secret — see terraform/base/outputs.tf) and inject the
-#      secret via the keycloak-oidc-clients XPlatformSecret, NOT into git.
+#   The public PKCE `kubernetes` client (REQ-AUTH-07): publicClient=true, NO
+#   secret, PKCE (S256) enforced, used by the oidc-login kubectl plugin
+#   (REQ-AUTH-10, docs/operations.md). A `groups` protocol mapper puts the
+#   user's `groups` attribute into the ID token so the EKS API server's
+#   groups claim resolves to `kc:k8s-admins` / `kc:k8s-viewers` (prefix set
+#   by the EKS IdP config, REQ-AUTH-07; bound to roles by
+#   clusters/platform/rbac/kc-*.yaml). The `username` mapper sets
+#   preferred_username (REQ-AUTH-07).
 #
-#   2. An attribute/group mapper that lifts the Cognito `cognito:groups` claim
-#      into a `groups` claim on Keycloak-issued ID tokens (REQ-AUTH-08). This is
-#      the ONLY source of group membership presented to Kubernetes — no group
-#      state in Keycloak.
+# DEFERRED — the Cognito broker block (REQ-AUTH-02/03/08; tracked in
+# docs/operations.md "Keycloak realm — live wiring"): the `identityProviders`
+# (alias `cognito`) + `identityProviderMappers` (cognito:groups → `groups`
+# attribute) blocks are intentionally ABSENT, not placeholdered. Clean build
+# #3 (2026-06-12) proved Keycloak VALIDATES IdP URLs at import time and
+# fails closed on placeholders ('The url [authorization_url] is malformed —
+# no protocol: TODO_COGNITO_AUTH_URL') → CrashLoop. Deferred wiring means
+# the block is absent (pinned by tests/unit/test_keycloak_realm_json.sh: no
+# TODO_ values). At live-coupling time, source the issuer/auth/token/jwks/
+# userInfo URLs from terraform/base outputs (cognito_issuer_url, the
+# hosted-UI domain) and the client id/secret via the keycloak-oidc-clients
+# XPlatformSecret (cognito_client_id / cognito_client_secret outputs), NOT
+# git; also set <domain> in the kubernetes client redirect URIs. Until that
+# lands, no group claims flow — the kc:* RBAC bindings are inert, which is
+# the documented deferred state.
 #
-#   3. The public PKCE `kubernetes` client (REQ-AUTH-07): publicClient=true, NO
-#      secret, PKCE (S256) enforced, used by the oidc-login kubectl plugin
-#      (REQ-AUTH-10, docs/operations.md). A `groups` protocol mapper puts the
-#      groups into the ID token so the EKS API server's groups claim resolves to
-#      `kc:k8s-admins` / `kc:k8s-viewers` (prefix set by the EKS IdP config,
-#      REQ-AUTH-07; bound to roles by clusters/platform/rbac/kc-*.yaml).
-#
-# TODO (live wiring — deferred per the brief; tracked in docs/operations.md
-# "Keycloak realm — live wiring"):
-#   - COGNITO_ISSUER_URL / COGNITO_AUTH_URL / COGNITO_TOKEN_URL / COGNITO_JWKS_URL
-#     / COGNITO_USERINFO_URL  ← terraform/base outputs + the Cognito hosted-UI
-#     domain (aws_cognito_user_pool_domain.main).
-#   - COGNITO_CLIENT_ID / COGNITO_CLIENT_SECRET  ← cognito_client_id /
-#     cognito_client_secret outputs, secret delivered via XPlatformSecret.
-#   - <domain> in the kubernetes client redirect URIs.
-#
-# NOTE (clean build #3, 2026-06-12): documentation lives HERE, never as
-# `"comment"` fields inside the JSON — Keycloak's strict parser rejects
-# unknown fields on every representation and ABORTS the realm import
-# (pinned by tests/unit/test_keycloak_realm_json.sh). Per-object notes:
-#   - realm `platform`: broker-only realm; users/groups live in Cognito
-#     (REQ-AUTH-03/08).
-#   - identityProviderMapper `cognito-groups-to-groups`: REQ-AUTH-08 —
-#     copy the Cognito group claim into a `groups` attribute on the
-#     brokered user; no group state is created in Keycloak.
-#   - client `kubernetes`: REQ-AUTH-07 — public PKCE client for kubectl
-#     via oidc-login; no secret.
-#   - protocolMapper `groups`: REQ-AUTH-08 — surface the brokered
-#     `groups` attribute as a `groups` claim in the ID token consumed by
-#     the EKS API server.
-#   - protocolMapper `username`: REQ-AUTH-07 — username claim is
-#     preferred_username.
+# NOTE: documentation lives HERE, never as `"comment"` fields inside the
+# JSON — Keycloak's strict parser rejects unknown fields on every
+# representation and ABORTS the realm import (same unit test).
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -72,45 +55,6 @@ data:
     {
       "realm": "platform",
       "enabled": true,
-      "identityProviders": [
-        {
-          "alias": "cognito",
-          "displayName": "Cognito",
-          "providerId": "oidc",
-          "enabled": true,
-          "trustEmail": true,
-          "storeToken": false,
-          "firstBrokerLoginFlowAlias": "first broker login",
-          "config": {
-            "clientId": "TODO_COGNITO_CLIENT_ID",
-            "clientSecret": "TODO_COGNITO_CLIENT_SECRET",
-            "clientAuthMethod": "client_secret_post",
-            "issuer": "TODO_COGNITO_ISSUER_URL",
-            "authorizationUrl": "TODO_COGNITO_AUTH_URL",
-            "tokenUrl": "TODO_COGNITO_TOKEN_URL",
-            "jwksUrl": "TODO_COGNITO_JWKS_URL",
-            "userInfoUrl": "TODO_COGNITO_USERINFO_URL",
-            "useJwksUrl": "true",
-            "validateSignature": "true",
-            "pkceEnabled": "true",
-            "pkceMethod": "S256",
-            "defaultScope": "openid email profile"
-          }
-        }
-      ],
-      "identityProviderMappers": [
-        {
-          "name": "cognito-groups-to-groups",
-          "identityProviderAlias": "cognito",
-          "identityProviderMapper": "oidc-advanced-group-idp-mapper",
-          "config": {
-            "syncMode": "FORCE",
-            "claims": "[{\"key\":\"cognito:groups\",\"value\":\".*\"}]",
-            "are.claim.values.regex": "true",
-            "attribute": "groups"
-          }
-        }
-      ],
       "clients": [
         {
           "clientId": "kubernetes",

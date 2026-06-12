@@ -37,6 +37,19 @@ while IFS= read -r k; do
     continue
   fi
 
+  # TODO_/placeholder values fail Keycloak's import-time validation
+  # (e.g. IdP URL checks: 'The url [authorization_url] is malformed —
+  # no protocol: TODO_COGNITO_AUTH_URL') and CrashLoop the StatefulSet.
+  # Deferred wiring means the BLOCK is absent, never a placeholder.
+  todos="$(printf '%s' "$json" | jq -r '
+    [paths(type == "string" and startswith("TODO_")) | join(".")]
+    | join(", ")')"
+  if [ -z "$todos" ]; then
+    pass "$k has no TODO_ placeholder values"
+  else
+    fail "$k carries TODO_ placeholder value(s)" "at: $todos — import-time validation fails closed on placeholders"
+  fi
+
   # `comment` keys outside config/attributes maps are unknown fields to
   # Keycloak's strict representations and abort the realm import.
   bad="$(printf '%s' "$json" | jq -r '
