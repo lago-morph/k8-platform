@@ -37,7 +37,11 @@ metadata:
 spec:
   timeouts:
     apply: 30s
-    assert: 240s
+    # 600s: aligned with the platform-secret scenarios' converged bound
+    # (OI-2026-05-28-1 — the provider's intermittent slow first-create) +
+    # the 2026-06-12 material chain (generator → SecretVersion → consumer
+    # ES adds ~1-2 min of serial reconciles to first Ready).
+    assert: 600s
     delete: 60s
   steps:
     - name: apply a baseline XR

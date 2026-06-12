@@ -64,6 +64,31 @@ echo "  run id:        $CHAINSAW_RUN_ID"
 echo "  asm prefix:    $ASM_RUN_PREFIX"
 echo ""
 
+# ---------- pre-run sweep: leftover deterministic-name ASM secrets ----------
+# The platform-secret Composition names containers k8-platform/<ns>/<name>
+# (deterministic since 2026-06-12 — committed cross-cluster consumers need
+# referenceable keys). Scenario XRs always run in namespace `default` with
+# FIXED claim names, so a PRIOR run that died before its cleanup trap (e.g.
+# a job-timeout cancellation, runs 27385091105/27387201992/27388653728)
+# leaves k8-platform/default/* behind and every later create fails
+# ResourceExists → the MR never reaches Ready (the uid naming was
+# accidentally load-bearing for cross-run isolation). Sweep the scenario
+# namespace prefix BEFORE running — force-delete, no recovery window.
+# NOTE: concurrent chainsaw runs on the same account can still collide on
+# these names; chainsaw.yml's per-ref concurrency serializes same-branch
+# runs, which is the supported envelope.
+if command -v aws >/dev/null 2>&1 && [ -n "${AWS_ACCESS_KEY_ID:-}" ]; then
+  echo "── pre-run sweep: k8-platform/default/* leftovers ─────────────"
+  aws secretsmanager list-secrets --include-planned-deletion \
+      --query 'SecretList[?starts_with(Name, `k8-platform/default/`)].Name' \
+      --output text 2>/dev/null | tr '\t' '\n' | while IFS= read -r leftover; do
+    [ -z "$leftover" ] && continue
+    echo "  deleting leftover: $leftover"
+    aws secretsmanager delete-secret --secret-id "$leftover" \
+        --force-delete-without-recovery >/dev/null 2>&1 || true
+  done
+fi
+
 # ---------- cleanup trap (runs on ANY exit) ---------------------------------
 cleanup() {
   local rc=$?
