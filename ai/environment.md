@@ -93,6 +93,14 @@ design — discover it live, never hardcode it (enforced:
   resume-from-suspension, first re-query every in-flight dispatch.
 - `mergeable_state: unstable` = non-blocking checks pending/failing, not
   blocked — check before deferring a merge.
+- **Unauthenticated `api.github.com` calls from the sandbox rate-limit within
+  minutes** (verified 2026-06-10: HTTP 403 rate-limit after ~6 polls). Poll
+  runs via the authenticated GitHub MCP tools or timed background wake-ups —
+  never raw curl loops.
+- Oversized GitHub MCP results (e.g. `actions_list`, ~380 KB) are auto-saved
+  to a tool-results file path printed in the error; parse THAT file with
+  `python3`/`json` instead of re-calling the tool with smaller paging — the
+  re-call usually returns the same oversized payload.
 
 ## 7. Subagent harness limits
 
