@@ -31,7 +31,7 @@ is the sequence number for that date.
 
 | ID | One-line | Note |
 |----|----------|------|
-| OI-2026-06-12-1 | **NEW** — XPlatformSecret in-platform material chain REVERTED from PR #227 after 4 chainsaw job-timeouts; live-verify's secretsmanager-Secret kind stays SKIP until reworked | quarantined with full diagnosis — see entry |
+| OI-2026-06-12-1 | XPlatformSecret material chain REVERTED from PR #227; live-verify's secretsmanager-Secret kind stays SKIP until reworked | catch-block fix MERGED (3 bugs, see 16:30 update) + chainsaw green on fresh account (16:50 update); remaining = the Task-3 rework |
 | OI-2026-06-11-4 | **NEW** — CI-harness hardening queue (retro 2026-06-11-224 R2/R3/R4) | deferred deliberately: a concurrent session is live against these workflows; see entry. (Renumbered from the retro branch's -1 at merge: the concurrent build session took OI-2026-06-11-1..-3.) |
 | OI-2026-06-11-3 | **NEW** — spoke clusters ship NO CSI driver / StorageClass → every PVC-bearing add-on Pending forever (kube-prometheus-stack Degraded, loki Progressing on builds #1 AND #2 — now DIAGNOSED) | open; durable fix = EBS CSI + default StorageClass (+ CSI IRSA) in the platform-cluster Composition — feature-sized, next session |
 | OI-2026-06-11-2 | **NEW** — kyverno admission controller OOM-CrashLoop + ALL report-cleanup jobs ImagePullBackOff (bitnami/kubectl pullback) → fail-closed webhook blocks hub applies in down-windows | durable helm-values fix (bitnamilegacy images + 768Mi) authored in PR #227, applied via branch CI runs 27384384429+27384541609 (the first hit the webhook's own bootstrap deadlock; manifests landed, re-run recorded the release) — see entry |
@@ -304,6 +304,26 @@ list-secrets. **The chainsaw GATE itself is red for environmental-looking
 reasons — the catch-block namespaced-MR fix (step 1) is the single
 prerequisite for the real error.** PR #227 stays open; do NOT merge around
 the red gate (AGENTS done-contract).
+
+**2026-06-12 16:50 UPDATE — gate GREEN on the fresh account; #227 MERGED;
+the red-window cause narrows to the retired account.** After the account
+rotated to `798802785871` <!-- noqa: account-id - run provenance, account rotates -->
+(GHA creds confirmed by probe 27429228144), chainsaw run **27429434084**
+(PR #227 HEAD `b3f0363`, full suite, real ASM, catch-block fix included)
+went green in ~5 min — first green since 23:05 on the old account, with
+suite content equivalent to the red runs. Combined exclusion trail
+(content reverted + sweep clean + full bounds + green-on-new-account):
+the 23:58→04:5x reds are **consistent with account-side ASM behavior on
+retired account `608553548146`** <!-- noqa: account-id - run provenance, account rotates -->
+(not proven — the account is gone; no further evidence obtainable) and
+NOT with suite content, runner images, or the upstream registry. #227
+merged at main `0dd6114` after the verify check (27429887657) matched the
+green run. **What remains open in this entry is only the Task-3 rework:**
+re-land the material chain (deterministic `k8-platform/<ns>/<name>`
+naming; generator → generate-once ES → SecretVersion writer; the
+keycloak-secrets Application + spoke keycloak-admin ASM-pull swap),
+chainsaw-gated — the fixed catch block now surfaces real MR errors if the
+job-timeout class ever recurs.
 
 ---
 
