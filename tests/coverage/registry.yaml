@@ -108,10 +108,10 @@ kinds:
     lane: aws
     cost: hermetic
     defended_by: tests/live/checks/after/secretsmanager-secret-live.sh
-  external-secrets.io/PushSecret:
-    lane: non-aws
+  secretsmanager.aws.m.upbound.io/SecretVersion:
+    lane: aws
     cost: singleton-coupled   # platform-secret material chain (writes the generated value into the MR-owned ASM container)
-    defended_by: tests/live/checks/after/secretsmanager-secret-live.sh   # behavioral: the pushed value IS the AWSCURRENT version the check requires
+    defended_by: tests/live/checks/after/secretsmanager-secret-live.sh   # behavioral: the written value IS the AWSCURRENT version the check requires
   generators.external-secrets.io/Password:
     lane: non-aws
     cost: singleton-coupled   # platform-secret material source (ADR-0005 generatorRef)

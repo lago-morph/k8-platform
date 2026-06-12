@@ -271,6 +271,9 @@ resource "aws_iam_policy" "crossplane_aws" {
           "secretsmanager:PutSecretValue", "secretsmanager:GetSecretValue",
           "secretsmanager:DescribeSecret", "secretsmanager:TagResource",
           "secretsmanager:UntagResource",
+          # SecretVersion MR lifecycle (the platform-secret material chain):
+          # deleting/retiring a version moves its staging labels.
+          "secretsmanager:UpdateSecretVersionStage",
         ]
         Resource = "arn:aws:secretsmanager:${local.region}:${local.account_id}:secret:k8-platform/*"
       },
