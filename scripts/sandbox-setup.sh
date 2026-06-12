@@ -22,6 +22,10 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
 . "${REPO_ROOT}/tests/chainsaw/versions.env"
+# Root versions.env pins the top-level CI tools (kubeconform). No variable
+# overlaps with the chainsaw file; keep it that way.
+# shellcheck disable=SC1091
+. "${REPO_ROOT}/versions.env"
 
 BIN=/usr/local/bin
 SUDO=""
@@ -48,6 +52,25 @@ if [ "$need_yq" -eq 1 ]; then
     -o "${BIN}/yq"
   $SUDO chmod +x "${BIN}/yq"
   yq --version
+fi
+
+# --- kubeconform — required by tests/unit/test_kubeconform_manifests.sh -
+# Missing from this script until 2026-06-12: the unit suite failed in the
+# sandbox on kubeconform_binary_present until it was hand-installed. Every
+# tool a committed test or script shells out to belongs HERE, pinned.
+if command -v kubeconform >/dev/null 2>&1 && \
+   kubeconform -v 2>&1 | grep -q "${KUBECONFORM_VERSION}"; then
+  echo "  kubeconform: ${KUBECONFORM_VERSION} already present"
+else
+  echo "  kubeconform: installing ${KUBECONFORM_VERSION}"
+  tmp="$(mktemp -d)"
+  curl -fsSL \
+    "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+    -o "${tmp}/kubeconform.tgz"
+  tar -xzf "${tmp}/kubeconform.tgz" -C "$tmp" kubeconform
+  $SUDO install -m 0755 "${tmp}/kubeconform" "${BIN}/kubeconform"
+  rm -rf "$tmp"
+  kubeconform -v 2>&1 || true
 fi
 
 # --- crossplane CLI — pinned to the chart/server version ---------------
