@@ -35,16 +35,29 @@ last, the current state, and the next concrete steps. Keep it factual
 > `False` to lowercase `"false"` (false negative on the fixed
 > placement); keycloak oracle now logs real HTTP status (a 503 window
 > had logged as "connection refused").
+> **⚠️ ACCOUNT `798802785871` SHUTS DOWN ~2026-06-12 21:20 UTC** <!-- noqa: account-id - run provenance, account rotates -->
+> **— treat the next account as EMPTY; probe the GHA creds first** (the
+> build-#3 recipe needs no changes — everything load-bearing is in
+> `main` with run-ID evidence; no live state is owed anything).
+> **Final live snapshot before shutdown (20:45 UTC):**
+> hub-observability-alloy **Synced+Healthy** — the #227 CRD-whitelist
+> fix VERIFIED live (was Missing on builds #1+#2; diagnosis closed
+> behaviorally). keycloak-db Synced+Healthy. kube-prometheus-stack
+> Degraded / loki Progressing = the known OI-2026-06-11-3 CSI gap,
+> unchanged. **workload1-cluster "OutOfSync" DIAGNOSED AS NOT A
+> DEFECT:** the app has NO automated syncPolicy — it is a
+> deliberate-sync gate (it provisions a third EKS cluster) that no
+> build has ever pulled; OutOfSync/Missing is its designed pre-sync
+> state. Drop it from the leftovers list.
 > **NEXT (unchanged order):** (1) Task 3 = the OI-2026-06-12-1
 > XPlatformSecret material-chain rework (design in the OI entry;
-> chainsaw-gate it; the #231 unit test self-flags to force the
-> file+producer+test swap in one PR) → then dispatch `live-verify.yml`
-> for the live-evidence producer. (2) OI-2026-06-11-4 CI-harness queue
-> (safe, no concurrent consumer). (3) OI-2026-06-11-3 spoke EBS CSI +
-> StorageClass (un-Pendings kube-prometheus-stack/loki). Non-gate
-> leftovers to re-check on this account: workload1-cluster OutOfSync,
-> hub-observability states (alloy fix is IN main since #227 — verify
-> live).
+> chainsaw-gate it — chainsaw needs NO substrate, kind + real ASM under
+> the GHA creds, so it works the moment the secrets point anywhere
+> valid; the #231 unit test self-flags to force the file+producer+test
+> swap in one PR) → then dispatch `live-verify.yml` for the
+> live-evidence producer. (2) OI-2026-06-11-4 CI-harness queue (safe,
+> no concurrent consumer). (3) OI-2026-06-11-3 spoke EBS CSI +
+> StorageClass (un-Pendings kube-prometheus-stack/loki).
 
 > ## ▶ 2026-06-12 PM (superseded — build #3 completed; see EVE) — 🟢 #227 MERGED (chainsaw green on the fresh account); clean build #3 IN FLIGHT
 > **Account rotation CONFIRMED: `798802785871`** <!-- noqa: account-id - run provenance, account rotates -->
