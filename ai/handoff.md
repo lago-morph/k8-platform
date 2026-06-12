@@ -8,7 +8,59 @@ last, the current state, and the next concrete steps. Keep it factual
 
 ## NEW SESSION QUICKSTART (read this first)
 
-> ## ▶ 2026-06-11 (latest) — 🟢🟢 CLEAN BUILD #2 GREEN: the green-twice gate is SATISFIED
+> ## ▶ 2026-06-12 (latest) — ⚠️ ACCOUNT ROTATES BEFORE THE NEXT SESSION; merge #227 FIRST, then build #3
+> **The `608553548146` account is being retired** <!-- noqa: account-id - run provenance, account rotates -->
+> **— treat the next account as EMPTY.** All live state from build #2 dies
+> with it: hub, spoke, RDS, ASM contents, the in-flight keycloak
+> convergence, and the planned keycloak-db delete/recreate dance (the
+> instance was stuck in the default VPC's us-east-1d, unreachable and
+> un-movable — OI-2026-06-11-1). That dance is now MOOT: on a fresh
+> account the merged composition creates the instance directly in the
+> base-VPC subnet group. Probe the GHA secrets first
+> (`terraform-test.yml phase=test action=test-e2e`, read the account the
+> creds resolve to) before trusting CI.
+>
+> **STEP 1 — merge PR #227 (branch `claude/clever-hamilton-b9kol3`,
+> conflict-free vs main, all unit/validate gates green).** Its ONLY
+> honest blocker is the chainsaw gate: a green `chainsaw.yml` run for
+> the exact HEAD SHA, then a re-run of the `Verify chainsaw ran green`
+> check. Chainsaw needs NO substrate — kind on the runner + real-ASM
+> calls under the GHA creds — so this happens BEFORE any bring-up:
+> 1. (Recommended first) push the OI-2026-06-12-1 catch-block fix to
+>    the branch: the chainsaw catch scripts describe v2 MRs
+>    cluster-scoped (`kubectl describe <kind> <name>`, no `-n`), so the
+>    failing asm-secret MR's actual condition has never been visible —
+>    switch to namespaced/`-A` describes so ONE run surfaces the real
+>    error either way.
+> 2. Pre-dispatch audit → dispatch `chainsaw.yml` on the branch HEAD
+>    (45-min job cap is already in). GREEN → re-run the verify check →
+>    merge #227 (live-evidence stays red by design, 5 merged
+>    precedents). RED → the fixed catch block now names the real error;
+>    diagnose per OI-2026-06-12-1 and fix in code.
+> 3. Diagnostic value either way: every run 23:58→04:5x on the OLD
+>    account failed the claim scenarios CONTENT-INDEPENDENTLY (even the
+>    long-proven composition). Green-on-the-new-account sharpens
+>    OI-2026-06-12-1 to account-side ASM behavior; red-with-real-error
+>    ends the guessing.
+> **Why merge before building:** #227 carries the kyverno
+> OOM/cleanup-image fix, both IAM multi-resource-auth Sids, the
+> bitnamilegacy keycloak image, and the alloy CRD whitelist — a build
+> from pre-#227 main re-hits every one of them live.
+>
+> **STEP 2 — clean build #3 from the post-#227 main** (same recipe as
+> builds #1/#2: base + management `apply-and-verify`, sync
+> `platform-cluster-claim` then `spoke-access` from main, zero manual
+> steps). NEW oracle on this build: `keycloak-e2e-live.sh` — with the
+> image fix and the DB path in main, Keycloak should boot against RDS
+> through the spoke ingress on the FIRST bring-up; that is the
+> OI-2026-06-07-5 behavioral close + fresh row-6 evidence.
+> **STEP 3** — the OI-2026-06-12-1 material-chain rework (unblocks the
+> Task-3 `live-verify.yml` producer / the secretsmanager-Secret kind),
+> then **OI-2026-06-11-4** (the retro's CI-harness hardening queue —
+> safe now, no concurrent CI consumer), then OI-2026-06-11-3 (spoke
+> CSI/StorageClass) for the observability stack.
+
+> ## ▶ 2026-06-11 (build #2) — 🟢🟢 CLEAN BUILD #2 GREEN: the green-twice gate is SATISFIED
 > **The S1 loop ran end-to-end a second time on fresh account `608553548146`** <!-- noqa: account-id - run provenance, account rotates -->
 > from unmodified `main` (`582761f`), zero manual steps. Chain: probe
 > test-e2e 27379831475 (CI creds → new account confirmed) → base
