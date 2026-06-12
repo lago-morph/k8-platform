@@ -62,6 +62,19 @@ spec:
             valuesObject:
               ingress:
                 hostname: 'auth.{{index .metadata.annotations "k8-platform.io/subdomain"}}.{{index .metadata.annotations "k8-platform.io/domain"}}'
+              # KC_HOSTNAME pins the OIDC issuer to the public hostname and
+              # strict-https forces the https scheme. Without these the
+              # issuer derives from request headers, and the NLB terminates
+              # TLS at L4 so nginx honestly forwards X-Forwarded-Proto=http
+              # → an http:// issuer that poisons every OIDC consumer
+              # (clean build #3, 2026-06-12). Templated from the SAME
+              # cluster facts as ingress.hostname; the committed values.yaml
+              # sets no extraEnvVars, so this list replaces nothing.
+              extraEnvVars:
+                - name: KC_HOSTNAME
+                  value: 'auth.{{index .metadata.annotations "k8-platform.io/subdomain"}}.{{index .metadata.annotations "k8-platform.io/domain"}}'
+                - name: KC_HOSTNAME_STRICT_HTTPS
+                  value: "true"
         - repoURL: https://github.com/lago-morph/k8-platform.git
           targetRevision: main
           ref: values
