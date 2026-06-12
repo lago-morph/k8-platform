@@ -147,9 +147,24 @@ fi
 if docker info >/dev/null 2>&1; then
   echo "  docker: daemon already running"
 elif command -v dockerd >/dev/null 2>&1; then
+  # A container RESTART preserves the filesystem but not processes: a stale
+  # /var/run/docker.pid survives, and PID reuse can make dockerd's liveness
+  # check refuse to start ("process with PID N is still running") — observed
+  # 2026-06-12: the SessionStart hook then reports "not ready" and the
+  # render-fixture tests fail spuriously until someone clears it. If no
+  # daemon answers and the pidfile's PID is not actually dockerd, clear it.
+  if [ -f /var/run/docker.pid ]; then
+    stale_pid=$(cat /var/run/docker.pid 2>/dev/null || true)
+    if [ -n "$stale_pid" ] && ! ps -p "$stale_pid" -o comm= 2>/dev/null | grep -q dockerd; then
+      echo "  docker: clearing stale pidfile (pid $stale_pid is not dockerd)"
+      $SUDO rm -f /var/run/docker.pid
+    fi
+  fi
   echo "  docker: starting dockerd (background)"
   $SUDO sh -c 'dockerd >/tmp/dockerd.log 2>&1 &' || true
-  for _ in 1 2 3 4 5 6 7 8; do docker info >/dev/null 2>&1 && break; sleep 2; done
+  # Bounded readiness wait (~30s): image-layer fsck after an unclean stop
+  # can push first-start past the old 16s window.
+  for _ in $(seq 1 15); do docker info >/dev/null 2>&1 && break; sleep 2; done
   docker info >/dev/null 2>&1 && echo "  docker: daemon up" || echo "  docker: dockerd not ready yet (see /tmp/dockerd.log)"
 else
   echo "  docker: dockerd not installed"
