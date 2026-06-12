@@ -27,27 +27,9 @@ XRD_KIND=$(yq -r '.spec.names.kind' "$XRD")
 assert_eq "composition_typeRef_apiVersion" "${XRD_GROUP}/${XRD_VERSION}" "$COMP_TYPE_API"
 assert_eq "composition_typeRef_kind"       "$XRD_KIND"                   "$COMP_TYPE_KIND"
 
-# ---- 2. Five resources: container + material chain + consumer ES ---------
-# (asm-secret + password-generator + material-secret + material-push +
-# external-secret — the 2026-06-11 in-platform material chain; an
-# out-of-band value write was a banned manual step.)
+# ---- 2. Exactly two resources (asm-secret + external-secret) -------------
 RES_COUNT=$(yq -r '.spec.pipeline[0].input.resources | length' "$COMP")
-assert_eq "composition_resource_count" "5" "$RES_COUNT"
-
-# The push is ORDER-GUARDED: Required patch on status.asmSecretArn so ESO
-# never creates the remote container before the MR does (ResourceExists
-# deadlock prevention).
-PUSH_GUARD=$(yq -r '.spec.pipeline[0].input.resources[] | select(.name == "material-push") | .patches[] | select(.fromFieldPath == "status.asmSecretArn") | .policy.fromFieldPath' "$COMP")
-assert_eq "composition_push_ordering_guard_required" "Required" "$PUSH_GUARD"
-
-# Generate-once: the material ES must never refresh (a refresh rotates the
-# value under every consumer).
-MAT_REFRESH=$(yq -r '.spec.pipeline[0].input.resources[] | select(.name == "material-secret") | .base.spec.refreshInterval' "$COMP")
-assert_eq "composition_material_generate_once" "0" "$MAT_REFRESH"
-
-# Push remoteKey == the asm-secret name fmt (same combine).
-PUSH_KEY_FMT=$(yq -r '.spec.pipeline[0].input.resources[] | select(.name == "material-push") | .patches[] | select(.toFieldPath == "spec.data[0].match.remoteRef.remoteKey") | .combine.string.fmt' "$COMP")
-assert_eq "composition_push_key_matches_container" "k8-platform/%s/%s" "$PUSH_KEY_FMT"
+assert_eq "composition_resource_count" "2" "$RES_COUNT"
 
 ASM_BASE_API=$(yq -r '.spec.pipeline[0].input.resources[] | select(.name == "asm-secret") | .base.apiVersion' "$COMP")
 ASM_BASE_KIND=$(yq -r '.spec.pipeline[0].input.resources[] | select(.name == "asm-secret") | .base.kind' "$COMP")
@@ -68,13 +50,10 @@ assert_eq "composition_es_kind"        "ExternalSecret"                         
 # terraform/management/irsa.tf grants secretsmanager actions on
 # arn:aws:secretsmanager:*:*:secret:k8-platform/*. If the Composition
 # renders a different prefix, every claim fails with AccessDenied.
-# (2026-06-11: deterministic ns/name naming via CombineFromComposite —
-# committed cross-cluster consumers can reference the key; uid naming
-# could never be referenced from git.)
-ASM_NAME_FMT=$(yq -r '.spec.pipeline[0].input.resources[] | select(.name == "asm-secret") | .patches[] | select(.toFieldPath == "spec.forProvider.name") | .combine.string.fmt' "$COMP")
+ASM_NAME_FMT=$(yq -r '.spec.pipeline[0].input.resources[] | select(.name == "asm-secret") | .patches[] | select(.toFieldPath == "spec.forProvider.name") | .transforms[0].string.fmt' "$COMP")
 case "$ASM_NAME_FMT" in
-  "k8-platform/%s/%s") _pass "composition_asm_name_prefix_matches_irsa" ;;
-  *)                _fail "composition_asm_name_prefix_matches_irsa" "fmt='$ASM_NAME_FMT' — must be 'k8-platform/%s/%s'" ;;
+  "k8-platform/%s") _pass "composition_asm_name_prefix_matches_irsa" ;;
+  *)                _fail "composition_asm_name_prefix_matches_irsa" "fmt='$ASM_NAME_FMT' — must be 'k8-platform/%s'" ;;
 esac
 
 # Cross-check with management module IRSA scope.

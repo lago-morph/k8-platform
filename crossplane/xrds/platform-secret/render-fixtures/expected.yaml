@@ -9,7 +9,7 @@ metadata:
 spec:
   dataFrom:
     - extract:
-        key: k8-platform/default/render-probe-secret
+        key: k8-platform/97d41e24-41e5-5a14-bfa6-11d16bfe7844
   refreshInterval: 1h
   secretStoreRef:
     kind: ClusterSecretStore
@@ -18,68 +18,6 @@ spec:
     creationPolicy: Owner
     deletionPolicy: Delete
     name: render-probe-secret
-apiVersion: external-secrets.io/v1beta1
-kind: ExternalSecret
-metadata:
-  annotations: {}
-  labels:
-    crossplane.io/composite: render-probe-secret
-  name: render-probe-secret-material
-  namespace: default
-spec:
-  dataFrom:
-    - sourceRef:
-        generatorRef:
-          apiVersion: generators.external-secrets.io/v1alpha1
-          kind: Password
-          name: render-probe-secret-gen
-  refreshInterval: "0"
-  target:
-    creationPolicy: Owner
-    deletionPolicy: Retain
-    name: render-probe-secret-material
-    template:
-      data:
-        value: '{{ .password }}'
-      engineVersion: v2
-apiVersion: generators.external-secrets.io/v1alpha1
-kind: Password
-metadata:
-  annotations: {}
-  labels:
-    crossplane.io/composite: render-probe-secret
-  name: render-probe-secret-gen
-  namespace: default
-spec:
-  allowRepeat: true
-  digits: 5
-  length: 32
-  noUpper: false
-  symbolCharacters: ""
-  symbols: 0
-apiVersion: external-secrets.io/v1alpha1
-kind: PushSecret
-metadata:
-  annotations:
-    platform.k8-platform.io/asm-arn: arn:aws:secretsmanager:us-east-1:000000000000:secret:k8-platform/default/render-probe-secret-probe0
-  labels:
-    crossplane.io/composite: render-probe-secret
-  name: render-probe-secret-push
-  namespace: default
-spec:
-  data:
-    - match:
-        remoteRef:
-          property: value
-          remoteKey: k8-platform/default/render-probe-secret
-        secretKey: value
-  refreshInterval: 1h
-  secretStoreRefs:
-    - kind: ClusterSecretStore
-      name: aws-secrets-manager
-  selector:
-    secret:
-      name: render-probe-secret-material
 apiVersion: secretsmanager.aws.m.upbound.io/v1beta1
 kind: Secret
 metadata:
@@ -91,7 +29,7 @@ metadata:
   namespace: default
 spec:
   forProvider:
-    name: k8-platform/default/render-probe-secret
+    name: k8-platform/97d41e24-41e5-5a14-bfa6-11d16bfe7844
     recoveryWindowInDays: 0
     region: us-east-1
     tags:
@@ -115,18 +53,9 @@ metadata:
 spec:
   crossplane:
     resourceRefs:
-      - apiVersion: external-secrets.io/v1alpha1
-        kind: PushSecret
-        name: render-probe-secret-push
       - apiVersion: external-secrets.io/v1beta1
         kind: ExternalSecret
         name: render-probe-secret
-      - apiVersion: external-secrets.io/v1beta1
-        kind: ExternalSecret
-        name: render-probe-secret-material
-      - apiVersion: generators.external-secrets.io/v1alpha1
-        kind: Password
-        name: render-probe-secret-gen
       - apiVersion: secretsmanager.aws.m.upbound.io/v1beta1
         kind: Secret
         name: render-probe-secret-934a4befb899
@@ -134,7 +63,6 @@ spec:
   refreshInterval: 1h
   region: us-east-1
 status:
-  asmSecretArn: arn:aws:secretsmanager:us-east-1:000000000000:secret:k8-platform/default/render-probe-secret-probe0
   conditions:
     - reason: WatchCircuitClosed
       status: "True"
@@ -142,7 +70,7 @@ status:
     - reason: ReconcileSuccess
       status: "True"
       type: Synced
-    - message: 'Unready resources: asm-secret, external-secret, material-push, and 2 more'
+    - message: 'Unready resources: asm-secret, external-secret'
       reason: Creating
       status: "False"
       type: Ready

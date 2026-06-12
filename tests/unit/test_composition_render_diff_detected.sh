@@ -3,7 +3,7 @@
 # output diverges from the committed expected.yaml.
 #
 # Mutates the real PlatformSecret Composition in a temp copy (changes
-# `fmt: "k8-platform/%s/%s"` to `fmt: "wrong/%s/%s"`), runs the helper
+# `fmt: "k8-platform/%s"` to `fmt: "wrong/%s"`), runs the helper
 # against the unchanged golden, asserts exit non-zero. Proves the
 # golden-file diff path actually fires — without this test a future
 # regression that disabled the diff entirely would silently pass.
@@ -46,7 +46,7 @@ fi
 # Mutate Composition in a temp copy.
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-sed 's|fmt: "k8-platform/%s/%s"|fmt: "wrong/%s/%s"|g' "$COMP" >"$tmp/composition.yaml"
+sed 's|fmt: "k8-platform/%s"|fmt: "wrong/%s"|g' "$COMP" >"$tmp/composition.yaml"
 
 # Sanity-check the mutation actually changed something.
 if cmp -s "$COMP" "$tmp/composition.yaml"; then
