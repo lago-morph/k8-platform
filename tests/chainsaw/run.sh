@@ -79,14 +79,22 @@ echo ""
 # runs, which is the supported envelope.
 if command -v aws >/dev/null 2>&1 && [ -n "${AWS_ACCESS_KEY_ID:-}" ]; then
   echo "── pre-run sweep: k8-platform/default/* leftovers ─────────────"
-  aws secretsmanager list-secrets --include-planned-deletion \
+  # Capture, never pipe: under pipefail an aws failure (flag drift across
+  # CLI minors, throttle, transient) must degrade to "nothing to sweep",
+  # not kill the harness (run 27389980358 died here on exit 254).
+  leftovers="$(aws secretsmanager list-secrets \
       --query 'SecretList[?starts_with(Name, `k8-platform/default/`)].Name' \
-      --output text 2>/dev/null | tr '\t' '\n' | while IFS= read -r leftover; do
-    [ -z "$leftover" ] && continue
-    echo "  deleting leftover: $leftover"
-    aws secretsmanager delete-secret --secret-id "$leftover" \
-        --force-delete-without-recovery >/dev/null 2>&1 || true
-  done
+      --output text 2>/dev/null || true)"
+  if [ -n "$leftovers" ] && [ "$leftovers" != "None" ]; then
+    printf '%s\n' $leftovers | while IFS= read -r leftover; do
+      [ -z "$leftover" ] && continue
+      echo "  deleting leftover: $leftover"
+      aws secretsmanager delete-secret --secret-id "$leftover" \
+          --force-delete-without-recovery >/dev/null 2>&1 || true
+    done
+  else
+    echo "  none found"
+  fi
 fi
 
 # ---------- cleanup trap (runs on ANY exit) ---------------------------------
