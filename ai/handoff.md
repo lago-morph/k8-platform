@@ -97,7 +97,10 @@ last, the current state, and the next concrete steps. Keep it factual
 >   ADR-0010 PR-2 Decision 3) which unlocks SUBSTRATE row 6 (RDS CREATE
 >   path); (3) dispatch `live-verify.yml` on this account so the
 >   live-evidence PR gate finally has a green producer; (4) the alloy/
->   observability diagnoses above.
+>   observability diagnoses above; (5) **OI-2026-06-11-4** — the CI-harness
+>   hardening queue (chainsaw-verify wait loop, kind-URL pin, verifier
+>   trigger diagnosis; owner-approved, deferred only for session
+>   concurrency — do these when no other session is using CI).
 
 > ## ▶ 2026-06-10 (earlier) — ALL FOUR DURABLE FIXES AUTHORED (ADR-0010 PR-2 + rows 2/3)
 > Three stacked PRs (base→tip: `claude/adr-0010-durable-fixes-hg7909` →
