@@ -64,6 +64,39 @@ echo "  run id:        $CHAINSAW_RUN_ID"
 echo "  asm prefix:    $ASM_RUN_PREFIX"
 echo ""
 
+# ---------- pre-run sweep: leftover deterministic-name ASM secrets ----------
+# The platform-secret Composition names containers k8-platform/<ns>/<name>
+# (deterministic since 2026-06-12 — committed cross-cluster consumers need
+# referenceable keys). Scenario XRs always run in namespace `default` with
+# FIXED claim names, so a PRIOR run that died before its cleanup trap (e.g.
+# a job-timeout cancellation, runs 27385091105/27387201992/27388653728)
+# leaves k8-platform/default/* behind and every later create fails
+# ResourceExists → the MR never reaches Ready (the uid naming was
+# accidentally load-bearing for cross-run isolation). Sweep the scenario
+# namespace prefix BEFORE running — force-delete, no recovery window.
+# NOTE: concurrent chainsaw runs on the same account can still collide on
+# these names; chainsaw.yml's per-ref concurrency serializes same-branch
+# runs, which is the supported envelope.
+if command -v aws >/dev/null 2>&1 && [ -n "${AWS_ACCESS_KEY_ID:-}" ]; then
+  echo "── pre-run sweep: k8-platform/default/* leftovers ─────────────"
+  # Capture, never pipe: under pipefail an aws failure (flag drift across
+  # CLI minors, throttle, transient) must degrade to "nothing to sweep",
+  # not kill the harness (run 27389980358 died here on exit 254).
+  leftovers="$(aws secretsmanager list-secrets \
+      --query 'SecretList[?starts_with(Name, `k8-platform/default/`)].Name' \
+      --output text 2>/dev/null || true)"
+  if [ -n "$leftovers" ] && [ "$leftovers" != "None" ]; then
+    printf '%s\n' $leftovers | while IFS= read -r leftover; do
+      [ -z "$leftover" ] && continue
+      echo "  deleting leftover: $leftover"
+      aws secretsmanager delete-secret --secret-id "$leftover" \
+          --force-delete-without-recovery >/dev/null 2>&1 || true
+    done
+  else
+    echo "  none found"
+  fi
+fi
+
 # ---------- cleanup trap (runs on ANY exit) ---------------------------------
 cleanup() {
   local rc=$?
@@ -348,12 +381,17 @@ dump_diagnostics() {
 
   echo ""
   echo "── describe stuck composites (first 60 lines each) ────────────"
+  # v2 XRs are namespaced — enumerate with -A and describe with -n, or
+  # XRs outside the context namespace are invisible (OI-2026-06-12-1).
   for kind in xplatformsecret xplatformcluster xdatabase; do
-    for name in $(kubectl get "$kind" -o name 2>/dev/null); do
-      echo ""
-      echo "── describe $name ──"
-      kubectl describe "$name" 2>&1 | head -60 | sed 's/^/    /' || true
-    done
+    kubectl get "$kind" -A \
+      -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' 2>/dev/null \
+      | while read -r ns name; do
+          [ -z "$name" ] && continue
+          echo ""
+          echo "── describe $kind/$name (ns $ns) ──"
+          kubectl describe "$kind" "$name" -n "$ns" 2>&1 | head -60 | sed 's/^/    /' || true
+        done
   done
 
   echo ""

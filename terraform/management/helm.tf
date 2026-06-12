@@ -560,6 +560,48 @@ resource "helm_release" "kyverno" {
   # is registered, and the e2e-verify pod check confirms readiness.
   wait = false
 
+  # OI-2026-06-11-2 (found on the 2026-06-11 fresh-account build):
+  #   1. Chart 3.2.6 defaults every report-cleanup CronJob (and
+  #      webhooksCleanup) to docker.io/bitnami/kubectl:1.28.5, which the
+  #      Bitnami catalog pullback made unpullable (ImagePullBackOff on all
+  #      five jobs) — reports are NEVER cleaned.
+  #   2. With cleanup dead, accumulated reports OOM-kill the admission
+  #      controller (limit 384Mi; observed CrashLoopBackOff, OOMKilled
+  #      ~2.5 min after each start). Its webhook is fail-closed
+  #      (validate.kyverno.svc-fail), so every hub apply — including
+  #      Crossplane composite reconciles — errors during the down windows.
+  # Fix: pin the cleanup images to the relocated bitnamilegacy archive
+  # (same digest lineage, frozen tags) and give the admission controller
+  # OOM headroom. Render-pinned by tests/unit/test_helm_render.sh (no
+  # non-legacy bitnami/kubectl may appear in the rendered chart).
+  values = [
+    yamlencode({
+      admissionController = {
+        container = {
+          resources = {
+            limits = {
+              cpu    = "100m"
+              memory = "768Mi"
+            }
+          }
+        }
+      }
+      webhooksCleanup = {
+        image = { repository = "bitnamilegacy/kubectl" }
+      }
+      policyReportsCleanup = {
+        image = { repository = "bitnamilegacy/kubectl" }
+      }
+      cleanupJobs = {
+        admissionReports        = { image = { repository = "bitnamilegacy/kubectl" } }
+        clusterAdmissionReports = { image = { repository = "bitnamilegacy/kubectl" } }
+        ephemeralReports        = { image = { repository = "bitnamilegacy/kubectl" } }
+        clusterEphemeralReports = { image = { repository = "bitnamilegacy/kubectl" } }
+        updateRequests          = { image = { repository = "bitnamilegacy/kubectl" } }
+      }
+    })
+  ]
+
   depends_on = [module.eks]
 }
 

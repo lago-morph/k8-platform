@@ -99,21 +99,57 @@ last, the current state, and the next concrete steps. Keep it factual
 >   OI-2026-06-11-1 RDS networking fix (SubnetGroup+SG+5432 rule from the
 >   EnvironmentConfig; terraform publishes vpcId/vpcCidr; crossplane
 >   policy + ec2:Create/DeleteSecurityGroup).
-> - **NEXT:** (1) merge #226 → dispatch management `apply-and-verify`
->   (publishes vpcId/vpcCidr + the ESO write policy — REQUIRED before the
->   PushSecret/RDS-move converge) → watch GitOps converge (spoke eso app,
->   keycloak secrets, RDS into the base VPC) → **the keycloak-boot oracle**
->   (auth.platform.<domain> through the spoke ingress against RDS).
->   (2) Task 3 live-verify: BLOCKED on a real gap found this session — the
->   expect-full set derives from committed Compositions, so
->   `secretsmanager Secret` requires a VALUED XPlatformSecret (AWSCURRENT
->   + PlatformSecret tags); the abstraction provisions EMPTY shells with
->   uid-based ASM names that committed manifests can't reference. Needs an
->   XPlatformSecret materialization redesign (generator+deterministic
->   naming sketch in session notes / PR #226 thread) BEFORE live-verify
->   can ever go green. (3) Non-gate diagnoses (same states both builds):
->   hub-observability-alloy OutOfSync/Missing, kube-prometheus-stack
->   Degraded, loki Progressing; also workload1-cluster OutOfSync (new).
+> - **#226 MERGED** (3be6afc) + management applied (run 27383258071).
+>   Convergence on the live account then caught FOUR more real defects —
+>   all fixed in code on **PR #227** (chainsaw-gated), each validated by a
+>   branch `apply-and-verify` run:
+>   1. **OI-2026-06-11-2** kyverno admission OOM-CrashLoop + all cleanup
+>      jobs ImagePullBackOff (bitnami/kubectl pullback) → fail-closed
+>      webhook blocked hub applies (incl. the xdatabase reconcile AND its
+>      own helm upgrade hook — bootstrap deadlock; manifests landed on the
+>      failed first apply, re-run recorded the release). Fix: bitnamilegacy
+>      images + 768Mi (runs 27384384429 → 27384541609).
+>   2. `ec2:CreateSecurityGroup` multi-resource auth (vpc resource carries
+>      no ec2:Vpc key) → EC2CreateSecurityGroupInBaseVpc Sid (27383963580).
+>   3. `rds:ModifyDBInstance` multi-resource auth (subgrp resource) →
+>      RDSModifyInstanceSubnetGroup Sid (27385088657).
+>   4. spoke keycloak image unpullable (same pullback class) →
+>      bitnamilegacy/keycloak in values.
+>   PLUS the Task-3 unblocked design: **XPlatformSecret in-platform
+>   material chain + deterministic k8-platform/<ns>/<name> ASM naming**
+>   (generator → generate-once ES → ARN-gated PushSecret; keycloak-secrets
+>   hub app syncs the XRs at last; spoke keycloak-admin ES pulls the
+>   deterministic key). ES manifests carry explicit ESO defaults (ArgoCD
+>   perpetual-OutOfSync fix) + 5m refresh on the DB legs.
+> - **2026-06-12 amendment:** the XPlatformSecret material chain was
+>   REVERTED off #227 after four chainsaw job-timeouts — and the
+>   post-revert run (27392834302, 45-min cap via the jentic workflow PUT,
+>   full bounds honored) STILL failed every claim scenario with
+>   `Unready: asm-secret, external-secret` on the LONG-PROVEN composition.
+>   The chainsaw failure is NOT the chain: same content green 22:38+23:05,
+>   red from 23:58 on — environmental-looking (full exclusion list +
+>   hypotheses: **OI-2026-06-12-1**). FIRST next step: fix the chainsaw
+>   catch blocks (they describe v2 MRs cluster-scoped → namespaced `-A`
+>   describes) so ONE run surfaces the asm-secret MR's actual error; then
+>   re-land the chain. **#227 is mergeable-on-green ONLY — its chainsaw
+>   gate is red; do not merge around it.** #227 carries the seven
+>   independently-validated fixes (kyverno OOM+images, 2× IAM
+>   multi-resource-auth, keycloak bitnamilegacy image, alloy CRD
+>   whitelist, ES normalization+5m refresh, chainsaw sweep+45min cap).
+>   Task-3 live-verify stays blocked on the secretsmanager-Secret kind
+>   until the chain is reworked.
+> - **NEXT:** (1) merge #227 when its chainsaw (final HEAD) is green → GitOps
+>   converges the spoke (legacy keycloak image + ES swaps + keycloak-secrets)
+>   → RDS completes its base-VPC move (subgrp Sid landed; provider retry)
+>   → **keycloak-e2e-live.sh** (the committed boot oracle). (2) dispatch
+>   `live-verify.yml` (Task 3): with the material chain + the RDS move +
+>   keycloak up, all 18 expect-full kinds have real producers; the
+>   live-evidence PR gate gets its green producer. (3) OI-2026-06-11-3
+>   (spoke CSI/StorageClass — DIAGNOSED, fix is feature-sized): EBS CSI +
+>   default StorageClass into the platform-cluster Composition; that
+>   un-Pendings kube-prometheus-stack/loki. (4) hub-observability-alloy
+>   OutOfSync/Missing still undiagnosed; workload1-cluster OutOfSync —
+>   re-check after kyverno settles (likely webhook down-windows).
 
 > ## ▶ 2026-06-10 (superseded by build #2 above) — 🟢 CLEAN BUILD #1 GREEN: the substrate built itself from `main` with ZERO manual steps
 > **The S1 loop ran end-to-end on fresh account `341221860475`** <!-- noqa: account-id - run provenance, account rotates -->

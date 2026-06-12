@@ -31,8 +31,11 @@ is the sequence number for that date.
 
 | ID | One-line | Note |
 |----|----------|------|
+| OI-2026-06-12-1 | **NEW** — XPlatformSecret in-platform material chain REVERTED from PR #227 after 4 chainsaw job-timeouts; live-verify's secretsmanager-Secret kind stays SKIP until reworked | quarantined with full diagnosis — see entry |
 | OI-2026-06-11-4 | **NEW** — CI-harness hardening queue (retro 2026-06-11-224 R2/R3/R4) | deferred deliberately: a concurrent session is live against these workflows; see entry. (Renumbered from the retro branch's -1 at merge: the concurrent build session took OI-2026-06-11-1..-3.) |
-| OI-2026-06-11-1 | **NEW** — XDatabase RDS Instance lands in the account DEFAULT VPC (no subnet group/SG composed) → unreachable from the platform clusters | found by clean build #2 (RDS Ready but in 172.31/16 while the platform is in 10.0/16); durable fix AUTHORED in PR #226 (SubnetGroup+SG+5432 rule composed from the cluster-network EnvironmentConfig vpcId/vpcCidr/privateSubnetIds) — `pending clean-build verification` |
+| OI-2026-06-11-3 | **NEW** — spoke clusters ship NO CSI driver / StorageClass → every PVC-bearing add-on Pending forever (kube-prometheus-stack Degraded, loki Progressing on builds #1 AND #2 — now DIAGNOSED) | open; durable fix = EBS CSI + default StorageClass (+ CSI IRSA) in the platform-cluster Composition — feature-sized, next session |
+| OI-2026-06-11-2 | **NEW** — kyverno admission controller OOM-CrashLoop + ALL report-cleanup jobs ImagePullBackOff (bitnami/kubectl pullback) → fail-closed webhook blocks hub applies in down-windows | durable helm-values fix (bitnamilegacy images + 768Mi) authored in PR #227, applied via branch CI runs 27384384429+27384541609 (the first hit the webhook's own bootstrap deadlock; manifests landed, re-run recorded the release) — see entry |
+| OI-2026-06-11-1 | XDatabase RDS Instance lands in the account DEFAULT VPC (no subnet group/SG composed) → unreachable from the platform clusters | fix MERGED (#226) + two follow-up IAM multi-resource-auth catches in PR #227 (ec2:CreateSecurityGroup vpc-resource; rds:ModifyDBInstance subgrp-resource — both proven live by the fail-closed narrowed policy); convergence (instance → base VPC) in flight on 608553548146 <!-- noqa: account-id - run provenance, account rotates --> |
 | OI-2026-06-10-1 | ACM provider v2.5.0 leaves Certificate `crossplane.io/external-name` EMPTY → `certificateArnSelector` never resolves | Composition fix MERGED (#223) + validated on clean builds #1 AND #2 (cert chain verified on hello 200 both); WHY external-name stays empty remains undiagnosed — see entry |
 | OI-2026-06-09-1 | **NEW** — narrowed `iam:GetRole` broke EKS nodegroup SLR create | **FIXED** PR #213, proven live (nodegroup ACTIVE after fix); pending merge |
 | OI-2026-06-08-1 | Crossplane `Resource:"*"` (RDS/EC2) follow-up | IAM resolved (#203); RDS PR #211 (applied live, ongoing-reconcile green), EC2 PR #212 (draft) |
@@ -174,6 +177,162 @@ the honest path is XR delete/recreate FROM GIT, never a hand AWS call.
 
 **Next step:** merge PR #226 → dispatch management `apply-and-verify` → watch
 the MRs converge → the Keycloak-boots-against-RDS oracle.
+
+**2026-06-11 follow-ups (the fail-closed narrowed policy caught BOTH, live):**
+(1) `ec2:CreateSecurityGroup` authorizes against the security-group AND the
+vpc resource; the vpc resource type carries no `ec2:Vpc` condition key, so
+the conditioned EC2VpcScoped Allow never matched it → new
+`EC2CreateSecurityGroupInBaseVpc` Sid pins the vpc HALF by direct Resource
+ARN. (2) `rds:ModifyDBInstance` with a DBSubnetGroupName parameter
+authorizes against the SUBGRP resource; the tag-conditioned db:*-only Sid
+cannot cover it (subnet groups carry no rds:db-tag) → new
+`RDSModifyInstanceSubnetGroup` Sid. Both in PR #227; both validated by
+branch `apply-and-verify` runs. The multi-resource-auth class (one API
+call, several resources, conditions valid on only some) is now twice
+documented — check the SAR resource table before conditioning any new
+action.
+
+---
+
+## OI-2026-06-11-2 — kyverno admission controller OOM-CrashLoop; report-cleanup jobs unpullable; fail-closed webhook blocks hub applies
+
+**Status:** durable fix AUTHORED in PR #227 + applied live via branch CI
+(`apply-and-verify` runs 27384384429 → 27384541609) — `pending clean-build verification`.
+**Surfaced:** 2026-06-11 clean build #2, when the OI-2026-06-11-1 composition
+fix could not reconcile ("failed calling webhook validate.kyverno.svc-fail:
+no endpoints").
+
+**What happened (observation → root cause):** the kyverno admission
+controller OOM-crashlooped from install (+12 restarts/76 min, OOMKilled
+~2.5 min after each start, limit 384Mi), and ALL five report-cleanup
+CronJobs + the policyReportsCleanup hook Job sat in ImagePullBackOff on
+`docker.io/bitnami/kubectl:1.28.5` — unpullable since the Bitnami catalog
+pullback — so admission/ephemeral reports were NEVER cleaned and the
+accumulation kept the controller OOMing. Its `validate.kyverno.svc-fail`
+webhook is FAIL-CLOSED, so every hub apply during down-windows errored —
+including Crossplane composite reconciles (the xdatabase XR) and, in a
+perfect bootstrap deadlock, the kyverno helm upgrade's own post-upgrade
+hook (first fix apply failed exactly there; the manifests had already
+landed, so the recovered controller let the re-run record the release).
+
+**Durable fix (PR #227):** helm.tf pins all seven kubectl-image consumers
+to the relocated `bitnamilegacy/kubectl` archive and raises the admission
+controller memory limit to 768Mi; `test_helm_render.sh` renders the chart
+with these values and pins no non-legacy bitnami/kubectl survives anywhere.
+
+**Bitnami-pullback CLASS note:** the same root cause separately bit the
+spoke keycloak chart image (`bitnami/keycloak:24.0.5-debian-12-r0` →
+`bitnamilegacy/`, fixed in PR #227 values). Any chart pinning an old
+docker.io/bitnami/* tag is suspect — check at version-bump time.
+
+**Still open:** whether 768Mi is the right steady-state limit once cleanup
+runs (observe across a rebuild); kyverno 3.3+ charts moved off
+bitnami/kubectl entirely — fold into the next deliberate chart bump.
+
+---
+
+## OI-2026-06-12-1 — XPlatformSecret material chain: reverted pending rework; the live-verify producer stays blocked on the secretsmanager-Secret kind
+
+**Status:** REVERTED from PR #227 (commits 0ce9f41/a95ee41/bdcc56a reverted in
+614edc3/353843c/667e8ba) — design + diagnosis retained here for the rework.
+**Surfaced:** 2026-06-12, while building the Task-3 live-verify producer.
+
+**Why it exists:** `derive_expect_full` derives the expected kind set from
+committed Compositions, so `secretsmanager.aws.m.upbound.io/Secret` can only
+pass live-verify with a VALUED (AWSCURRENT + PlatformSecret-tagged) container
+— but XPlatformSecret provisions an EMPTY shell whose material is documented
+"out of band" (a banned manual step), and its uid-based ASM naming cannot be
+referenced by committed cross-cluster consumers.
+
+**Design (sound on render; pinned in the reverted commits):** deterministic
+`k8-platform/<ns>/<name>` naming; Password generator → generate-once material
+ES (`{"value":…}` JSON doc) → crossplane-native **SecretVersion** writing the
+value (an ESO PushSecret REFUSES an un-owned container — `managed-by=
+external-secrets` ownership check, verified against the v0.9.13 provider
+source — and ARN-gating it added composite round-trips).
+
+**Why reverted (the unexplained part):** four consecutive chainsaw 30-min
+job-timeouts (27385091105, 27387201992, 27388653728, 27390391383). Final
+state: the pre-run leftover sweep reported **none found** yet every claim
+scenario still died at its Ready bound with `Unready resources: asm-secret,
+external-secret, and material-version` — the CONTAINER MR itself never
+reaches Ready on kind under the new naming, on a clean ASM, and the
+cross-run-collision hypothesis is excluded. The actual MR error is UNKNOWN
+because the catch blocks describe MRs cluster-scoped (`kubectl describe
+<kind> <name>` with no -n) while v2 .m. MRs are NAMESPACED — the diagnostic
+loop never surfaces conditions.
+
+**2026-06-12 16:30 UPDATE — catch-block fix LANDED; the diagnosis above
+undercounted: THREE independent bugs each left the MR loop silent.**
+Static analysis + a client-side kubectl repro found the loop never produced
+output anywhere, on any run: (a) the jsonpath read `.spec.resourceRefs`,
+but v2 XRs keep machinery under `spec.crossplane.resourceRefs` (proven by
+the platform-secret render fixture) — the loop body never iterated; (b) had
+it iterated, `kubectl describe "$kind.$api"` passes a group/version
+apiVersion, which kubectl misparses as TYPE/NAME and errors client-side
+("there is no need to specify a resource type as a separate argument"),
+never querying the cluster (repro'd locally with kubectl v1.35.5); (c) the
+describe was cluster-scoped while v2 .m. MRs are namespaced. Fixed in
+`tests/chainsaw/_lib/catch-block.yaml` + all 9 scenario copies (jsonpath →
+`spec.crossplane.resourceRefs`; type arg → `$kind.${api#*/}.${api%/*}`
+i.e. kind.version.group; describe → `-n "$ns"`), plus the same
+namespacing class in `tests/chainsaw/run.sh`'s stuck-composite dump
+(`get -A` + `describe -n`). `test_chainsaw_catch_block.sh` 33/33,
+pre-chainsaw audit green.
+
+**Next steps (in order):** (1) ~~fix the catch blocks~~ DONE (above) —
+ONE chainsaw run now gives the real error; (2) suspect list: the
+multi-slash name vs the provider's external-name/ARN handling (the
+OI-2026-06-10-1 identity class), or upjet create-vs-observe on names whose
+ARN suffix randomizes; (3) re-land the chain incl. the keycloak-secrets
+Application + the spoke keycloak-admin ASM-pull swap (both reverted with it;
+the spoke admin secret stays on the interim generatorRef ES).
+
+**2026-06-12 04:20 UPDATE — the revert did NOT clear the gate; the failure
+is NOT the material chain.** Run 27392834302 (45-min cap honored, REVERTED
+= long-proven composition, pre-run sweep "none found"): every claim
+scenario failed its full 600s Ready bound with
+`Unready resources: asm-secret, external-secret` — the ORIGINAL
+two-resource chain. The same suite content was GREEN at 22:38
+(27381691574, 4.5 min) and 23:05 (27382778839); every run from 23:58 on is
+red. Exclusions: the material chain (reverted), name collisions (sweep
+clean + uid naming restored), job-timeout masking (full bounds honored).
+Remaining hypotheses (UNCONFIRMED): an AWS/ASM-side behavior change on the
+account in the 23:05→23:58 window; an upstream registry/provider-image
+issue on runners; or an account-level ASM state interaction not visible to
+list-secrets. **The chainsaw GATE itself is red for environmental-looking
+reasons — the catch-block namespaced-MR fix (step 1) is the single
+prerequisite for the real error.** PR #227 stays open; do NOT merge around
+the red gate (AGENTS done-contract).
+
+---
+
+## OI-2026-06-11-3 — spoke clusters ship no CSI driver / StorageClass; every PVC-bearing add-on stays Pending
+
+**Status:** **open — DIAGNOSED 2026-06-11** (was the undiagnosed
+"kube-prometheus-stack Degraded / loki Progressing" carried since build #1).
+**Surfaced:** builds #1 + #2 (identical states both builds).
+
+**Diagnosis (observation):** prometheus, alertmanager and loki pods are
+Pending with "pod has unbound immediate PersistentVolumeClaims"; their PVCs
+show NO storage class. Spoke clusters (platform-cluster Composition) install
+no EBS CSI driver and no StorageClass — the EKS auto-installed addons do not
+include storage, and unlike the hub (whose workloads are PVC-free) the
+phase-4 observability stack needs volumes.
+
+**Durable fix (next session, feature-sized):** compose the EBS CSI addon +
+its IRSA role + a default gp3 StorageClass into the platform-cluster
+Composition (or an eks-addon MR + the addon's pod identity), with a
+render/chainsaw layer and a live oracle asserting a Bound PVC.
+
+**Not in scope of this entry:** `hub-observability-alloy` OutOfSync/Missing
+— DIAGNOSED + FIXED 2026-06-12 (PR #227): the alloy chart ships the
+podlogs.monitoring.grafana.com CRD and the hub-addons AppProject did not
+whitelist CustomResourceDefinition → fail-closed sync, app Missing on
+builds #1+#2; whitelist + exact-set test updated. And
+`workload1-cluster` OutOfSync (new on build #2), likely the kyverno
+webhook down-windows blocking its sync retries (OI-2026-06-11-2) — re-check
+after the kyverno fix settles.
 
 ---
 
