@@ -381,12 +381,17 @@ dump_diagnostics() {
 
   echo ""
   echo "── describe stuck composites (first 60 lines each) ────────────"
+  # v2 XRs are namespaced — enumerate with -A and describe with -n, or
+  # XRs outside the context namespace are invisible (OI-2026-06-12-1).
   for kind in xplatformsecret xplatformcluster xdatabase; do
-    for name in $(kubectl get "$kind" -o name 2>/dev/null); do
-      echo ""
-      echo "── describe $name ──"
-      kubectl describe "$name" 2>&1 | head -60 | sed 's/^/    /' || true
-    done
+    kubectl get "$kind" -A \
+      -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' 2>/dev/null \
+      | while read -r ns name; do
+          [ -z "$name" ] && continue
+          echo ""
+          echo "── describe $kind/$name (ns $ns) ──"
+          kubectl describe "$kind" "$name" -n "$ns" 2>&1 | head -60 | sed 's/^/    /' || true
+        done
   done
 
   echo ""

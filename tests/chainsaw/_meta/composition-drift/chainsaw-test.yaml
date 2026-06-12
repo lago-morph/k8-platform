@@ -206,13 +206,19 @@ spec:
               | while read -r ns name; do
                   [ -z "$name" ] && continue
                   kubectl describe "$xr_kind" -n "$ns" "$name" 2>&1 | head -c 1500
-                  # Describe every MR referenced by this XR. MRs are
-                  # cluster-scoped on the upbound providers, so no -n flag.
+                  # Describe every MR referenced by this XR. Three fixes vs the
+                  # original (OI-2026-06-12-1, each alone left this loop silent):
+                  # v2 XRs keep machinery under spec.crossplane
+                  # (.spec.resourceRefs is empty on them); v2 .m. MRs are
+                  # NAMESPACED in the XR's namespace (-n is a no-op for
+                  # cluster-scoped kinds); and the type arg must be
+                  # kind.version.group — a group/version apiVersion makes kubectl
+                  # misparse TYPE/NAME and error before querying.
                   kubectl get "$xr_kind" -n "$ns" "$name" \
-                    -o jsonpath='{range .spec.resourceRefs[*]}{.apiVersion}{" "}{.kind}{" "}{.name}{"\n"}{end}' \
+                    -o jsonpath='{range .spec.crossplane.resourceRefs[*]}{.apiVersion}{" "}{.kind}{" "}{.name}{"\n"}{end}' \
                     | while read -r api kind mrname; do
                         [ -z "$kind" ] && continue
-                        kubectl describe "$kind.$api" "$mrname" 2>&1 | head -c 1000
+                        kubectl describe "$kind.${api#*/}.${api%/*}" "$mrname" -n "$ns" 2>&1 | head -c 1000
                       done
                 done
           done

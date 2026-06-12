@@ -262,8 +262,26 @@ because the catch blocks describe MRs cluster-scoped (`kubectl describe
 <kind> <name>` with no -n) while v2 .m. MRs are NAMESPACED — the diagnostic
 loop never surfaces conditions.
 
-**Next steps (in order):** (1) fix the catch blocks: namespaced MR describes
-(`-A`), then ONE chainsaw run gives the real error; (2) suspect list: the
+**2026-06-12 16:30 UPDATE — catch-block fix LANDED; the diagnosis above
+undercounted: THREE independent bugs each left the MR loop silent.**
+Static analysis + a client-side kubectl repro found the loop never produced
+output anywhere, on any run: (a) the jsonpath read `.spec.resourceRefs`,
+but v2 XRs keep machinery under `spec.crossplane.resourceRefs` (proven by
+the platform-secret render fixture) — the loop body never iterated; (b) had
+it iterated, `kubectl describe "$kind.$api"` passes a group/version
+apiVersion, which kubectl misparses as TYPE/NAME and errors client-side
+("there is no need to specify a resource type as a separate argument"),
+never querying the cluster (repro'd locally with kubectl v1.35.5); (c) the
+describe was cluster-scoped while v2 .m. MRs are namespaced. Fixed in
+`tests/chainsaw/_lib/catch-block.yaml` + all 9 scenario copies (jsonpath →
+`spec.crossplane.resourceRefs`; type arg → `$kind.${api#*/}.${api%/*}`
+i.e. kind.version.group; describe → `-n "$ns"`), plus the same
+namespacing class in `tests/chainsaw/run.sh`'s stuck-composite dump
+(`get -A` + `describe -n`). `test_chainsaw_catch_block.sh` 33/33,
+pre-chainsaw audit green.
+
+**Next steps (in order):** (1) ~~fix the catch blocks~~ DONE (above) —
+ONE chainsaw run now gives the real error; (2) suspect list: the
 multi-slash name vs the provider's external-name/ARN handling (the
 OI-2026-06-10-1 identity class), or upjet create-vs-observe on names whose
 ARN suffix randomizes; (3) re-land the chain incl. the keycloak-secrets
