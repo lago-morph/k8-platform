@@ -102,6 +102,26 @@ case "$khost" in
   *) echo "FAIL: ingress.hostname must be templated auth.<subdomain>.<domain> from cluster facts (got $khost)"; FAIL=1;;
 esac
 
+# The OIDC issuer must be https://auth.<subdomain>.<domain> (clean build #3:
+# the NLB terminates TLS at L4, nginx forwards X-Forwarded-Proto=http, and
+# without an explicit KC_HOSTNAME keycloak advertised an http:// issuer —
+# which would poison every OIDC consumer). KC_HOSTNAME is templated from
+# the SAME cluster facts as ingress.hostname; strict-https forces the
+# https scheme on frontend URLs.
+kchost="$(yq -r '.spec.template.spec.sources[]? | select(.chart != null) | .helm.valuesObject.extraEnvVars[]? | select(.name == "KC_HOSTNAME") | .value' "$APP")"
+case "$kchost" in
+  auth.*k8-platform.io/subdomain*k8-platform.io/domain*) echo "ok: KC_HOSTNAME templated from cluster facts";;
+  *) echo "FAIL: KC_HOSTNAME extraEnvVar must be templated auth.<subdomain>.<domain> from cluster facts (got '$kchost')"; FAIL=1;;
+esac
+[ "$kchost" = "$khost" ] \
+  && echo "ok: KC_HOSTNAME identical to ingress.hostname" \
+  || { echo "FAIL: KC_HOSTNAME ('$kchost') must equal ingress.hostname ('$khost')"; FAIL=1; }
+
+strict="$(yq -r '.spec.template.spec.sources[]? | select(.chart != null) | .helm.valuesObject.extraEnvVars[]? | select(.name == "KC_HOSTNAME_STRICT_HTTPS") | .value' "$APP")"
+[ "$strict" = "true" ] \
+  && echo "ok: KC_HOSTNAME_STRICT_HTTPS=true (https issuer behind the L4-TLS NLB)" \
+  || { echo "FAIL: KC_HOSTNAME_STRICT_HTTPS must be \"true\" (got '$strict')"; FAIL=1; }
+
 prune="$(yq -r '.spec.template.spec.syncPolicy.automated.prune' "$APP")"
 sh="$(yq -r '.spec.template.spec.syncPolicy.automated.selfHeal' "$APP")"
 { [ "$prune" = "true" ] && [ "$sh" = "true" ]; } && echo "ok: automated prune+selfHeal" \

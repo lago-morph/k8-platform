@@ -76,6 +76,10 @@ design — discover it live, never hardcode it (enforced:
   one-line install. `which X` returning nothing is an unanswered question.
   The record shows "unavailable" diagnoses made without probing were wrong
   repeatedly (forensics R3).
+- **kind cannot run in this sandbox**: cluster creation dies at
+  `docker exec --privileged -i … cp /dev/stdin` (exit 128) under the
+  sandboxed dockerd (probed 2026-06-12). The chainsaw inner loop is
+  CI-only; `crossplane render` (plain containers) works fine.
 
 ## 6. CI interaction mechanics
 
@@ -93,6 +97,12 @@ design — discover it live, never hardcode it (enforced:
   resume-from-suspension, first re-query every in-flight dispatch.
 - `mergeable_state: unstable` = non-blocking checks pending/failing, not
   blocked — check before deferring a merge.
+- A `workflow_dispatch` by branch ref resolves `head_sha` at **run
+  creation**, not job start — always dispatch *after* the push it must
+  test, or the run verifies the wrong SHA. And `chainsaw.yml` runs
+  `cancel-in-progress: true` per ref: any same-ref push or re-dispatch
+  cancels the in-flight run (a cancelled job also skips its cleanup
+  trap). Batch commits, then dispatch once (L33).
 - **Unauthenticated `api.github.com` calls from the sandbox rate-limit within
   minutes** (verified 2026-06-10: HTTP 403 rate-limit after ~6 polls). Poll
   runs via the authenticated GitHub MCP tools or timed background wake-ups —
@@ -110,7 +120,7 @@ design — discover it live, never hardcode it (enforced:
   running `git checkout -B` can mutate the main worktree/HEAD. Brief subagents
   with relative paths inside their worktree and no branch-moving git commands.
 
-## 8. AWS behavioral facts that bit before
+## 8. AWS/tooling behavioral facts that bit before
 
 - `aws iam simulate-principal-policy` returns `implicitDeny` for everything on
   a freshly-modified IRSA role — it cannot prove a narrowing; prove IAM
@@ -121,6 +131,18 @@ design — discover it live, never hardcode it (enforced:
 - AWS Resource Groups Tagging rejects non-ASCII (em-dash) in tag values;
   Secrets Manager deletion is eventually consistent (poll, never one-shot).
   Both are covered by `scripts/pre-chainsaw-audit.sh`.
+- One AWS API call can authorize against **several resource types with
+  different condition-key support** — a Sid conditioned on a key the
+  resource type lacks is absent-key + StringEquals = deny. Bit twice on
+  2026-06-11: `ec2:CreateSecurityGroup` (security-group + vpc resources;
+  vpc carries no `ec2:Vpc`) and `rds:ModifyDBInstance` with a subnet-group
+  change (db + subgrp; subgrp carries no `rds:db-tag`). Check the SAR
+  resource table before conditioning any new action.
+- helm applies a release's **manifests before its post-upgrade hooks** — a
+  release marked failed on a hook can still have landed every manifest.
+  This is what broke the kyverno fail-closed-webhook bootstrap deadlock
+  (2026-06-11): the fixed Deployment was already live, so the re-run's
+  hook passed.
 
 ## 9. Updating this file
 

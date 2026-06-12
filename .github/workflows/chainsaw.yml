@@ -54,7 +54,14 @@ jobs:
   chainsaw:
     name: Chainsaw (Crossplane scenarios)
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # 45 (was 30, 2026-06-12): the platform-secret scenarios' Ready bounds
+    # are 600s each by design (OI-2026-05-28-1 slow first-create), and a
+    # slow-AWS window makes several scenarios legitimately hold their full
+    # bound concurrently — the suite then needs >30 min to reach a TRUE
+    # verdict instead of being killed mid-flight (runs 27385091105 →
+    # 27391613535 all died at the cap, including one carrying the
+    # long-proven composition).
+    timeout-minutes: 45
     env:
       # Per-run isolation prefix for ASM secret naming. The chainsaw
       # cleanup trap force-deletes every secret under this prefix on

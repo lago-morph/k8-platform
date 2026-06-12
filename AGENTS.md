@@ -50,6 +50,9 @@ authority; conflicts resolve toward the spec; ambiguity → ask, don't hybridize
 - **A red gate is real.** Fix the code or fix the check. Never re-kick to
   green, merge around it, or move a check somewhere non-gating (ADR-0009: a
   flaky check is itself the defect — make it deterministic or delete it).
+- When a gate fails identically across content changes, stop changing
+  content: re-run the last-green SHA (or equivalent) first to split
+  environment from content (L32).
 - Never weaken, skip, or disable error checking to clear an undiagnosed
   failure.
 
@@ -93,7 +96,8 @@ authority; conflicts resolve toward the spec; ambiguity → ask, don't hybridize
   and land green in the same PR (audit-before-enforce).
 - Heavy workflows stay `workflow_dispatch`-only; iterate to green against the
   SHA **before** opening the PR (the SHA-verifier gates it; finalize commits
-  before dispatching). CI wait mechanics: `ai/environment.md`.
+  before dispatching, and never push to a gated branch while its dispatch is
+  in flight — batch follow-ups; L33). CI wait mechanics: `ai/environment.md`.
 
 ## Git and phases
 

@@ -24,6 +24,15 @@
 # the DB-decision brief covers RDS-via-Crossplane vs. an in-cluster operator;
 # OPEN QUESTION, see docs/operations.md "Keycloak database").
 
+## Image: the chart's default docker.io/bitnami/keycloak:<tag> became
+## unpullable in the Bitnami catalog pullback (observed live 2026-06-11:
+## Init:ImagePullBackOff on the spoke; same class as the kyverno cleanup
+## images, OI-2026-06-11-2). bitnamilegacy hosts the identical frozen
+## tags; the chart-default tag (24.0.5-debian-12-r0 for 21.4.4) still
+## applies — only the repository moves.
+image:
+  repository: bitnamilegacy/keycloak
+
 ## Production mode: HTTP behind the TLS-terminating NLB. Keycloak trusts the
 ## X-Forwarded-* headers the NLB/ingress set so it builds correct https issuer
 ## URLs (proxy: edge).

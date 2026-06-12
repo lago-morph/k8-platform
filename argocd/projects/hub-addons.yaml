@@ -56,6 +56,13 @@ spec:
       kind: "ClusterRole"
     - group: "rbac.authorization.k8s.io"
       kind: "ClusterRoleBinding"
+    # The alloy chart ships the podlogs.monitoring.grafana.com CRD; without
+    # this the sync fails closed ("CustomResourceDefinition is not permitted
+    # in project hub-addons") and the app sits OutOfSync/Missing — the
+    # undiagnosed build-#1/#2 hub-observability-alloy state, root-caused
+    # 2026-06-12.
+    - group: "apiextensions.k8s.io"
+      kind: "CustomResourceDefinition"
   # Namespaced kinds within monitoring-agent: the Alloy DaemonSet + its
   # ServiceAccount/RBAC/ConfigMap/Service. Enumerated.
   namespaceResourceWhitelist:

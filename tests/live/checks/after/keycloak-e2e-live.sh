@@ -111,7 +111,16 @@ while true; do
       log "  attempt at ${KC_ELAPSED}s: status=$HTTP_STATUS issuer=${GOT_ISSUER:-none}"
     fi
   else
-    log "  attempt at ${KC_ELAPSED}s: curl failed (TLS error, DNS, or connection refused)"
+    # curl -f also exits nonzero on HTTP >= 400 — read the status without
+    # -f so a 503 (no ready endpoints) is distinguishable from a
+    # connection-level failure (build #3: this line claimed "connection
+    # refused" through an entire ingress-503 window).
+    PROBE_STATUS="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 --connect-timeout 5 "$URL" 2>/dev/null || true)"
+    if [ -n "$PROBE_STATUS" ] && [ "$PROBE_STATUS" != "000" ]; then
+      log "  attempt at ${KC_ELAPSED}s: HTTP $PROBE_STATUS (no valid discovery body)"
+    else
+      log "  attempt at ${KC_ELAPSED}s: connection failed (TLS error, DNS, or connection refused)"
+    fi
   fi
 
   if [ "$KC_ELAPSED" -ge "$KC_POLL_MAX" ]; then

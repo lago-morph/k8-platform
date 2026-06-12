@@ -78,7 +78,10 @@ done
 #    ClusterRoleBinding} (set equality — an added CRD/Webhook kind must fail, not
 #    pass as a superset).
 got_cluster="$(yq -r '[.spec.clusterResourceWhitelist[].kind] | sort | join(",")' "$PROJ")"
-want_cluster="ClusterRole,ClusterRoleBinding,Namespace"
+# CustomResourceDefinition added 2026-06-12: the alloy chart ships the
+# podlogs.monitoring.grafana.com CRD; without it the sync fails closed and
+# the app sits OutOfSync/Missing (the build-#1/#2 alloy state, diagnosed).
+want_cluster="ClusterRole,ClusterRoleBinding,CustomResourceDefinition,Namespace"
 [ "$got_cluster" = "$want_cluster" ] \
   && echo "ok: clusterResourceWhitelist is exactly {$want_cluster}" \
   || { echo "FAIL: clusterResourceWhitelist must be exactly {$want_cluster}, got {$got_cluster}"; FAIL=1; }
