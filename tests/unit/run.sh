@@ -108,6 +108,9 @@ run_suite tests/unit/test_keycloak_db_xr.sh
 # (render fixture, network like test_helm_render.sh) + the push/pull chain.
 run_suite tests/unit/test_keycloak_db_env_precedence.sh
 run_suite tests/unit/test_keycloak_db_push_pull_contract.sh
+# OI-2026-06-12-1 quarantine: keycloak-admin stays on the in-cluster
+# generatorRef ES until the material chain re-lands with its producer.
+run_suite tests/unit/test_keycloak_admin_secret_source.sh
 # auto-008 phase-3 spoke GitOps access (XSpokeAccess XRD + Composition + XR)
 run_suite tests/unit/test_xspokeaccess.sh
 # auto-013 test-overhaul P1: derived coverage manifest (FINAL-PLAN §4.5)
