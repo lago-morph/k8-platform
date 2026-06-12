@@ -34,22 +34,20 @@ assert_eq "composition_typeRef_kind"       "$XRD_KIND"                   "$COMP_
 RES_COUNT=$(yq -r '.spec.pipeline[0].input.resources | length' "$COMP")
 assert_eq "composition_resource_count" "5" "$RES_COUNT"
 
-# The value writer is the crossplane-native SecretVersion (NOT an ESO
-# PushSecret — ownership-tag semantics + ARN-gating round-trips deadlocked
-# /slowed the chain past the chainsaw Ready bounds; see the Composition
-# header). It must target the SAME deterministic name the container
-# provisions, via the same combine fmt.
-VER_KIND=$(yq -r '.spec.pipeline[0].input.resources[] | select(.name == "material-version") | .base.kind' "$COMP")
-assert_eq "composition_value_writer_kind" "SecretVersion" "$VER_KIND"
-VER_ID_FMT=$(yq -r '.spec.pipeline[0].input.resources[] | select(.name == "material-version") | .patches[] | select(.toFieldPath == "spec.forProvider.secretId") | .combine.string.fmt' "$COMP")
-assert_eq "composition_version_id_matches_container" "k8-platform/%s/%s" "$VER_ID_FMT"
-VER_SRC=$(yq -r '.spec.pipeline[0].input.resources[] | select(.name == "material-version") | .base.spec.forProvider.secretStringSecretRef.key' "$COMP")
-assert_eq "composition_version_source_key" "json" "$VER_SRC"
+# The push is ORDER-GUARDED: Required patch on status.asmSecretArn so ESO
+# never creates the remote container before the MR does (ResourceExists
+# deadlock prevention).
+PUSH_GUARD=$(yq -r '.spec.pipeline[0].input.resources[] | select(.name == "material-push") | .patches[] | select(.fromFieldPath == "status.asmSecretArn") | .policy.fromFieldPath' "$COMP")
+assert_eq "composition_push_ordering_guard_required" "Required" "$PUSH_GUARD"
 
 # Generate-once: the material ES must never refresh (a refresh rotates the
 # value under every consumer).
 MAT_REFRESH=$(yq -r '.spec.pipeline[0].input.resources[] | select(.name == "material-secret") | .base.spec.refreshInterval' "$COMP")
 assert_eq "composition_material_generate_once" "0" "$MAT_REFRESH"
+
+# Push remoteKey == the asm-secret name fmt (same combine).
+PUSH_KEY_FMT=$(yq -r '.spec.pipeline[0].input.resources[] | select(.name == "material-push") | .patches[] | select(.toFieldPath == "spec.data[0].match.remoteRef.remoteKey") | .combine.string.fmt' "$COMP")
+assert_eq "composition_push_key_matches_container" "k8-platform/%s/%s" "$PUSH_KEY_FMT"
 
 ASM_BASE_API=$(yq -r '.spec.pipeline[0].input.resources[] | select(.name == "asm-secret") | .base.apiVersion' "$COMP")
 ASM_BASE_KIND=$(yq -r '.spec.pipeline[0].input.resources[] | select(.name == "asm-secret") | .base.kind' "$COMP")

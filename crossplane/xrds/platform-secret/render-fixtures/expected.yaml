@@ -40,7 +40,7 @@ spec:
     name: render-probe-secret-material
     template:
       data:
-        json: '{"value":"{{ .password }}"}'
+        value: '{{ .password }}'
       engineVersion: v2
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
@@ -57,6 +57,29 @@ spec:
   noUpper: false
   symbolCharacters: ""
   symbols: 0
+apiVersion: external-secrets.io/v1alpha1
+kind: PushSecret
+metadata:
+  annotations:
+    platform.k8-platform.io/asm-arn: arn:aws:secretsmanager:us-east-1:000000000000:secret:k8-platform/default/render-probe-secret-probe0
+  labels:
+    crossplane.io/composite: render-probe-secret
+  name: render-probe-secret-push
+  namespace: default
+spec:
+  data:
+    - match:
+        remoteRef:
+          property: value
+          remoteKey: k8-platform/default/render-probe-secret
+        secretKey: value
+  refreshInterval: 1h
+  secretStoreRefs:
+    - kind: ClusterSecretStore
+      name: aws-secrets-manager
+  selector:
+    secret:
+      name: render-probe-secret-material
 apiVersion: secretsmanager.aws.m.upbound.io/v1beta1
 kind: Secret
 metadata:
@@ -75,30 +98,7 @@ spec:
       Description: Render fixture probe - not a real secret
       ManagedBy: crossplane
       PlatformAbstraction: PlatformSecret
-  managementPolicies:
-    - Observe
-    - Create
-    - Update
-    - Delete
-  providerConfigRef:
-    kind: ClusterProviderConfig
-    name: default
-apiVersion: secretsmanager.aws.m.upbound.io/v1beta1
-kind: SecretVersion
-metadata:
-  annotations: {}
-  generateName: render-probe-secret-
-  labels:
-    crossplane.io/composite: render-probe-secret
-  name: render-probe-secret-43d36bd91363
-  namespace: default
-spec:
-  forProvider:
-    region: us-east-1
-    secretId: k8-platform/default/render-probe-secret
-    secretStringSecretRef:
-      key: json
-      name: render-probe-secret-material
+      managed-by: external-secrets
   managementPolicies:
     - Observe
     - Create
@@ -116,6 +116,9 @@ metadata:
 spec:
   crossplane:
     resourceRefs:
+      - apiVersion: external-secrets.io/v1alpha1
+        kind: PushSecret
+        name: render-probe-secret-push
       - apiVersion: external-secrets.io/v1beta1
         kind: ExternalSecret
         name: render-probe-secret
@@ -125,9 +128,6 @@ spec:
       - apiVersion: generators.external-secrets.io/v1alpha1
         kind: Password
         name: render-probe-secret-gen
-      - apiVersion: secretsmanager.aws.m.upbound.io/v1beta1
-        kind: SecretVersion
-        name: render-probe-secret-43d36bd91363
       - apiVersion: secretsmanager.aws.m.upbound.io/v1beta1
         kind: Secret
         name: render-probe-secret-934a4befb899
@@ -143,7 +143,7 @@ status:
     - reason: ReconcileSuccess
       status: "True"
       type: Synced
-    - message: 'Unready resources: asm-secret, external-secret, material-secret, and 2 more'
+    - message: 'Unready resources: asm-secret, external-secret, material-push, and 2 more'
       reason: Creating
       status: "False"
       type: Ready
