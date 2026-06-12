@@ -34,6 +34,7 @@ is the sequence number for that date.
 | OI-2026-06-11-1 | XDatabase RDS Instance lands in the account DEFAULT VPC (no subnet group/SG composed) → unreachable from the platform clusters | fix MERGED (#226) + two follow-up IAM multi-resource-auth catches in PR #227 (ec2:CreateSecurityGroup vpc-resource; rds:ModifyDBInstance subgrp-resource — both proven live by the fail-closed narrowed policy); convergence (instance → base VPC) in flight on 608553548146 <!-- noqa: account-id - run provenance, account rotates --> |
 | OI-2026-06-11-2 | **NEW** — kyverno admission controller OOM-CrashLoop + ALL report-cleanup jobs ImagePullBackOff (bitnami/kubectl pullback) → fail-closed webhook blocks hub applies in down-windows | durable helm-values fix (bitnamilegacy images + 768Mi) authored in PR #227, applied via branch CI runs 27384384429+27384541609 (the first hit the webhook's own bootstrap deadlock; manifests landed, re-run recorded the release) — see entry |
 | OI-2026-06-11-3 | **NEW** — spoke clusters ship NO CSI driver / StorageClass → every PVC-bearing add-on Pending forever (kube-prometheus-stack Degraded, loki Progressing on builds #1 AND #2 — now DIAGNOSED) | open; durable fix = EBS CSI + default StorageClass (+ CSI IRSA) in the platform-cluster Composition — feature-sized, next session |
+| OI-2026-06-12-1 | **NEW** — XPlatformSecret in-platform material chain REVERTED from PR #227 after 4 chainsaw job-timeouts; live-verify's secretsmanager-Secret kind stays SKIP until reworked | quarantined with full diagnosis — see entry |
 | OI-2026-06-10-1 | ACM provider v2.5.0 leaves Certificate `crossplane.io/external-name` EMPTY → `certificateArnSelector` never resolves | Composition fix MERGED (#223) + validated on clean builds #1 AND #2 (cert chain verified on hello 200 both); WHY external-name stays empty remains undiagnosed — see entry |
 | OI-2026-06-09-1 | **NEW** — narrowed `iam:GetRole` broke EKS nodegroup SLR create | **FIXED** PR #213, proven live (nodegroup ACTIVE after fix); pending merge |
 | OI-2026-06-08-1 | Crossplane `Resource:"*"` (RDS/EC2) follow-up | IAM resolved (#203); RDS PR #211 (applied live, ongoing-reconcile green), EC2 PR #212 (draft) |
@@ -196,6 +197,47 @@ docker.io/bitnami/* tag is suspect — check at version-bump time.
 **Still open:** whether 768Mi is the right steady-state limit once cleanup
 runs (observe across a rebuild); kyverno 3.3+ charts moved off
 bitnami/kubectl entirely — fold into the next deliberate chart bump.
+
+---
+
+## OI-2026-06-12-1 — XPlatformSecret material chain: reverted pending rework; the live-verify producer stays blocked on the secretsmanager-Secret kind
+
+**Status:** REVERTED from PR #227 (commits 0ce9f41/a95ee41/bdcc56a reverted in
+614edc3/353843c/667e8ba) — design + diagnosis retained here for the rework.
+**Surfaced:** 2026-06-12, while building the Task-3 live-verify producer.
+
+**Why it exists:** `derive_expect_full` derives the expected kind set from
+committed Compositions, so `secretsmanager.aws.m.upbound.io/Secret` can only
+pass live-verify with a VALUED (AWSCURRENT + PlatformSecret-tagged) container
+— but XPlatformSecret provisions an EMPTY shell whose material is documented
+"out of band" (a banned manual step), and its uid-based ASM naming cannot be
+referenced by committed cross-cluster consumers.
+
+**Design (sound on render; pinned in the reverted commits):** deterministic
+`k8-platform/<ns>/<name>` naming; Password generator → generate-once material
+ES (`{"value":…}` JSON doc) → crossplane-native **SecretVersion** writing the
+value (an ESO PushSecret REFUSES an un-owned container — `managed-by=
+external-secrets` ownership check, verified against the v0.9.13 provider
+source — and ARN-gating it added composite round-trips).
+
+**Why reverted (the unexplained part):** four consecutive chainsaw 30-min
+job-timeouts (27385091105, 27387201992, 27388653728, 27390391383). Final
+state: the pre-run leftover sweep reported **none found** yet every claim
+scenario still died at its Ready bound with `Unready resources: asm-secret,
+external-secret, and material-version` — the CONTAINER MR itself never
+reaches Ready on kind under the new naming, on a clean ASM, and the
+cross-run-collision hypothesis is excluded. The actual MR error is UNKNOWN
+because the catch blocks describe MRs cluster-scoped (`kubectl describe
+<kind> <name>` with no -n) while v2 .m. MRs are NAMESPACED — the diagnostic
+loop never surfaces conditions.
+
+**Next steps (in order):** (1) fix the catch blocks: namespaced MR describes
+(`-A`), then ONE chainsaw run gives the real error; (2) suspect list: the
+multi-slash name vs the provider's external-name/ARN handling (the
+OI-2026-06-10-1 identity class), or upjet create-vs-observe on names whose
+ARN suffix randomizes; (3) re-land the chain incl. the keycloak-secrets
+Application + the spoke keycloak-admin ASM-pull swap (both reverted with it;
+the spoke admin secret stays on the interim generatorRef ES).
 
 ---
 

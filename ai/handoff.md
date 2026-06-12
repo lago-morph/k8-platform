@@ -69,7 +69,14 @@ last, the current state, and the next concrete steps. Keep it factual
 >   hub app syncs the XRs at last; spoke keycloak-admin ES pulls the
 >   deterministic key). ES manifests carry explicit ESO defaults (ArgoCD
 >   perpetual-OutOfSync fix) + 5m refresh on the DB legs.
-> - **NEXT:** (1) merge #227 when its chainsaw (014e152) is green → GitOps
+> - **2026-06-12 amendment:** the XPlatformSecret material chain was
+>   REVERTED off #227 after four chainsaw job-timeouts (full diagnosis +
+>   rework plan: **OI-2026-06-12-1** — the container MR itself never reaches
+>   Ready on kind under deterministic naming; catch blocks can't show
+>   namespaced-MR conditions, fix that first). #227 now carries only the
+>   independently-validated fixes. Task-3 live-verify stays blocked on the
+>   secretsmanager-Secret kind until the chain is reworked.
+> - **NEXT:** (1) merge #227 when its chainsaw (final HEAD) is green → GitOps
 >   converges the spoke (legacy keycloak image + ES swaps + keycloak-secrets)
 >   → RDS completes its base-VPC move (subgrp Sid landed; provider retry)
 >   → **keycloak-e2e-live.sh** (the committed boot oracle). (2) dispatch
