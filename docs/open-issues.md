@@ -218,7 +218,10 @@ Composition (or an eks-addon MR + the addon's pod identity), with a
 render/chainsaw layer and a live oracle asserting a Bound PVC.
 
 **Not in scope of this entry:** `hub-observability-alloy` OutOfSync/Missing
-— different shape (hub-destined ApplicationSet), still undiagnosed; and
+— DIAGNOSED + FIXED 2026-06-12 (PR #227): the alloy chart ships the
+podlogs.monitoring.grafana.com CRD and the hub-addons AppProject did not
+whitelist CustomResourceDefinition → fail-closed sync, app Missing on
+builds #1+#2; whitelist + exact-set test updated. And
 `workload1-cluster` OutOfSync (new on build #2), likely the kyverno
 webhook down-windows blocking its sync retries (OI-2026-06-11-2) — re-check
 after the kyverno fix settles.
