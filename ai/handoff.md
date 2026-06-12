@@ -8,7 +8,35 @@ last, the current state, and the next concrete steps. Keep it factual
 
 ## NEW SESSION QUICKSTART (read this first)
 
-> ## ▶ 2026-06-12 (latest) — ⚠️ ACCOUNT ROTATES BEFORE THE NEXT SESSION; merge #227 FIRST, then build #3
+> ## ▶ 2026-06-12 PM (latest) — 🟢 #227 MERGED (chainsaw green on the fresh account); clean build #3 IN FLIGHT
+> **Account rotation CONFIRMED: `798802785871`** <!-- noqa: account-id - run provenance, account rotates -->
+> **— GHA secrets already resolve to it** (probe test-e2e run 27429228144:
+> creds → new account, Route53 zone reachable; only the expected
+> no-bootstrap bucket/lock-table failures).
+> **PR #227 MERGED** at main `0dd6114`. The chainsaw gate cleared
+> honestly: run **27429434084** (HEAD `b3f0363`, full suite, real ASM)
+> green in ~5 min; verify check green (27429887657); unit green
+> (27429357854). Before dispatching, the OI-2026-06-12-1 catch-block fix
+> landed on the branch — the MR-describe loop had THREE fatal bugs
+> (wrong jsonpath `.spec.resourceRefs` vs v2 `spec.crossplane.resourceRefs`;
+> `kind.$apiVersion` type arg kubectl misparses as TYPE/NAME; cluster-scoped
+> describe of namespaced .m. MRs) and had NEVER produced output. The
+> 23:58→04:5x reds on the retired account stay consistent with
+> account-side ASM behavior there (same content green before 23:05 and
+> green again on the new account) — see the OI entry.
+> **Build #3 chain (run IDs are the evidence):** base apply-and-verify
+> = run **27429951073** (dispatched 16:50Z from main `0dd6114`) → next:
+> management apply-and-verify → SSM relay → sync `platform-cluster-claim`
+> from main → XR Ready → sync `spoke-access` from main (no patches) →
+> hello 200 + oracles (hello-e2e-live, spoke-cluster-secret-live,
+> sandbox-kubectl-relay) **+ NEW keycloak-e2e-live.sh** (first-boot
+> OI-2026-06-07-5 close; fresh RDS lands in the base-VPC subnet group).
+> Append row-6 / build-#3 evidence to SUBSTRATE-READINESS.md.
+> **Then:** Task 3 = OI-2026-06-12-1 material-chain rework (design in the
+> OI entry; chainsaw-gate it), then live-verify.yml producer; stretch =
+> OI-2026-06-11-4 (CI-harness queue), OI-2026-06-11-3 (spoke EBS CSI).
+
+> ## ▶ 2026-06-12 (superseded by the PM block above) — ⚠️ ACCOUNT ROTATES BEFORE THE NEXT SESSION; merge #227 FIRST, then build #3
 > **The `608553548146` account is being retired** <!-- noqa: account-id - run provenance, account rotates -->
 > **— treat the next account as EMPTY.** All live state from build #2 dies
 > with it: hub, spoke, RDS, ASM contents, the in-flight keycloak
