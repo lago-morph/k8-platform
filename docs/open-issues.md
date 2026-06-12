@@ -21,7 +21,7 @@ is the sequence number for that date.
 | OI-2026-06-07-1 | spoke ArgoCD cluster Secret has no GitOps form | **RESOLVED — 1× clean-build evidence 2026-06-10** (SUBSTRATE row 5): Composition-produced Secret, full contract, `spoke-cluster-secret-live.sh` PASS on clean build #1 |
 | OI-2026-06-07-3 | shared-VPC ELB subnet tags | **RESOLVED — 1× clean-build evidence 2026-06-10** (SUBSTRATE row 3): spoke NLB placed with zero create-tags on clean build #1 |
 | OI-2026-06-07-4 | hub→spoke EKS-API SG rule | **RESOLVED — 1× clean-build evidence 2026-06-10** (SUBSTRATE row 2): hub ArgoCD synced the spoke with zero authorize-sg-ingress on clean build #1 |
-| OI-2026-06-07-5 | cross-cluster Keycloak DB secret | IMPLEMENTED in PR #226 (hub PushSecret→ASM→spoke ExternalSecret + extraEnvVarsSecret host/port, premise proven by render fixture; spoke ESO baseline + eso-role-arn contract key) — `pending clean-build verification`; Keycloak-boots-against-RDS is the oracle, gated on OI-2026-06-11-1's fix landing |
+| OI-2026-06-07-5 | cross-cluster Keycloak DB secret | **RESOLVED — clean-build evidence 2026-06-12 (build #3)**: Keycloak booted against RDS through the spoke ingress, `keycloak-e2e-live.sh` PASS (https issuer, spoke-keycloak Synced+Healthy). The DB leg (hub PushSecret→ASM→spoke ES, host/port override) converged on first bring-up; the first boot surfaced four committed defects, each fixed in code red-first (PRs #231 admin-ES revert gap, #232 realm JSON comments, #233 placeholder IdP block, #234 https issuer) |
 | OI-2026-06-07-6 | **static assertions masquerade as tests** | umbrella — the test overhaul executes against this; not a single bug |
 | OI-2026-06-07-7 | P0-spike `resourceRefs`⇒AccessDenied not confirmed | needs a provisioned XR |
 | OI-2026-06-07-8 | jentic workflow-integration capstone deferred | not started |
@@ -35,7 +35,7 @@ is the sequence number for that date.
 | OI-2026-06-11-4 | **NEW** — CI-harness hardening queue (retro 2026-06-11-224 R2/R3/R4) | deferred deliberately: a concurrent session is live against these workflows; see entry. (Renumbered from the retro branch's -1 at merge: the concurrent build session took OI-2026-06-11-1..-3.) |
 | OI-2026-06-11-3 | **NEW** — spoke clusters ship NO CSI driver / StorageClass → every PVC-bearing add-on Pending forever (kube-prometheus-stack Degraded, loki Progressing on builds #1 AND #2 — now DIAGNOSED) | open; durable fix = EBS CSI + default StorageClass (+ CSI IRSA) in the platform-cluster Composition — feature-sized, next session |
 | OI-2026-06-11-2 | **NEW** — kyverno admission controller OOM-CrashLoop + ALL report-cleanup jobs ImagePullBackOff (bitnami/kubectl pullback) → fail-closed webhook blocks hub applies in down-windows | durable helm-values fix (bitnamilegacy images + 768Mi) authored in PR #227, applied via branch CI runs 27384384429+27384541609 (the first hit the webhook's own bootstrap deadlock; manifests landed, re-run recorded the release) — see entry |
-| OI-2026-06-11-1 | XDatabase RDS Instance lands in the account DEFAULT VPC (no subnet group/SG composed) → unreachable from the platform clusters | fix MERGED (#226) + two follow-up IAM multi-resource-auth catches in PR #227 (ec2:CreateSecurityGroup vpc-resource; rds:ModifyDBInstance subgrp-resource — both proven live by the fail-closed narrowed policy); convergence (instance → base VPC) in flight on 608553548146 <!-- noqa: account-id - run provenance, account rotates --> |
+| OI-2026-06-11-1 | XDatabase RDS Instance lands in the account DEFAULT VPC (no subnet group/SG composed) → unreachable from the platform clusters | **RESOLVED — clean-build CREATE-path evidence 2026-06-12 (build #3)**: fresh instance provisioned directly into the base VPC (`k8-platform-vpc`, IsDefault=False), `rds-instance-live.sh` PASS (after the #235 oracle bool fix), and keycloak actually CONNECTS through it (the reachability the entry is about). The old account's move-the-instance dance never ran — moot per rotation |
 | OI-2026-06-10-1 | ACM provider v2.5.0 leaves Certificate `crossplane.io/external-name` EMPTY → `certificateArnSelector` never resolves | Composition fix MERGED (#223) + validated on clean builds #1 AND #2 (cert chain verified on hello 200 both); WHY external-name stays empty remains undiagnosed — see entry |
 | OI-2026-06-09-1 | **NEW** — narrowed `iam:GetRole` broke EKS nodegroup SLR create | **FIXED** PR #213, proven live (nodegroup ACTIVE after fix); pending merge |
 | OI-2026-06-08-1 | Crossplane `Resource:"*"` (RDS/EC2) follow-up | IAM resolved (#203); RDS PR #211 (applied live, ongoing-reconcile green), EC2 PR #212 (draft) |
@@ -144,7 +144,14 @@ GitHub MCP write tools refuse those paths; route through the jentic
 
 ## OI-2026-06-11-1 — XDatabase RDS Instance lands in the account DEFAULT VPC; unreachable from the platform clusters
 
-**Status:** durable fix AUTHORED in PR #226 (2026-06-11) — `pending clean-build verification`.
+**Status:** **RESOLVED — clean-build CREATE-path evidence 2026-06-12 (build #3,
+fresh account 798802785871** <!-- noqa: account-id - run provenance, account rotates -->
+**):** the `keycloak-db` XDatabase provisioned its instance directly into the
+base VPC (`k8-platform-vpc`, IsDefault=False) under the composed
+SubnetGroup/SecurityGroup, `rds-instance-live.sh` PASS (its bool-case false
+negative fixed in #235), and Keycloak connects through it
+(`keycloak-e2e-live.sh` PASS — the reachability this entry is about).
+(Kept for the rationale record.)
 **Surfaced:** 2026-06-11, clean build #2 (fresh account 608553548146 <!-- noqa: account-id - run provenance, account rotates -->), while preparing the OI-2026-06-07-5 keycloak DB path.
 
 **What happened (observation → exclusion):** the `keycloak-db` XDatabase
@@ -519,7 +526,21 @@ hand-fixes.
 
 ## OI-2026-06-07-5 — phase-5 RDS connection secret is hub-local; Keycloak runs on the spoke
 
-**Status:** open — DECISION MADE (2026-06-07); implement in a new session. See ADR `docs/decisions/0005-*` + `ai/handoff.md` task 4.
+**Status:** **RESOLVED — clean-build behavioral evidence 2026-06-12 (build #3):**
+Keycloak booted against RDS through the spoke ingress on fresh account
+798802785871 <!-- noqa: account-id - run provenance, account rotates -->;
+`keycloak-e2e-live.sh` PASS (OIDC discovery HTTP 200, https issuer,
+hub-side spoke-keycloak Synced+Healthy). The ADR-0005 ESO chain (hub
+PushSecret → ASM `k8-platform/keycloak-db` → spoke ExternalSecret +
+extraEnvVarsSecret host/port) converged on the first bring-up. The first
+boot surfaced four committed defects, each fixed in code with a red-first
+test and merged mid-build (GitOps propagation, zero manual steps): #231
+(the chain revert left the admin ES on an unproduced ASM pull —
+SecretDeleted), #232 (realm JSON `comment` fields abort the strict
+import), #233 (TODO_ placeholder IdP URLs fail import-time validation —
+the cognito block is now absent until live wiring), #234 (KC_HOSTNAME
+cluster-facts env; the L4-TLS NLB chain otherwise yields an http issuer).
+(Kept for the rationale record.)
 **Resolution:** plain ESO cross-cluster — hub `PushSecret` (`keycloak-db` → Secrets Manager) → spoke `ExternalSecret` → spoke `keycloak` ns. Depends on the spoke-side ESO + `ClusterSecretStore` from OI-2026-06-07-2 / ADR 0005. NOT XPlatformSecret.
 **Surfaced:** 2026-06-07, auto-012, phase-5.
 

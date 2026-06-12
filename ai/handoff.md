@@ -8,7 +8,45 @@ last, the current state, and the next concrete steps. Keep it factual
 
 ## NEW SESSION QUICKSTART (read this first)
 
-> ## ▶ 2026-06-12 PM (latest) — 🟢 #227 MERGED (chainsaw green on the fresh account); clean build #3 IN FLIGHT
+> ## ▶ 2026-06-12 EVE (latest) — 🟢🟢🟢 CLEAN BUILD #3 COMPLETE incl. the FIRST keycloak boot (OI-2026-06-07-5 + OI-2026-06-11-1 CLOSED)
+> **Build #3 ran end-to-end on fresh account `798802785871`** <!-- noqa: account-id - run provenance, account rotates -->
+> from post-#227 `main` (`0dd6114`), zero manual steps. Chain: probe
+> 27429228144 → base **27429951073** → management **27430525986** →
+> `platform-cluster-claim` synced from main via the SSM relay
+> (`argocd app sync --core`; XR Ready ~21 min) → `spoke-access` from
+> main, no patches → registration Secret complete on its own → ALL
+> oracles PASS: hello-e2e-live (200 first poll),
+> spoke-cluster-secret-live, sandbox-kubectl-relay (spoke 2 Ready),
+> rds-instance-live (instance IN THE BASE VPC — OI-2026-06-11-1
+> CREATE-path close), **keycloak-e2e-live (https OIDC issuer — the
+> OI-2026-06-07-5 behavioral close)**. SUBSTRATE rows 1-5+8 now 3×,
+> rows 6+7 now 2×.
+> **The keycloak first boot surfaced FOUR committed defects; all fixed
+> in code red-first and merged mid-build** (GitOps propagation only):
+> **#231** the OI-2026-06-12-1 chain revert missed the spoke admin ES
+> (ASM-pull on an unproduced key + deletionPolicy Delete →
+> SecretDeleted, pods CreateContainerConfigError); **#232** realm JSON
+> carried `"comment"` doc fields — Keycloak's strict parser aborts the
+> import; **#233** the deferred cognito IdP block shipped TODO_
+> placeholder URLs — import-time validation fails closed (block now
+> ABSENT until live wiring); **#234** http issuer behind the L4-TLS
+> NLB → KC_HOSTNAME(+STRICT_HTTPS) templated from cluster facts in the
+> ApplicationSet. Plus **#235**: rds-instance-live compared the CLI's
+> `False` to lowercase `"false"` (false negative on the fixed
+> placement); keycloak oracle now logs real HTTP status (a 503 window
+> had logged as "connection refused").
+> **NEXT (unchanged order):** (1) Task 3 = the OI-2026-06-12-1
+> XPlatformSecret material-chain rework (design in the OI entry;
+> chainsaw-gate it; the #231 unit test self-flags to force the
+> file+producer+test swap in one PR) → then dispatch `live-verify.yml`
+> for the live-evidence producer. (2) OI-2026-06-11-4 CI-harness queue
+> (safe, no concurrent consumer). (3) OI-2026-06-11-3 spoke EBS CSI +
+> StorageClass (un-Pendings kube-prometheus-stack/loki). Non-gate
+> leftovers to re-check on this account: workload1-cluster OutOfSync,
+> hub-observability states (alloy fix is IN main since #227 — verify
+> live).
+
+> ## ▶ 2026-06-12 PM (superseded — build #3 completed; see EVE) — 🟢 #227 MERGED (chainsaw green on the fresh account); clean build #3 IN FLIGHT
 > **Account rotation CONFIRMED: `798802785871`** <!-- noqa: account-id - run provenance, account rotates -->
 > **— GHA secrets already resolve to it** (probe test-e2e run 27429228144:
 > creds → new account, Route53 zone reachable; only the expected
