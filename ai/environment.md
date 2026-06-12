@@ -76,10 +76,20 @@ design — discover it live, never hardcode it (enforced:
   one-line install. `which X` returning nothing is an unanswered question.
   The record shows "unavailable" diagnoses made without probing were wrong
   repeatedly (forensics R3).
-- **kind cannot run in this sandbox**: cluster creation dies at
-  `docker exec --privileged -i … cp /dev/stdin` (exit 128) under the
-  sandboxed dockerd (probed 2026-06-12). The chainsaw inner loop is
-  CI-only; `crossplane render` (plain containers) works fine.
+- **kind cluster creation fails in this sandbox** — but NOT for the
+  reason first recorded. Re-probed 2026-06-12 with the pinned kind
+  v0.27.0 + `--retain`: `docker exec --privileged` works (kubeadm runs
+  inside the node); the real failure is the kindest/node image's
+  systemd dying at boot — `Failed to mount cgroup at
+  /sys/fs/cgroup/systemd: Operation not permitted` — on this
+  **cgroup v1** host (`docker info`: cgroupfs/1), boot-looping the node
+  container. Downstream symptoms vary by timing (exec exit 128 or 137
+  against the dead/dying container; the earlier "privileged-exec
+  restriction" reading was a one-shot misdiagnosis, also confounded by
+  an unpinned kind v0.26.0). The chainsaw inner loop stays CI-only;
+  `crossplane render` (plain containers, no systemd) works fine. A
+  cgroup-v2 sandbox image would likely lift this — retest on any
+  sandbox base-image change.
 
 ## 6. CI interaction mechanics
 
