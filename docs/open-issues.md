@@ -239,6 +239,23 @@ ARN suffix randomizes; (3) re-land the chain incl. the keycloak-secrets
 Application + the spoke keycloak-admin ASM-pull swap (both reverted with it;
 the spoke admin secret stays on the interim generatorRef ES).
 
+**2026-06-12 04:20 UPDATE — the revert did NOT clear the gate; the failure
+is NOT the material chain.** Run 27392834302 (45-min cap honored, REVERTED
+= long-proven composition, pre-run sweep "none found"): every claim
+scenario failed its full 600s Ready bound with
+`Unready resources: asm-secret, external-secret` — the ORIGINAL
+two-resource chain. The same suite content was GREEN at 22:38
+(27381691574, 4.5 min) and 23:05 (27382778839); every run from 23:58 on is
+red. Exclusions: the material chain (reverted), name collisions (sweep
+clean + uid naming restored), job-timeout masking (full bounds honored).
+Remaining hypotheses (UNCONFIRMED): an AWS/ASM-side behavior change on the
+account in the 23:05→23:58 window; an upstream registry/provider-image
+issue on runners; or an account-level ASM state interaction not visible to
+list-secrets. **The chainsaw GATE itself is red for environmental-looking
+reasons — the catch-block namespaced-MR fix (step 1) is the single
+prerequisite for the real error.** PR #227 stays open; do NOT merge around
+the red gate (AGENTS done-contract).
+
 ---
 
 ## OI-2026-06-11-3 — spoke clusters ship no CSI driver / StorageClass; every PVC-bearing add-on stays Pending

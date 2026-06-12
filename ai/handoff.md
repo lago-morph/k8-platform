@@ -70,12 +70,22 @@ last, the current state, and the next concrete steps. Keep it factual
 >   deterministic key). ES manifests carry explicit ESO defaults (ArgoCD
 >   perpetual-OutOfSync fix) + 5m refresh on the DB legs.
 > - **2026-06-12 amendment:** the XPlatformSecret material chain was
->   REVERTED off #227 after four chainsaw job-timeouts (full diagnosis +
->   rework plan: **OI-2026-06-12-1** — the container MR itself never reaches
->   Ready on kind under deterministic naming; catch blocks can't show
->   namespaced-MR conditions, fix that first). #227 now carries only the
->   independently-validated fixes. Task-3 live-verify stays blocked on the
->   secretsmanager-Secret kind until the chain is reworked.
+>   REVERTED off #227 after four chainsaw job-timeouts — and the
+>   post-revert run (27392834302, 45-min cap via the jentic workflow PUT,
+>   full bounds honored) STILL failed every claim scenario with
+>   `Unready: asm-secret, external-secret` on the LONG-PROVEN composition.
+>   The chainsaw failure is NOT the chain: same content green 22:38+23:05,
+>   red from 23:58 on — environmental-looking (full exclusion list +
+>   hypotheses: **OI-2026-06-12-1**). FIRST next step: fix the chainsaw
+>   catch blocks (they describe v2 MRs cluster-scoped → namespaced `-A`
+>   describes) so ONE run surfaces the asm-secret MR's actual error; then
+>   re-land the chain. **#227 is mergeable-on-green ONLY — its chainsaw
+>   gate is red; do not merge around it.** #227 carries the seven
+>   independently-validated fixes (kyverno OOM+images, 2× IAM
+>   multi-resource-auth, keycloak bitnamilegacy image, alloy CRD
+>   whitelist, ES normalization+5m refresh, chainsaw sweep+45min cap).
+>   Task-3 live-verify stays blocked on the secretsmanager-Secret kind
+>   until the chain is reworked.
 > - **NEXT:** (1) merge #227 when its chainsaw (final HEAD) is green → GitOps
 >   converges the spoke (legacy keycloak image + ES swaps + keycloak-secrets)
 >   → RDS completes its base-VPC move (subgrp Sid landed; provider retry)
