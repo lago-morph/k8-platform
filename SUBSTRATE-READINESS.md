@@ -115,6 +115,9 @@ the committed oracles passing on this build: `hello-e2e-live.sh` PASS,
 | 6 | RDS narrowing safe on the CREATE path (#211) | PR #211 (committed) | Clean build #2: `keycloak-db` auto-synced from `main` and provisioned RDS from scratch under the narrowed policy (XR Synced+Ready=True ~10 min, `rds-instance-live.sh` PASS, instance `available`). Caveat (build #2): the instance landed in the DEFAULT VPC (OI-2026-06-11-1). Build #3: fresh CREATE landed directly in the BASE VPC under the merged #226/#227 fix (`rds-instance-live.sh` PASS after the #235 oracle bool fix) and Keycloak CONNECTS through it (`keycloak-e2e-live.sh` PASS — the OI-2026-06-07-5 close). | **DONE (2× clean build)** |
 | 7 | EC2 narrowing safe on the CREATE path (#212) | PR #212 (committed) | Clean build #2: management run 27380296208 applied the EC2VpcScoped/EC2Unconditioned Sids; the spoke's kube-relay-ingress + hub-eks-api-ingress SecurityGroupRule MRs created under them (relay oracle PASS = the rules function; hub→spoke sync = the API rule functions). Build #3 (run 27430525986): same CREATE path green again, plus the XDatabase SecurityGroup + 5432 rule created from scratch (the rds:5432 path keycloak now traverses). | **DONE (2× clean build)** |
 | 8 | Hello hub→spoke e2e (OI-2026-06-08-2) | PR #210 (check authored) | Builds #1–#3: PASS on all three accounts (HTTP 200 + body marker + hub-side `spoke-hello` Synced+Healthy; 1s to first 200 on builds #2+#3). | **DONE (3× clean build)** |
+| 9 | Keycloak **boots** against RDS through the spoke ingress (OI-2026-06-07-5) | cross-cluster DB path (hub PushSecret → ASM → spoke ExternalSecret + extraEnvVarsSecret host/port) | Clean build #3: `keycloak-e2e-live.sh` PASS — realm imports, https OIDC discovery 200. Four first-boot defects fixed in code mid-build (#231–#234). | **DONE (1× clean build)** |
+| 10 | Keycloak **federation live-wired** to Cognito (REQ-AUTH-02/08) | NOT YET BUILT — the `identityProviders` + `identityProviderMappers` blocks are deliberately ABSENT (removed in #233; placeholders fail Keycloak's import-time URL validation). Needs the issuer/auth/token/jwks/userInfo URLs sourced from terraform/base Cognito outputs and the confidential client secret delivered via the keycloak-oidc-clients secret chain — none committed. | none | **pending clean-build verification** (blocker — phase-5 identity half) |
+| 11 | EKS clusters federate kubectl auth to Keycloak (REQ-AUTH-07/09/10) | NOT YET BUILT — no `aws_eks_identity_provider_config` (or its Crossplane equivalent) is composed for any cluster; the `kc:*` ClusterRoleBindings exist + are unit-tested but bind nothing until the IdP config lands. No federation oracle exists (the Cognito→Keycloak→kubectl path is untested end to end). | none | **pending clean-build verification** (blocker — phase-5 identity half) |
 
 Clean build #1 also caught and durably fixed a NEW defect mid-build —
 **OI-2026-06-10-1** (ACM provider v2.5.0 leaves the Certificate external-name
@@ -137,13 +140,18 @@ run ID.
 3. ~~Second green clean build.~~ **DONE** — clean build #2 above (2026-06-11,
    account 608553548146): same recipe, zero manual steps, all three oracles <!-- noqa: account-id - run provenance, account rotates -->
    PASS. **The green-twice posture gate is satisfied.**
-4. Rows 6/7 (RDS/EC2 narrowing on the CREATE path) ride the phase-5/keycloak
-   work: OI-2026-06-07-5 (DB secret + host/port via extraEnvVarsSecret) is the
-   remaining unbuilt feature, then `keycloak-db` provisions and row 6 can earn
-   its evidence.
-5. Then resume the test-overhaul work (SKIP-kind flips, the live-evidence
-   producer green on this account so the PR gate flips, Track B) on a substrate
-   that demonstrably works from nothing.
+4. ~~Rows 6/7 (RDS/EC2 narrowing on the CREATE path) + OI-2026-06-07-5
+   keycloak DB path.~~ **DONE** — clean build #3 (2026-06-12, account
+   798802785871): RDS in the base VPC, Keycloak boots against it, row 9 <!-- noqa: account-id - run provenance, account rotates -->
+   earned. Rows 6/7 now 2×.
+5. **Phase-5 identity half (rows 10/11) — the remaining unbuilt feature.**
+   The Cognito broker block and the EKS `IdentityProviderConfig` do not
+   exist yet; until they do, "phase 5" means "Keycloak runs", not "humans
+   get kubectl access from their directory group". This is the headline
+   next feature.
+6. Then resume the test-overhaul work (SKIP-kind flips, the live-evidence
+   producer green so the PR gate flips, Track B) — unblocked by the
+   in-platform material chain (the live-verify producer).
 
 A fix that cannot be validated this way stays `pending clean-build
 verification` and is carried as a **blocker**, not silently deferred into the

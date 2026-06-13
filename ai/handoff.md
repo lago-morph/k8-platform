@@ -58,6 +58,34 @@ last, the current state, and the next concrete steps. Keep it factual
 > live-evidence producer. (2) OI-2026-06-11-4 CI-harness queue (safe,
 > no concurrent consumer). (3) OI-2026-06-11-3 spoke EBS CSI +
 > StorageClass (un-Pendings kube-prometheus-stack/loki).
+> **(4) Phase-5 IDENTITY half (SUBSTRATE rows 10/11, the new headline
+> feature):** the Cognito broker block + the EKS IdentityProviderConfig
+> do NOT exist; "phase 5" today = "Keycloak runs", not "humans get
+> kubectl access from their directory group". The largest remaining
+> design-heavy item.
+
+> ## ▶ 2026-06-13 (retro-guard implementation; NO account) — three guards + SUBSTRATE phase-5 rows merged; material chain DEFERRED to the account session
+> Implemented the sandbox-completable retro remedies (PR #241, four
+> commits, all unit-green): the chainsaw-dispatch **commit_sha guard**
+> in the pre-dispatch hook (blocks the hallucinated-SHA dispatch class;
+> now also recognizes the `mcp__github__actions_run_trigger` transport,
+> not just the jentic execute path); the **placeholder-value lint**
+> (`TODO_` in any runtime value = defect; `PLACEHOLDER_` must be one of
+> the four inert-by-override tokens — the #233 class); the
+> **aws-`--output text` boolean-compare lint** (the #235 case-mismatch
+> class); and **SUBSTRATE rows 9/10/11** making the phase-5 identity gap
+> explicit. Retro-236 Proposal 4 (revert-verification) was **retired**
+> after owner review — it was circular (choosing the pre-feature
+> baseline needs the knowledge whose absence caused the bug); the real
+> safeguard is the per-file content-invariant test, already policy and
+> already done for the file that broke.
+> **DEFERRED — material chain (Task 3 above) was NOT touched this
+> session BY DESIGN:** its only proof is the heavy real-ASM chainsaw
+> gate, unreachable without the account. The design (ADR-12992f055b,
+> drafted, on disk) and its now-cleared blocker (catch-block fix merged,
+> chainsaw proven green run 27429434084) are ready; the account session
+> implements + validates it. This is the one outstanding suggested
+> implementation that could not be finished in the sandbox.
 
 > ## ▶ 2026-06-12 PM (superseded — build #3 completed; see EVE) — 🟢 #227 MERGED (chainsaw green on the fresh account); clean build #3 IN FLIGHT
 > **Account rotation CONFIRMED: `798802785871`** <!-- noqa: account-id - run provenance, account rotates -->

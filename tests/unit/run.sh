@@ -146,6 +146,14 @@ run_suite tests/unit/test_no_account_id_hardcoded.sh
 run_suite tests/unit/test_no_next_session_prompt_files.sh
 run_suite tests/unit/test_root_file_allowlist.sh
 
+# retro 2026-06-12-236/237 guards: placeholder values that fail closed at
+# boot (#233 class), aws --output text booleans compared case-sensitively
+# (#235 class), and the chainsaw-dispatch commit_sha guard (the
+# hallucinated-SHA dispatch).
+run_suite tests/unit/test_no_placeholder_runtime_values.sh
+run_suite tests/unit/test_aws_text_bool_compare.sh
+run_suite tests/unit/test_chainsaw_dispatch_sha_guard.sh
+
 # ── completeness guard (fail-closed) ─────────────────────────────────────
 # unit-tests.yml calls this runner the "catch-all … source of truth for
 # completeness": a test file absent from the run_suite list above is gated
