@@ -21,6 +21,10 @@
 # and DNS-validate the per-cluster wildcard certificate.
 resource "terraform_data" "crossplane_provider_aws_cluster_services" {
   triggers_replace = [
+
+    # 2026-07-05: per-resource kubeconfig path (concurrent update-kubeconfig truncate race, build-#4 runs 28747505753/28749110239).
+
+    "per-resource-kubeconfig-2026-07-05",
     var.crossplane_provider_aws_eks_version,
     var.crossplane_provider_aws_iam_version,
     var.crossplane_provider_aws_acm_version,
@@ -40,8 +44,8 @@ resource "terraform_data" "crossplane_provider_aws_cluster_services" {
       aws eks update-kubeconfig \
         --name ${module.eks.cluster_name} \
         --region ${var.aws_region} \
-        --kubeconfig /tmp/k8-platform-kubeconfig
-      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl apply -f - <<'MANIFEST'
+        --kubeconfig /tmp/k8-platform-kubeconfig-crossplane_provider_aws_cluster_services
+      KUBECONFIG=/tmp/k8-platform-kubeconfig-crossplane_provider_aws_cluster_services kubectl apply -f - <<'MANIFEST'
       apiVersion: pkg.crossplane.io/v1
       kind: Provider
       metadata:
@@ -127,6 +131,10 @@ resource "terraform_data" "crossplane_provider_aws_cluster_services" {
 # function-patch-and-transform). Installed as pkg.crossplane.io/v1.
 resource "terraform_data" "crossplane_function_environment_configs" {
   triggers_replace = [
+
+    # 2026-07-05: per-resource kubeconfig path (concurrent update-kubeconfig truncate race, build-#4 runs 28747505753/28749110239).
+
+    "per-resource-kubeconfig-2026-07-05",
     var.crossplane_function_environment_configs_version,
   ]
 
@@ -135,8 +143,8 @@ resource "terraform_data" "crossplane_function_environment_configs" {
       aws eks update-kubeconfig \
         --name ${module.eks.cluster_name} \
         --region ${var.aws_region} \
-        --kubeconfig /tmp/k8-platform-kubeconfig
-      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl apply -f - <<'MANIFEST'
+        --kubeconfig /tmp/k8-platform-kubeconfig-crossplane_function_environment_configs
+      KUBECONFIG=/tmp/k8-platform-kubeconfig-crossplane_function_environment_configs kubectl apply -f - <<'MANIFEST'
       apiVersion: pkg.crossplane.io/v1
       kind: Function
       metadata:
@@ -204,6 +212,10 @@ locals {
 
 resource "terraform_data" "crossplane_cluster_network_envconfig" {
   triggers_replace = [
+
+    # 2026-07-05: per-resource kubeconfig path (concurrent update-kubeconfig truncate race, build-#4 runs 28747505753/28749110239).
+
+    "per-resource-kubeconfig-2026-07-05",
     sha256(local.cluster_network_envconfig),
   ]
 
@@ -212,8 +224,8 @@ resource "terraform_data" "crossplane_cluster_network_envconfig" {
       aws eks update-kubeconfig \
         --name ${module.eks.cluster_name} \
         --region ${var.aws_region} \
-        --kubeconfig /tmp/k8-platform-kubeconfig
-      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl apply -f - <<'MANIFEST'
+        --kubeconfig /tmp/k8-platform-kubeconfig-crossplane_cluster_network_envconfig
+      KUBECONFIG=/tmp/k8-platform-kubeconfig-crossplane_cluster_network_envconfig kubectl apply -f - <<'MANIFEST'
 ${local.cluster_network_envconfig}
 MANIFEST
     EOT
@@ -241,6 +253,10 @@ MANIFEST
 # registered its CRD.
 resource "terraform_data" "crossplane_provider_kubernetes" {
   triggers_replace = [
+
+    # 2026-07-05: per-resource kubeconfig path (concurrent update-kubeconfig truncate race, build-#4 runs 28747505753/28749110239).
+
+    "per-resource-kubeconfig-2026-07-05",
     var.crossplane_provider_kubernetes_version,
     # Bump when the embedded manifest body changes (the version var alone
     # doesn't cover a manifest-shape edit — same trap as
@@ -257,8 +273,8 @@ resource "terraform_data" "crossplane_provider_kubernetes" {
       aws eks update-kubeconfig \
         --name ${module.eks.cluster_name} \
         --region ${var.aws_region} \
-        --kubeconfig /tmp/k8-platform-kubeconfig
-      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl apply -f - <<'MANIFEST'
+        --kubeconfig /tmp/k8-platform-kubeconfig-crossplane_provider_kubernetes
+      KUBECONFIG=/tmp/k8-platform-kubeconfig-crossplane_provider_kubernetes kubectl apply -f - <<'MANIFEST'
       apiVersion: pkg.crossplane.io/v1beta1
       kind: DeploymentRuntimeConfig
       metadata:
@@ -289,10 +305,10 @@ resource "terraform_data" "crossplane_provider_kubernetes" {
       # Wait for the provider to become Healthy so its CRDs
       # (kubernetes.m.crossplane.io) are registered before we apply the
       # ClusterProviderConfig below.
-      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl wait \
+      KUBECONFIG=/tmp/k8-platform-kubeconfig-crossplane_provider_kubernetes kubectl wait \
         --for=condition=Healthy --timeout=300s \
         provider.pkg.crossplane.io/provider-kubernetes
-      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl apply -f - <<'MANIFEST'
+      KUBECONFIG=/tmp/k8-platform-kubeconfig-crossplane_provider_kubernetes kubectl apply -f - <<'MANIFEST'
       apiVersion: kubernetes.m.crossplane.io/v1alpha1
       kind: ClusterProviderConfig
       metadata:

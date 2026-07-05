@@ -255,6 +255,8 @@ resource "terraform_data" "crossplane_aws_provider" {
   # values, so a manifest-body-only change (#66) silently no-op'd the
   # apply on run 26354235231 ("No changes ... Apply complete! 0 added").
   triggers_replace = [
+    # 2026-07-05: per-resource kubeconfig path (concurrent update-kubeconfig truncate race, build-#4 runs 28747505753/28749110239).
+    "per-resource-kubeconfig-2026-07-05",
     module.irsa_crossplane.iam_role_arn,
     var.crossplane_provider_family_aws_version,
     sha256(local.crossplane_aws_provider_manifest),
@@ -276,7 +278,7 @@ resource "terraform_data" "crossplane_aws_provider" {
       aws eks update-kubeconfig \
         --name ${module.eks.cluster_name} \
         --region ${var.aws_region} \
-        --kubeconfig /tmp/k8-platform-kubeconfig
+        --kubeconfig /tmp/k8-platform-kubeconfig-crossplane_aws_provider
 
       # Self-heal a WEDGED (non-fresh) cluster BEFORE applying the renamed
       # Provider. On a cluster where an earlier failed run already created the
@@ -291,18 +293,18 @@ resource "terraform_data" "crossplane_aws_provider" {
       # a FRESH cluster but cannot take effect in-place while the orphan lingers,
       # so delete it (and let its ProviderRevision tear down) first. Idempotent:
       # --ignore-not-found makes this a no-op on a fresh cluster. POSIX /bin/sh.
-      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl delete \
+      KUBECONFIG=/tmp/k8-platform-kubeconfig-crossplane_aws_provider kubectl delete \
         provider.pkg.crossplane.io provider-family-aws --ignore-not-found --wait=false
       # Wait until the stray Provider is actually gone (its ProviderRevision is
       # garbage-collected with it) so the Lock can rebuild the dependency DAG
       # cleanly before the renamed Provider is applied below.
       for i in $(seq 1 30); do
-        KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl get \
+        KUBECONFIG=/tmp/k8-platform-kubeconfig-crossplane_aws_provider kubectl get \
           provider.pkg.crossplane.io provider-family-aws >/dev/null 2>&1 || break
         sleep 2
       done
 
-      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl apply -f - <<'MANIFEST'
+      KUBECONFIG=/tmp/k8-platform-kubeconfig-crossplane_aws_provider kubectl apply -f - <<'MANIFEST'
 ${local.crossplane_aws_provider_manifest}
 MANIFEST
       # On a FRESH Crossplane install the Provider object is created above but
@@ -310,7 +312,7 @@ MANIFEST
       # ServiceAccount (cold xpkg image pull on a t3.medium). Wait for the
       # provider to be Healthy so its Deployment + SA exist before we verify
       # them (OI-2026-06-05-3, run 27023573285).
-      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl wait \
+      KUBECONFIG=/tmp/k8-platform-kubeconfig-crossplane_aws_provider kubectl wait \
         --for=condition=Healthy provider.pkg.crossplane.io/upbound-provider-family-aws \
         --timeout=300s
 
@@ -321,12 +323,12 @@ MANIFEST
       # old delete+rollout-by-label dance is gone. Dump what the package manager
       # actually created so any future label/SA drift is visible in the log.
       echo "--- crossplane-system deploy/sa (labels) ---"
-      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl -n crossplane-system get deploy,sa --show-labels 2>&1 || true
+      KUBECONFIG=/tmp/k8-platform-kubeconfig-crossplane_aws_provider kubectl -n crossplane-system get deploy,sa --show-labels 2>&1 || true
       echo "--- crossplane-system pod serviceAccounts ---"
-      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl -n crossplane-system get pods \
+      KUBECONFIG=/tmp/k8-platform-kubeconfig-crossplane_aws_provider kubectl -n crossplane-system get pods \
         -o 'jsonpath={range .items[*]}{.metadata.name}{"  sa="}{.spec.serviceAccountName}{"\n"}{end}' 2>&1 || true
       echo "--- providers / providerrevisions ---"
-      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl get providers.pkg.crossplane.io,providerrevisions.pkg.crossplane.io 2>&1 || true
+      KUBECONFIG=/tmp/k8-platform-kubeconfig-crossplane_aws_provider kubectl get providers.pkg.crossplane.io,providerrevisions.pkg.crossplane.io 2>&1 || true
 
       # Assert exactly ONE Provider owns the family-aws package. The
       # deadlock in OI-2026-06-06-2 was two Provider objects
@@ -335,7 +337,7 @@ MANIFEST
       # the rename there must be exactly one. Count Providers whose
       # spec.package contains "provider-family-aws"; warn LOUDLY if >1 so a
       # re-introduced duplicate is visible in the log without a re-run.
-      FAMILY_OWNERS=$(KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl get providers.pkg.crossplane.io \
+      FAMILY_OWNERS=$(KUBECONFIG=/tmp/k8-platform-kubeconfig-crossplane_aws_provider kubectl get providers.pkg.crossplane.io \
         -o 'jsonpath={range .items[*]}{.spec.package}{"\n"}{end}' 2>/dev/null \
         | grep -c 'provider-family-aws' || echo 0)
       echo "--- family-aws package Provider owner count: $FAMILY_OWNERS (expect 1) ---"
@@ -353,7 +355,7 @@ MANIFEST
       # for the SA to materialise (poll up to ~3 min for a cold pull). The hard
       # gate below then asserts the SA name. POSIX /bin/sh.
       i=0
-      until KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl get sa -n crossplane-system \
+      until KUBECONFIG=/tmp/k8-platform-kubeconfig-crossplane_aws_provider kubectl get sa -n crossplane-system \
             upbound-provider-family-aws -o name >/dev/null 2>&1; do
         i=$((i + 1))
         [ "$i" -ge 36 ] && break
@@ -371,7 +373,7 @@ MANIFEST
       # turns that silent IRSA misconfiguration into a hard terraform
       # apply failure caught in CI rather than surfaced as AccessDenied
       # during chainsaw.
-      SA=$(KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl get sa -n crossplane-system \
+      SA=$(KUBECONFIG=/tmp/k8-platform-kubeconfig-crossplane_aws_provider kubectl get sa -n crossplane-system \
         upbound-provider-family-aws \
         -o jsonpath='{.metadata.name}' 2>/dev/null || echo "MISSING")
       if [ "$SA" != "upbound-provider-family-aws" ]; then
@@ -383,15 +385,15 @@ MANIFEST
         echo "Dumping package-manager state to disambiguate WITHOUT a re-run." >&2
         echo "===== FAILURE DIAGNOSTICS (each step best-effort) =====" >&2
         echo "--- providerrevisions (get) ---" >&2
-        KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl get providerrevision 2>&1 || true
+        KUBECONFIG=/tmp/k8-platform-kubeconfig-crossplane_aws_provider kubectl get providerrevision 2>&1 || true
         echo "--- providerrevisions (describe) ---" >&2
-        KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl describe providerrevision 2>&1 || true
+        KUBECONFIG=/tmp/k8-platform-kubeconfig-crossplane_aws_provider kubectl describe providerrevision 2>&1 || true
         echo "--- package lock (get lock lock -o yaml) ---" >&2
-        KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl get lock lock -o yaml 2>&1 || true
+        KUBECONFIG=/tmp/k8-platform-kubeconfig-crossplane_aws_provider kubectl get lock lock -o yaml 2>&1 || true
         echo "--- crossplane controller logs (tail 120) ---" >&2
-        KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl -n crossplane-system logs deploy/crossplane --tail=120 2>&1 || true
+        KUBECONFIG=/tmp/k8-platform-kubeconfig-crossplane_aws_provider kubectl -n crossplane-system logs deploy/crossplane --tail=120 2>&1 || true
         echo "--- provider,deploy,sa in crossplane-system (--show-labels) ---" >&2
-        KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl -n crossplane-system get provider,deploy,sa --show-labels 2>&1 || true
+        KUBECONFIG=/tmp/k8-platform-kubeconfig-crossplane_aws_provider kubectl -n crossplane-system get provider,deploy,sa --show-labels 2>&1 || true
         echo "===== END FAILURE DIAGNOSTICS =====" >&2
         exit 1
       fi
@@ -415,6 +417,10 @@ MANIFEST
 # resource type itself is no longer registered (`|| true`).
 resource "terraform_data" "crossplane_function_patch_and_transform" {
   triggers_replace = [
+
+    # 2026-07-05: per-resource kubeconfig path (concurrent update-kubeconfig truncate race, build-#4 runs 28747505753/28749110239).
+
+    "per-resource-kubeconfig-2026-07-05",
     var.crossplane_function_patch_and_transform_version,
     # Bump this sentinel when the local-exec command body or the embedded
     # manifest shape changes (e.g. v1beta1 -> v1 promotion + pre-delete).
@@ -429,15 +435,15 @@ resource "terraform_data" "crossplane_function_patch_and_transform" {
       aws eks update-kubeconfig \
         --name ${module.eks.cluster_name} \
         --region ${var.aws_region} \
-        --kubeconfig /tmp/k8-platform-kubeconfig
+        --kubeconfig /tmp/k8-platform-kubeconfig-crossplane_function_patch_and_transform
       # Unconditional pre-delete of any pre-existing v1beta1 Function object.
       # v2.3 does not serve the v1beta1 apiVersion (no conversion webhook),
       # so applying v1 over an existing v1beta1 object would fail with
       # "no matches for kind \"Function\" in version \"pkg.crossplane.io/v1beta1\"".
       # --ignore-not-found handles the "no such object" case; || true handles
       # the "no such resource type registered" case.
-      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl delete function function-patch-and-transform --ignore-not-found || true
-      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl apply -f - <<'MANIFEST'
+      KUBECONFIG=/tmp/k8-platform-kubeconfig-crossplane_function_patch_and_transform kubectl delete function function-patch-and-transform --ignore-not-found || true
+      KUBECONFIG=/tmp/k8-platform-kubeconfig-crossplane_function_patch_and_transform kubectl apply -f - <<'MANIFEST'
       apiVersion: pkg.crossplane.io/v1
       kind: Function
       metadata:
@@ -457,6 +463,10 @@ resource "terraform_data" "crossplane_function_patch_and_transform" {
 # ASM Secret managed resource.
 resource "terraform_data" "crossplane_provider_aws_secretsmanager" {
   triggers_replace = [
+
+    # 2026-07-05: per-resource kubeconfig path (concurrent update-kubeconfig truncate race, build-#4 runs 28747505753/28749110239).
+
+    "per-resource-kubeconfig-2026-07-05",
     var.crossplane_provider_aws_secretsmanager_version,
     # Bump on a manifest-body change (the version var doesn't cover it).
     # 2026-06-06: added runtimeConfigRef for IRSA (auto-011 blocker #3, Option A).
@@ -468,8 +478,8 @@ resource "terraform_data" "crossplane_provider_aws_secretsmanager" {
       aws eks update-kubeconfig \
         --name ${module.eks.cluster_name} \
         --region ${var.aws_region} \
-        --kubeconfig /tmp/k8-platform-kubeconfig
-      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl apply -f - <<'MANIFEST'
+        --kubeconfig /tmp/k8-platform-kubeconfig-crossplane_provider_aws_secretsmanager
+      KUBECONFIG=/tmp/k8-platform-kubeconfig-crossplane_provider_aws_secretsmanager kubectl apply -f - <<'MANIFEST'
       apiVersion: pkg.crossplane.io/v1
       kind: Provider
       metadata:
@@ -498,6 +508,10 @@ resource "terraform_data" "crossplane_provider_aws_secretsmanager" {
 # XDatabase XR stays Synced=False forever.
 resource "terraform_data" "crossplane_provider_aws_rds" {
   triggers_replace = [
+
+    # 2026-07-05: per-resource kubeconfig path (concurrent update-kubeconfig truncate race, build-#4 runs 28747505753/28749110239).
+
+    "per-resource-kubeconfig-2026-07-05",
     var.crossplane_provider_aws_rds_version,
     # Bump on a manifest-body change (the version var doesn't cover it).
     # 2026-06-06: added runtimeConfigRef for IRSA (auto-011 blocker #3, Option A).
@@ -509,8 +523,8 @@ resource "terraform_data" "crossplane_provider_aws_rds" {
       aws eks update-kubeconfig \
         --name ${module.eks.cluster_name} \
         --region ${var.aws_region} \
-        --kubeconfig /tmp/k8-platform-kubeconfig
-      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl apply -f - <<'MANIFEST'
+        --kubeconfig /tmp/k8-platform-kubeconfig-crossplane_provider_aws_rds
+      KUBECONFIG=/tmp/k8-platform-kubeconfig-crossplane_provider_aws_rds kubectl apply -f - <<'MANIFEST'
       apiVersion: pkg.crossplane.io/v1
       kind: Provider
       metadata:
@@ -531,9 +545,9 @@ resource "terraform_data" "crossplane_provider_aws_rds" {
       # rejects a policy whose matched kind has no resolvable GVR, so the kyverno
       # policy apply (terraform_data.kyverno_audit_policies, which depends_on
       # this resource) MUST run after the Instance CRD is Established.
-      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl wait --for=condition=Healthy --timeout=300s \
+      KUBECONFIG=/tmp/k8-platform-kubeconfig-crossplane_provider_aws_rds kubectl wait --for=condition=Healthy --timeout=300s \
         provider.pkg.crossplane.io/provider-aws-rds
-      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl wait --for=condition=established --timeout=180s \
+      KUBECONFIG=/tmp/k8-platform-kubeconfig-crossplane_provider_aws_rds kubectl wait --for=condition=established --timeout=180s \
         crd/instances.rds.aws.m.upbound.io
     EOT
   }
@@ -611,6 +625,10 @@ resource "helm_release" "kyverno" {
 # in the kubernetes terraform provider.
 resource "terraform_data" "kyverno_audit_policies" {
   triggers_replace = [
+
+    # 2026-07-05: per-resource kubeconfig path (concurrent update-kubeconfig truncate race, build-#4 runs 28747505753/28749110239).
+
+    "per-resource-kubeconfig-2026-07-05",
     sha1(join("", [for f in fileset("${path.module}/../../policies/audit", "*.yaml") : filesha1("${path.module}/../../policies/audit/${f}")])),
   ]
 
@@ -619,11 +637,11 @@ resource "terraform_data" "kyverno_audit_policies" {
       aws eks update-kubeconfig \
         --name ${module.eks.cluster_name} \
         --region ${var.aws_region} \
-        --kubeconfig /tmp/k8-platform-kubeconfig
-      KUBECONFIG=/tmp/k8-platform-kubeconfig \
+        --kubeconfig /tmp/k8-platform-kubeconfig-kyverno_audit_policies
+      KUBECONFIG=/tmp/k8-platform-kubeconfig-kyverno_audit_policies \
         kubectl wait --for=condition=Available --timeout=300s \
           -n kyverno deploy -l app.kubernetes.io/component=admission-controller
-      KUBECONFIG=/tmp/k8-platform-kubeconfig \
+      KUBECONFIG=/tmp/k8-platform-kubeconfig-kyverno_audit_policies \
         kubectl apply -f ${path.module}/../../policies/audit/
     EOT
   }
@@ -716,6 +734,10 @@ resource "helm_release" "argocd" {
 # causes a re-apply on the next terraform run.
 resource "terraform_data" "argocd_bootstrap" {
   triggers_replace = [
+
+    # 2026-07-05: per-resource kubeconfig path (concurrent update-kubeconfig truncate race, build-#4 runs 28747505753/28749110239).
+
+    "per-resource-kubeconfig-2026-07-05",
     filesha1("${path.module}/../../argocd/bootstrap.yaml"),
   ]
 
@@ -724,9 +746,9 @@ resource "terraform_data" "argocd_bootstrap" {
       aws eks update-kubeconfig \
         --name ${module.eks.cluster_name} \
         --region ${var.aws_region} \
-        --kubeconfig /tmp/k8-platform-kubeconfig
-      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl wait --for=condition=Available --timeout=300s -n argocd deploy/argocd-server
-      KUBECONFIG=/tmp/k8-platform-kubeconfig kubectl apply -f ${path.module}/../../argocd/bootstrap.yaml
+        --kubeconfig /tmp/k8-platform-kubeconfig-argocd_bootstrap
+      KUBECONFIG=/tmp/k8-platform-kubeconfig-argocd_bootstrap kubectl wait --for=condition=Available --timeout=300s -n argocd deploy/argocd-server
+      KUBECONFIG=/tmp/k8-platform-kubeconfig-argocd_bootstrap kubectl apply -f ${path.module}/../../argocd/bootstrap.yaml
     EOT
   }
 
