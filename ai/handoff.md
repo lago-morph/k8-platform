@@ -8,7 +8,62 @@ last, the current state, and the next concrete steps. Keep it factual
 
 ## NEW SESSION QUICKSTART (read this first)
 
-> ## ▶ 2026-07-05 (latest) — 🟢 MATERIAL CHAIN MERGED (#243, ADR-0012 adopted); account rotated to `211125323087`; next = clean build #4 <!-- noqa: account-id - run provenance, account rotates -->
+> ## ▶ 2026-07-05 EVE (latest) — 🟢 MATERIAL CHAIN LIVE ON BUILD #4; FOUR live defects fixed in code; oracles + live-verify still OWED
+> **Session end state (sandbox expired mid-build; all work merged, all
+> gates that ran are green).** Seven PRs merged to `main` (HEAD
+> `145ea6e`), each with its honest gates:
+> **#243** the OI-2026-06-12-1 material chain (chainsaw
+> **28745436950** green for exact HEAD; ADR-0012 adopted) · **#244**
+> handoff · **#245** kubeconfig truncate-race fix (11 provisioners
+> shared one truncate-rewritten file; validated by management attempt
+> #3 = run **28750304494** green) · **#246** scenario-corpus charter
+> package (parallel track) · **#248** producer-RBAC bootstrap-ordering
+> fix (chainsaw **28752221450** green; the RBAC now rides the claim
+> app with 00-namespace) · **#250** tag-charset fix (parens/comma in
+> XR descriptions broke CreateSecret) · **#251**
+> secretsmanager:GetResourcePolicy for the crossplane policy (upjet's
+> observe path; applied by management run **28755969208** green).
+> **Build #4 chain (fresh account `211125323087`):** probe <!-- noqa: account-id - run provenance, account rotates -->
+> **28744551280** → base **28746752536** → management **28750304494**
+> (+ final policy apply **28755969208**) → both deliberate-sync gates
+> pulled (claim re-pulled at `5d75248` after bootstrap propagated the
+> include-list change — remember: app-spec changes need BOOTSTRAP to
+> sync first, THEN the gate) → registration Secret complete on its own
+> → spoke registered, app stack converged: spoke-hello /
+> ingress-nginx / external-dns / eso / keycloak ALL Synced+Healthy
+> (observability pair = known OI-2026-06-11-3; workload1-cluster
+> OutOfSync by design).
+> **THE HEADLINE (observed live 21:57Z, not yet oracle-recorded):
+> both XPlatformSecret XRs Synced=True Ready=True — the platform
+> generated material, the SecretVersions wrote AWSCURRENT into the
+> deterministic containers, the spoke keycloak-admin ES pulled the
+> cross-cluster key, and Keycloak BOOTED on it.** ADR-0012 works
+> end-to-end live. All four defects were first-live-exercise finds:
+> chainsaw runs on admin CI creds + paren-free descriptions, so only
+> the live IRSA/tagging path could surface them — exactly the
+> defense-in-depth the oracle layers predict.
+> **NOT DONE — the evidence half (owed to the next session):**
+> (1) the six oracles were NEVER RUN as recorded checks
+> (hello-e2e-live, spoke-cluster-secret-live, sandbox-kubectl-relay,
+> rds-instance-live, keycloak-e2e-live, + the ASM AWSCURRENT check);
+> (2) **live-verify.yml was NEVER DISPATCHED** — OI-2026-06-12-1's
+> close condition (live-verify green) is UNMET and the OI stays OPEN;
+> (3) SUBSTRATE-READINESS has NO build-#4 row yet (no oracle run IDs =
+> no row, per the gate's own rule); (4) no retrospective for this
+> session yet.
+> **NEXT SESSION:** (1) `scripts/whereami.sh` — if account
+> `211125323087` is still alive, run the six oracles + dispatch <!-- noqa: account-id - run provenance, account rotates -->
+> `live-verify.yml` immediately (substrate is up and converged),
+> record run IDs in SUBSTRATE + close OI-2026-06-12-1; if rotated,
+> clean build #5 from `main` (zero manual steps — all four fixes are
+> merged; recipe unchanged) then the same evidence pass. (2) Phase-5
+> identity half (SUBSTRATE rows 10/11; the docs plan says its
+> user-facing pages get written as `contract` first). (3) Stretch:
+> OI-2026-06-11-4, OI-2026-06-11-3. Parallel tracks live in
+> `planning/scenario-corpus/` (charter → new scenarios repo; docs
+> plan → docs-track session).
+
+> ## ▶ 2026-07-05 (superseded by EVE above) — 🟢 MATERIAL CHAIN MERGED (#243, ADR-0012 adopted); account rotated to `211125323087`; next = clean build #4 <!-- noqa: account-id - run provenance, account rotates -->
 > **The OI-2026-06-12-1 rework is LANDED on `main` (`b2880a9`).** Creds
 > probe run **28744551280** confirmed the GHA secrets resolve to the
 > fresh account (Route53 zone reachable; only the expected
