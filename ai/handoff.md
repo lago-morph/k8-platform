@@ -44,6 +44,19 @@ last, the current state, and the next concrete steps. Keep it factual
 > (usernameClaim=preferred_username, groupsClaim=groups, prefix `kc:`);
 > (c) REQ-AUTH-10 federation oracle. Stretch: OI-2026-06-11-4 (CI
 > queue), OI-2026-06-11-3 (spoke EBS CSI + StorageClass).
+> **PARALLEL TRACK (owner-directed 2026-07-05, contained in
+> `planning/scenario-corpus/`):** a separate `k8s-platform-scenarios`
+> repo (charter.md is its first commit — docs-blind scenario corpus,
+> four-way defect triage) + documentation as a first-class deliverable
+> (documentation-plan.md: diataxis, source in `docs/site/` here,
+> published via Pages; phase-5 pages written as `contract` BEFORE the
+> implementation). Scenario seed backlog: scenario-brainstorm.md.
+> Neither track blocks the build/identity work in this session.
+> **Build-#4 note:** the management apply hit a REAL committed defect —
+> 11 local-exec provisioners shared one truncate-rewritten kubeconfig
+> (parallelism race; builds #1–#3 won the timing). Fixed red-first in
+> #245 (`test_tf_provisioner_kubeconfig_isolation.sh`); management
+> attempt #3 dispatched from `7acddab`.
 > **Sandbox note:** this remote sandbox's egress policy 403s
 > github.com release downloads (helm charts, yq, kubeconform binaries)
 > — `test_helm_render.sh` fails HERE on unmodified main; CI is fine.
