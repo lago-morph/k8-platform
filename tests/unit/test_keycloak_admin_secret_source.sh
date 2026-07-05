@@ -1,24 +1,30 @@
 #!/usr/bin/env bash
-# Pins the keycloak-admin bootstrap-secret SOURCE to the OI-2026-06-12-1
-# quarantine contract: while no committed Application syncs the
-# XPlatformSecret producers (argocd/apps/keycloak-secrets.yaml was reverted
-# out of PR #227 with the material chain), the spoke keycloak-admin
-# ExternalSecret MUST be the in-cluster generatorRef form — an ASM-pull
-# remoteRef references a key nothing provisions, and with
-# deletionPolicy: Delete ESO actively DELETES the target Secret, leaving
-# the StatefulSet in CreateContainerConfigError forever.
+# Pins the keycloak-admin bootstrap-secret SOURCE to the producer-coupled
+# contract of the OI-2026-06-12-1 material-chain re-land (ADR-12992f055b):
+# the spoke keycloak-admin ExternalSecret is the ASM-pull form, and the
+# key it pulls is provisioned by a COMMITTED producer — the keycloak-admin
+# XPlatformSecret (platform-services/keycloak/secrets/keycloak-secrets.yaml)
+# synced by argocd/apps/keycloak-secrets.yaml, whose Composition writes
+# in-platform generated material to the deterministic
+# k8-platform/<namespace>/<name> ASM key.
 #
-# This is the red-first reproduction of the clean-build-#3 defect
-# (2026-06-12): the PR #227 revert restored everything EXCEPT this file,
-# which kept the chain's ASM-pull form (`k8-platform/keycloak/keycloak-admin`)
-# while the producer Application was reverted away. Live symptom: ES status
-# SecretDeleted, secret "keycloak-admin" not found, keycloak pods 0/1.
+# History (clean-build-#3 defect, 2026-06-12): the PR #227 chain revert
+# restored everything EXCEPT this file, leaving an ASM-pull ES whose source
+# nothing provisioned; with deletionPolicy Delete, ESO actively DELETED the
+# target Secret (keycloak pods CreateContainerConfigError). The quarantine
+# form of this test (#231) pinned the interim generatorRef ES and
+# self-flagged the moment the producer Application reappeared, forcing
+# file + producer + test to move together — which is exactly this update.
 #
-# When the OI-2026-06-12-1 material-chain rework re-lands the producer
-# (the keycloak-secrets Application + valued XPlatformSecret chain), this
-# test is updated IN THE SAME PR to assert the ASM-pull form against the
-# deterministic key the chain provisions (audit-before-enforce: the swap
-# and its producer land together or not at all).
+# The coupling this test enforces (either side changing alone fails):
+#   1. The producer Application exists and syncs the XR directory.
+#   2. The committed keycloak-admin XPlatformSecret exists — and the ES
+#      remoteRef key equals k8-platform/<XR-ns>/<XR-name> DERIVED from
+#      that XR document, not hardcoded twice.
+#   3. The ES has no generatorRef and the spoke file ships no Password
+#      generator (the interim in-cluster generation is retired).
+#   4. deletionPolicy Retain (the #231 lesson: never let a source gap
+#      erase the running StatefulSet's bootstrap credential).
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/lib/test-helpers.sh"
@@ -27,67 +33,85 @@ require_tool yq
 ROOT="$HERE/../.."
 ES_FILE="$ROOT/platform-services/keycloak/spoke/keycloak-admin-externalsecret.yaml"
 PRODUCER_APP="$ROOT/argocd/apps/keycloak-secrets.yaml"
+PRODUCER_XRS="$ROOT/platform-services/keycloak/secrets/keycloak-secrets.yaml"
 VALUES="$ROOT/platform-services/keycloak/values.yaml"
 
 [ -f "$ES_FILE" ] || { fail "manifest present" "$ES_FILE missing"; summary; }
 pass "keycloak-admin ES manifest present"
 
-if [ -f "$PRODUCER_APP" ]; then
-  # The material chain re-landed: the ASM-pull form is legitimate again.
-  # This test's quarantine assertions no longer apply — the re-landing PR
-  # must replace them with the producer-coupled contract (see header).
-  fail "quarantine contract stale" \
-    "argocd/apps/keycloak-secrets.yaml exists — update this test in the same PR to pin the ASM-pull form against the chain's deterministic key"
+# ---- 1. the producer Application ---------------------------------------------
+if [ ! -f "$PRODUCER_APP" ]; then
+  fail "producer Application present" \
+    "argocd/apps/keycloak-secrets.yaml missing — an ASM-pull consumer without a committed producer is the #231 defect; if the chain was reverted again, swap this file back to the generatorRef form IN THE SAME PR"
   summary
 fi
-pass "no committed XPlatformSecret producer Application (quarantine state)"
+pass "producer Application argocd/apps/keycloak-secrets.yaml present"
 
-# ---- the ExternalSecret doc --------------------------------------------------
+app_path="$(yq -r '.spec.source.path' "$PRODUCER_APP")"
+[ "$app_path" = "platform-services/keycloak/secrets" ] \
+  && pass "producer app syncs platform-services/keycloak/secrets" \
+  || fail "producer app path" "got: $app_path"
+
+# ---- 2. the committed XR producer + derived key coupling ---------------------
+[ -f "$PRODUCER_XRS" ] || { fail "producer XRs present" "$PRODUCER_XRS missing"; summary; }
+
+xr_ns_name="$(yq -r 'select(.kind == "XPlatformSecret") | select(.metadata.name == "keycloak-admin") | .metadata.namespace + "/" + .metadata.name' "$PRODUCER_XRS")"
+[ "$xr_ns_name" = "keycloak/keycloak-admin" ] \
+  && pass "committed keycloak-admin XPlatformSecret present (ns keycloak)" \
+  || fail "producer XR" "got: '$xr_ns_name' — expected keycloak/keycloak-admin in $PRODUCER_XRS"
+
+# The deterministic key the platform-secret Composition provisions for that
+# XR (fmt pinned by tests/unit/test_platform_secret_composition.sh).
+expected_key="k8-platform/${xr_ns_name}"
+
+# ---- 3. the ExternalSecret doc ------------------------------------------------
 es_doc() { yq 'select(.kind == "ExternalSecret")' "$ES_FILE"; }
-gen_doc() { yq 'select(.kind == "Password")' "$ES_FILE"; }
 
 [ "$(es_doc | yq -r '.metadata.name + "/" + .metadata.namespace')" = "keycloak-admin/keycloak" ] \
   && pass "ES is keycloak-admin in ns keycloak" \
   || fail "ES identity" "$(es_doc | yq -r '.metadata.name + "/" + .metadata.namespace')"
 
-# No remoteRef to an unprovisioned platform ASM key while quarantined.
-remote_keys="$(es_doc | yq -r '[.spec.data[]?.remoteRef.key] | join(",")')"
-if [ -z "$remote_keys" ] || [ "$remote_keys" = "null" ]; then
-  pass "ES has no ASM remoteRef (in-cluster generation only)"
-else
-  fail "ES pulls from ASM while no producer exists" "remoteRef keys: $remote_keys"
-fi
+remote_key="$(es_doc | yq -r '.spec.data[0].remoteRef.key')"
+[ "$remote_key" = "$expected_key" ] \
+  && pass "ES pulls the producer's deterministic ASM key ($expected_key)" \
+  || fail "ES remoteRef key" "got: '$remote_key' — must equal k8-platform/<XR-ns>/<XR-name> = $expected_key"
 
-# generatorRef present and bound to a Password generator in the same file.
-gen_ref="$(es_doc | yq -r '.spec.dataFrom[0].sourceRef.generatorRef.kind + "/" + .spec.dataFrom[0].sourceRef.generatorRef.name')"
-[ "$gen_ref" = "Password/keycloak-admin-password" ] \
-  && pass "ES sources a generatorRef (Password/keycloak-admin-password)" \
-  || fail "ES generatorRef" "got: $gen_ref"
+remote_prop="$(es_doc | yq -r '.spec.data[0].remoteRef.property')"
+[ "$remote_prop" = "value" ] \
+  && pass "ES extracts the chain's payload key (property: value)" \
+  || fail "ES remoteRef property" "got: '$remote_prop' — the material ES renders {\"value\":…}"
 
-[ "$(gen_doc | yq -r '.metadata.name + "/" + .metadata.namespace')" = "keycloak-admin-password/keycloak" ] \
-  && pass "Password generator doc present in the same file, same ns" \
-  || fail "Password generator" "$(gen_doc | yq -r '.metadata.name + "/" + .metadata.namespace')"
+# No generatorRef and no Password generator doc: in-cluster generation is
+# retired with the chain re-land (ASM is the single source of truth).
+gen_ref="$(es_doc | yq -r '.spec.dataFrom[0].sourceRef.generatorRef.kind // ""')"
+[ -z "$gen_ref" ] \
+  && pass "ES has no generatorRef (ASM-pull form)" \
+  || fail "ES still sources a generator" "generatorRef kind: $gen_ref"
 
-# Generate ONCE: a regenerating bootstrap password rotates under the
-# running StatefulSet.
-[ "$(es_doc | yq -r '.spec.refreshInterval')" = "0" ] \
-  && pass "refreshInterval 0 (generate once)" \
-  || fail "refreshInterval" "got: $(es_doc | yq -r '.spec.refreshInterval')"
+pw_docs="$(yq 'select(.kind == "Password")' "$ES_FILE" | grep -c "kind: Password" || true)"
+[ "$pw_docs" = "0" ] \
+  && pass "no Password generator doc ships in the spoke file" \
+  || fail "Password generator still present" "$pw_docs Password doc(s) in $ES_FILE"
 
-# Retain on delete: Delete is the policy that erased the live Secret when
-# the source went missing.
+# Retain on delete/source-loss: Delete is the policy that erased the live
+# Secret when the source went missing (#231).
 [ "$(es_doc | yq -r '.spec.target.deletionPolicy')" = "Retain" ] \
   && pass "target deletionPolicy Retain" \
   || fail "deletionPolicy" "got: $(es_doc | yq -r '.spec.target.deletionPolicy')"
 
-# Template must materialize the key the chart consumes.
+[ "$(es_doc | yq -r '.spec.secretStoreRef.kind + "/" + .spec.secretStoreRef.name')" = "ClusterSecretStore/aws-secrets-manager" ] \
+  && pass "ES uses the shared ClusterSecretStore" \
+  || fail "secretStoreRef" "got: $(es_doc | yq -r '.spec.secretStoreRef.kind + "/" + .spec.secretStoreRef.name')"
+
+# Template must materialize the key the chart consumes, from the pulled
+# `value` property.
 [ "$(es_doc | yq -r '.spec.target.name')" = "keycloak-admin" ] \
   && pass "target Secret named keycloak-admin" \
   || fail "target name" "got: $(es_doc | yq -r '.spec.target.name')"
 
 tmpl_pw="$(es_doc | yq -r '.spec.target.template.data["admin-password"]')"
-[ "$tmpl_pw" = "{{ .password }}" ] \
-  && pass "template maps admin-password from the generator's .password" \
+[ "$tmpl_pw" = "{{ .value }}" ] \
+  && pass "template maps admin-password from the pulled .value" \
   || fail "template key" "got: $tmpl_pw"
 
 # Chart side: values.yaml must consume exactly that Secret/key.

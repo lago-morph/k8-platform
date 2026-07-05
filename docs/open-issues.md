@@ -31,7 +31,7 @@ is the sequence number for that date.
 
 | ID | One-line | Note |
 |----|----------|------|
-| OI-2026-06-12-1 | XPlatformSecret material chain REVERTED from PR #227; live-verify's secretsmanager-Secret kind stays SKIP until reworked | catch-block fix MERGED (3 bugs, see 16:30 update) + chainsaw green on fresh account (16:50 update); remaining = the Task-3 rework |
+| OI-2026-06-12-1 | XPlatformSecret material chain REVERTED from PR #227; live-verify's secretsmanager-Secret kind stays SKIP until reworked | catch-block fix MERGED + chainsaw green on fresh account; **chain RE-LANDED per ADR-12992f055b (adopted as ADR-0012) 2026-07-05** — chainsaw-gated; closes on merged green gate + live-verify evidence |
 | OI-2026-06-11-4 | **NEW** — CI-harness hardening queue (retro 2026-06-11-224 R2/R3/R4) | deferred deliberately: a concurrent session is live against these workflows; see entry. (Renumbered from the retro branch's -1 at merge: the concurrent build session took OI-2026-06-11-1..-3.) |
 | OI-2026-06-11-3 | **NEW** — spoke clusters ship NO CSI driver / StorageClass → every PVC-bearing add-on Pending forever (kube-prometheus-stack Degraded, loki Progressing on builds #1 AND #2 — now DIAGNOSED) | open; durable fix = EBS CSI + default StorageClass (+ CSI IRSA) in the platform-cluster Composition — feature-sized, next session |
 | OI-2026-06-11-2 | **NEW** — kyverno admission controller OOM-CrashLoop + ALL report-cleanup jobs ImagePullBackOff (bitnami/kubectl pullback) → fail-closed webhook blocks hub applies in down-windows | durable helm-values fix (bitnamilegacy images + 768Mi) authored in PR #227, applied via branch CI runs 27384384429+27384541609 (the first hit the webhook's own bootstrap deadlock; manifests landed, re-run recorded the release) — see entry |
@@ -331,6 +331,20 @@ naming; generator → generate-once ES → SecretVersion writer; the
 keycloak-secrets Application + spoke keycloak-admin ASM-pull swap),
 chainsaw-gated — the fixed catch block now surfaces real MR errors if the
 job-timeout class ever recurs.
+
+**2026-07-05 UPDATE — the rework is RE-LANDED (this entry closes when its
+gates are green).** The GHA creds probe (run 28744551280) confirmed the
+rotated account `211125323087`; <!-- noqa: account-id - run provenance, account rotates -->
+the chain re-landed from the bdcc56a design state per ADR-12992f055b —
+now ADOPTED as `docs/decisions/0012-secretversion-writes-mr-owned-asm-values.md`:
+deterministic naming + generator → generate-once ES → SecretVersion writer,
+the keycloak-secrets producer Application, and the spoke keycloak-admin
+ASM-pull swap (deletionPolicy Retain, the #231 lesson) with
+`test_keycloak_admin_secret_source.sh` rewritten to the producer-coupled
+contract IN THE SAME PR (the quarantine test self-flagged as designed).
+Scenario 00 now asserts the AWSCURRENT `{"value":…}` payload out-of-band.
+Close conditions: chainsaw green for the PR HEAD → merge → live-verify.yml
+green on the secretsmanager-Secret kind (run IDs land here + SUBSTRATE).
 
 ---
 

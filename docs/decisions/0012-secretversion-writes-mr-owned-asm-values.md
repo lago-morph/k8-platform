@@ -1,10 +1,18 @@
-# ADR: Crossplane-native SecretVersion writes values into MR-owned ASM containers
+# 0012 — Crossplane-native SecretVersion writes values into MR-owned ASM containers
 
 - **ID**: ADR-12992f055b
-- **Status**: Draft (not yet adopted to docs/decisions/; the implementing change is quarantined in OI-2026-06-12-1 pending the chainsaw-environment diagnosis)
-- **Date**: 2026-06-12
-- **Source retrospective**: ../2026-06-12-228.md
-- **PRs covered**: #227 (commits `0ce9f41` → `a95ee41` → `bdcc56a`, since reverted; the design survives as the recorded rework plan)
+- **Status**: Accepted (owner-ratified 2026-07-05 — the material-chain re-land directive)
+- **Date**: 2026-06-12 (drafted); adopted 2026-07-05 with the OI-2026-06-12-1 re-land
+- **Source retrospective**: [`../../retrospective/2026-06-12-228.md`](../../retrospective/2026-06-12-228.md)
+- **PRs covered**: #227 (commits `0ce9f41` → `a95ee41` → `bdcc56a`, reverted with the
+  chainsaw-environment quarantine; the design survived as the recorded rework plan)
+  and the re-landing PR that adopts this ADR
+- **Mechanical enforcement**: `tests/unit/test_platform_secret_composition.sh`
+  (pins the SecretVersion writer kind, the `k8-platform/%s/%s` secretId combine,
+  the `json` source key, and the generate-once refresh) +
+  `tests/unit/test_keycloak_admin_secret_source.sh` (the producer-coupled
+  consumer contract: remoteRef key derived from the committed XR, no
+  generatorRef, deletionPolicy Retain)
 
 ## Context
 
@@ -29,12 +37,12 @@ The composed shape: a Password generator (readiness `None` — generators carry 
 
 - Easier: convergence is gate-free and order-independent; no ESO ownership semantics on a crossplane-owned resource; IAM stays within the existing `SecretsManager` Sid plus `secretsmanager:UpdateSecretVersionStage` (the version-retire path).
 - Harder / accepted: one more composed MR per XPlatformSecret (five total); the payload must round-trip as a JSON document so the consumer ExternalSecret's `dataFrom` extract still sees a map; rotation is deliberately out of scope (generate-once) — a future rotation story must replace the source ES, not the writer.
-- Open dependency: the implementing commits are reverted pending OI-2026-06-12-1 — the chainsaw environment failed *content-independently* (the long-proven composition failed identically at full bounds, run 27392834302), so this design is unvalidated by the gate through no fault of its own. The catch-block namespaced-MR fix is the prerequisite for the decisive run.
+- The original quarantine (OI-2026-06-12-1) is CLEARED: the chainsaw catch-block fix merged with #227 (three bugs that kept the MR loop silent), and the environmental red-window was excluded by the green run 27429434084 on the fresh account. The chain re-lands chainsaw-gated — the fixed catch block surfaces real MR errors if the job-timeout class ever recurs.
 
 ## References
 
-- [`../2026-06-12-228.md`](../2026-06-12-228.md) — the source retrospective (Phase 4).
-- `docs/open-issues.md` → OI-2026-06-12-1 — the quarantine record carrying the full exclusion trail and the reverted commit ids.
+- [`../../retrospective/2026-06-12-228.md`](../../retrospective/2026-06-12-228.md) — the source retrospective (Phase 4).
+- [`../open-issues.md`](../open-issues.md) → OI-2026-06-12-1 — the quarantine record carrying the full exclusion trail and the reverted commit ids.
 - PR #227 commits `0ce9f41`, `a95ee41`, `bdcc56a` (the three designs) and `614edc3`/`353843c`/`667e8ba` (the reverts).
 - external-secrets v0.9.13 `pkg/provider/aws/secretsmanager/secretsmanager.go` — the `managed-by` / `external-secrets` ownership constants and the unmanaged-secret error.
-- Related: `docs/decisions/0005-…` (ESO for secret movement/generation — this ADR carves out the MR-owned-container value-write case), `docs/decisions/0011-…` (composite-routed references — the same composite-routing idiom carries the container name into the SecretVersion).
+- Related: [`0005-eso-for-lightweight-secrets-xplatformsecret-for-aws-grade.md`](0005-eso-for-lightweight-secrets-xplatformsecret-for-aws-grade.md) (ESO for secret movement/generation — this ADR carves out the MR-owned-container value-write case), [`0011-composite-routed-cross-resource-references.md`](0011-composite-routed-cross-resource-references.md) (the same composite-routing idiom carries the container name into the SecretVersion).
