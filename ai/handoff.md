@@ -8,7 +8,48 @@ last, the current state, and the next concrete steps. Keep it factual
 
 ## NEW SESSION QUICKSTART (read this first)
 
-> ## ▶ 2026-06-12 EVE (latest) — 🟢🟢🟢 CLEAN BUILD #3 COMPLETE incl. the FIRST keycloak boot (OI-2026-06-07-5 + OI-2026-06-11-1 CLOSED)
+> ## ▶ 2026-07-05 (latest) — 🟢 MATERIAL CHAIN MERGED (#243, ADR-0012 adopted); account rotated to `211125323087`; next = clean build #4 <!-- noqa: account-id - run provenance, account rotates -->
+> **The OI-2026-06-12-1 rework is LANDED on `main` (`b2880a9`).** Creds
+> probe run **28744551280** confirmed the GHA secrets resolve to the
+> fresh account (Route53 zone reachable; only the expected
+> un-bootstrapped bucket/lock-table failures). PR **#243** re-landed the
+> chain from the bdcc56a design state per ADR-12992f055b — **adopted as
+> `docs/decisions/0012-secretversion-writes-mr-owned-asm-values.md`**:
+> deterministic `k8-platform/<ns>/<name>` naming; Password generator →
+> generate-once ES → crossplane-native **SecretVersion** writer; the
+> `keycloak-secrets` producer Application; the spoke keycloak-admin
+> ASM-pull swap (deletionPolicy **Retain**, the #231 lesson) with
+> `test_keycloak_admin_secret_source.sh` rewritten to the
+> producer-coupled contract in the same PR. **Chainsaw run
+> `28745436950` GREEN for the exact HEAD `91acd17`** (~9 min, full
+> real-ASM suite — the chain's FIRST green gate; the June job-timeouts
+> stay attributed to the retired account). Chainsaw-verify green on
+> attempt 2 (post-run re-run); unit + validate green; live-evidence
+> gate red by design (pre-producer, precedent #227). Scenario 00 now
+> asserts the AWSCURRENT `{"value":…}` payload out-of-band.
+> **What remains for OI-2026-06-12-1 to CLOSE: live-verify.yml green**
+> — needs build #4's substrate (the scoped verifier role + provisioned
+> XRs); dispatch it after the spoke + keycloak-secrets sync.
+> **NEXT (run order): (1) clean build #4 from `main`** (`b2880a9`) —
+> same recipe as #1–#3: base → management `apply-and-verify`; sync
+> `platform-cluster-claim` then `spoke-access` via the SSM relay
+> (`argocd app sync --core`, no patches); all six oracles incl. the
+> material chain's live evidence; append run IDs to
+> SUBSTRATE-READINESS. **(2) live-verify.yml** (closes
+> OI-2026-06-12-1). **(3) Phase-5 IDENTITY half** (SUBSTRATE rows
+> 10/11): (a) Cognito broker block ABSENT-or-real in the realm, URLs
+> from terraform/base outputs, client secret via the
+> keycloak-oidc-clients chain (now landed); (b) EKS
+> IdentityProviderConfig in the platform-cluster Composition
+> (usernameClaim=preferred_username, groupsClaim=groups, prefix `kc:`);
+> (c) REQ-AUTH-10 federation oracle. Stretch: OI-2026-06-11-4 (CI
+> queue), OI-2026-06-11-3 (spoke EBS CSI + StorageClass).
+> **Sandbox note:** this remote sandbox's egress policy 403s
+> github.com release downloads (helm charts, yq, kubeconform binaries)
+> — `test_helm_render.sh` fails HERE on unmodified main; CI is fine.
+> Tool workaround: `go install` via proxy.golang.org (yq, kubeconform).
+
+> ## ▶ 2026-06-12 EVE (superseded — material chain merged 2026-07-05; account rotated) — 🟢🟢🟢 CLEAN BUILD #3 COMPLETE incl. the FIRST keycloak boot (OI-2026-06-07-5 + OI-2026-06-11-1 CLOSED)
 > **Build #3 ran end-to-end on fresh account `798802785871`** <!-- noqa: account-id - run provenance, account rotates -->
 > from post-#227 `main` (`0dd6114`), zero manual steps. Chain: probe
 > 27429228144 → base **27429951073** → management **27430525986** →
@@ -64,7 +105,7 @@ last, the current state, and the next concrete steps. Keep it factual
 > kubectl access from their directory group". The largest remaining
 > design-heavy item.
 
-> ## ▶ 2026-06-13 (retro-guard implementation; NO account) — three guards + SUBSTRATE phase-5 rows merged; material chain DEFERRED to the account session
+> ## ▶ 2026-06-13 (superseded — the deferred material chain landed 2026-07-05, PR #243) — three guards + SUBSTRATE phase-5 rows merged; material chain DEFERRED to the account session
 > Implemented the sandbox-completable retro remedies (PR #241, four
 > commits, all unit-green): the chainsaw-dispatch **commit_sha guard**
 > in the pre-dispatch hook (blocks the hallucinated-SHA dispatch class;
