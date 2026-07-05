@@ -142,6 +142,40 @@ spec:
     kind: ClusterProviderConfig
     name: default
 apiVersion: eks.aws.m.upbound.io/v1beta1
+kind: IdentityProviderConfig
+metadata:
+  annotations:
+    crossplane.io/external-name: keycloak
+  generateName: render-probe-cluster-
+  labels:
+    crossplane.io/composite: render-probe-cluster
+    platform.k8-platform.io/role: oidc-identity-provider
+  name: render-probe-cluster-9cac40f74402
+  namespace: default
+spec:
+  forProvider:
+    clusterName: render-probe
+    oidc:
+      clientId: kubernetes
+      groupsClaim: groups
+      groupsPrefix: 'kc:'
+      issuerUrl: https://auth.platform.render-probe.example.test/realms/platform
+      usernameClaim: preferred_username
+      usernamePrefix: 'kc:'
+    region: us-east-1
+    tags:
+      ClusterName: render-probe
+      ManagedBy: crossplane
+      PlatformAbstraction: PlatformCluster
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
+apiVersion: eks.aws.m.upbound.io/v1beta1
 kind: NodeGroup
 metadata:
   annotations:
@@ -443,6 +477,9 @@ spec:
         kind: Cluster
         name: render-probe-cluster-69f9d71223c3
       - apiVersion: eks.aws.m.upbound.io/v1beta1
+        kind: IdentityProviderConfig
+        name: render-probe-cluster-9cac40f74402
+      - apiVersion: eks.aws.m.upbound.io/v1beta1
         kind: NodeGroup
         name: render-probe-cluster-b1150f7a0f66
       - apiVersion: iam.aws.m.upbound.io/v1beta1
@@ -487,7 +524,7 @@ status:
     - reason: ReconcileSuccess
       status: "True"
       type: Synced
-    - message: 'Unready resources: cluster-cert-validation, cluster-cert-validation-record, cluster-certificate, and 12 more'
+    - message: 'Unready resources: cluster-cert-validation, cluster-cert-validation-record, cluster-certificate, and 13 more'
       reason: Creating
       status: "False"
       type: Ready

@@ -723,6 +723,85 @@ spec:
               - type: NonEmpty
                 fieldPath: status.atProvider.id
 
+          # ---------- 16. OIDC identity provider config (REQ-AUTH-07) -
+          # Federates this cluster's kubectl auth to the Keycloak `platform`
+          # realm served at auth.<subdomain>.<domain> on THIS cluster's own
+          # ingress (public DNS + ACM TLS, so the EKS control plane can fetch
+          # the discovery document). usernameClaim/groupsClaim/prefixes match
+          # the realm's protocol mappers and the kc-* ClusterRoleBindings
+          # (clusters/platform/rbac/) — the bindings are inert until this
+          # association is ACTIVE, then kc:k8s-admins / kc:k8s-viewers
+          # resolve (REQ-AUTH-09).
+          #
+          # external-name = the EKS identity_provider_config_name (the
+          # provider injects it into oidc[0].identity_provider_config_name
+          # and derives its TF id as <cluster>:<name> — provider-upjet-aws
+          # externalname.go eksOIDCIdentityProvider). Static "keycloak":
+          # unique per cluster, deterministic for the live check.
+          #
+          # FRESH-BUILD ORDERING: EKS validates the issuer's discovery
+          # document, and Keycloak boots on this same cluster ~15-20 min
+          # after the cluster is ACTIVE (spoke-access gate → app stack). The
+          # association simply fail-retries until the issuer serves — the
+          # ADR-0012 parallel-convergence pattern — which moves XR Ready
+          # out by roughly the app-stack convergence time on a from-scratch
+          # build. Deliberate: Ready must not claim a cluster whose declared
+          # federation is unconfigured.
+          - name: oidc-identity-provider
+            base:
+              apiVersion: eks.aws.m.upbound.io/v1beta1
+              kind: IdentityProviderConfig
+              metadata:
+                annotations:
+                  crossplane.io/external-name: keycloak
+                labels:
+                  platform.k8-platform.io/role: oidc-identity-provider
+              spec:
+                forProvider:
+                  region: us-east-1
+                  oidc:
+                    clientId: kubernetes
+                    usernameClaim: preferred_username
+                    usernamePrefix: "kc:"
+                    groupsClaim: groups
+                    groupsPrefix: "kc:"
+                  tags:
+                    ManagedBy: crossplane
+                    PlatformAbstraction: PlatformCluster
+                managementPolicies: [Observe, Create, Update, Delete]
+                providerConfigRef:
+                  kind: ClusterProviderConfig
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.name
+                toFieldPath: spec.forProvider.clusterName
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.name
+                toFieldPath: spec.forProvider.tags.ClusterName
+              # issuer = the realm URL on this cluster's own auth hostname —
+              # the SAME CombineFromEnvironment pair the ACM cert (9) and the
+              # keycloak ApplicationSet's KC_HOSTNAME derive from, so the
+              # issuer here, the cert SAN, and Keycloak's advertised issuer
+              # can never drift apart.
+              - type: CombineFromEnvironment
+                combine:
+                  variables:
+                    - fromFieldPath: subdomain
+                    - fromFieldPath: domain
+                  strategy: string
+                  string:
+                    fmt: "https://auth.%s.%s/realms/platform"
+                toFieldPath: spec.forProvider.oidc.issuerUrl
+            readinessChecks:
+              - type: MatchCondition
+                matchCondition:
+                  type: Ready
+                  status: "True"
+
           # ---------- 13. sandbox EKS access entry ------------------
           # Read-only access entry for the sandbox IAM identity (cloud_user).
           # principalArn is built from the EnvironmentConfig accountId — no

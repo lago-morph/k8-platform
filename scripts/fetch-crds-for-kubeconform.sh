@@ -169,6 +169,9 @@ CRD_URLS=(
   "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/iam.aws.m.upbound.io_rolepolicies.yaml"
   "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/eks.aws.m.upbound.io_accessentries.yaml"
   "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/eks.aws.m.upbound.io_accesspolicyassociations.yaml"
+  # Phase 5 — the per-cluster OIDC IdentityProviderConfig federating
+  # kubectl auth to the Keycloak platform realm (REQ-AUTH-07).
+  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/eks.aws.m.upbound.io_identityproviderconfigs.yaml"
   # Phase 3 — per-cluster ACM certificate provisioned inside the cluster
   # Composition (acm Certificate + route53 validation Record + acm
   # CertificateValidation). Pinned to the same provider-upjet-aws v2.5.0

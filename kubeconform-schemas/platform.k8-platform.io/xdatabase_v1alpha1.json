@@ -61,6 +61,10 @@
           "type": "integer",
           "description": "Database connection port (5432 for postgres). Feeds the consuming chart's externalDatabase.port."
         },
+        "securityGroupId": {
+          "type": "string",
+          "description": "Id of the dedicated RDS security group composed in the base VPC (db-security-group). Travels the composite so the ingress rule and the Instance reference it (the cross-resource-refs-via-the-composite idiom)."
+        },
         "secretRef": {
           "type": "object",
           "description": "Reference to the Kubernetes connection Secret the platform materializes in the XR's namespace. The consuming chart points externalDatabase.existingSecret at this name. Keys: username, password (plus endpoint / port / attribute.* the provider writes).",

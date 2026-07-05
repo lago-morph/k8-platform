@@ -71,6 +71,9 @@ run_suite tests/unit/test_platform_secret_xrd.sh
 run_suite tests/unit/test_platform_secret_composition.sh
 run_suite tests/unit/test_platform_cluster_xrd.sh
 run_suite tests/unit/test_platform_cluster_composition.sh
+# Phase-5: the composed OIDC IdentityProviderConfig's claim contract
+# (REQ-AUTH-07 — clientId/claims/kc: prefixes/issuer combine).
+run_suite tests/unit/test_platform_cluster_oidc_idp.sh
 run_suite tests/unit/test_composition_string_transform_type.sh
 run_suite tests/unit/test_composition_render_fixtures.sh
 run_suite tests/unit/test_composition_render_catches_bug4.sh
@@ -122,6 +125,9 @@ run_suite tests/unit/test_keycloak_db_push_pull_contract.sh
 run_suite tests/unit/test_keycloak_admin_secret_source.sh
 # Realm-import JSON must satisfy Keycloak's strict parser (build #3).
 run_suite tests/unit/test_keycloak_realm_json.sh
+# Phase-5: the Cognito-broker delivery contract (terraform → ASM → ES →
+# env → realm placeholder substitution; every leg fail-closed).
+run_suite tests/unit/test_keycloak_cognito_idp_contract.sh
 # Live-check logic against real aws-CLI output shapes (build #3).
 run_suite tests/unit/test_rds_live_check_vpc_logic.sh
 # auto-008 phase-3 spoke GitOps access (XSpokeAccess XRD + Composition + XR)

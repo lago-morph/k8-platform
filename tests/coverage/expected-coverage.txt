@@ -5,6 +5,7 @@ ec2.aws.m.upbound.io/SecurityGroupRule
 eks.aws.m.upbound.io/AccessEntry
 eks.aws.m.upbound.io/AccessPolicyAssociation
 eks.aws.m.upbound.io/Cluster
+eks.aws.m.upbound.io/IdentityProviderConfig
 eks.aws.m.upbound.io/NodeGroup
 external-secrets.io/ExternalSecret
 generators.external-secrets.io/Password
