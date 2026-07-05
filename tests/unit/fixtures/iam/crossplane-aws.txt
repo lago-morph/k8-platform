@@ -36,3 +36,4 @@ route53:GetChange
 ec2:CreateSecurityGroup
 ec2:DeleteSecurityGroup
 secretsmanager:UpdateSecretVersionStage
+secretsmanager:GetResourcePolicy
