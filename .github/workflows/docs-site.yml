@@ -27,7 +27,7 @@ on:
     paths:
       - 'docs/site/**'
       - 'docs/hooks/**'
-      - 'mkdocs.yml'
+      - 'docs/mkdocs.yml'
       - 'versions.env'
       - '.github/workflows/docs-site.yml'
   workflow_dispatch:
@@ -66,7 +66,10 @@ jobs:
           mkdocs --version
 
       - name: Build (strict)
-        run: mkdocs build --strict
+        # Config lives under docs/ (root is frozen —
+        # tests/unit/test_root_file_allowlist.sh); site_dir resolves
+        # back to ./site at the repo root.
+        run: mkdocs build --strict --config-file docs/mkdocs.yml
 
       - name: Upload Pages artifact
         if: github.ref == 'refs/heads/main'
