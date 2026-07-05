@@ -1,0 +1,104 @@
+# Docs site — strict-build gate + GitHub Pages publish.
+#
+# The documentation site (docs/site/, mkdocs + material — see
+# planning/scenario-corpus/documentation-plan.md) is a first-class
+# deliverable: the scenario corpus consumes the published site as its
+# only view of the platform. Two jobs:
+#
+#   build   — `mkdocs build --strict` on every push that touches the
+#             docs source, its config/pins, or this workflow. Strict
+#             mode fails on broken nav/links and on any page missing
+#             its stability marker (docs/hooks/status_banner.py logs
+#             the warning; strict promotes it to a failure). This is
+#             the light PR gate for docs changes.
+#   publish — main only: deploys the built site to GitHub Pages
+#             (build_type=workflow, official Pages actions).
+#
+# Tool versions come from versions.env (MKDOCS_VERSION,
+# MKDOCS_MATERIAL_VERSION) — the same pins local builds use.
+#
+# NOTE: this file was created via the jentic bridge (ext-github skill
+# §8) because the sandbox git credential lacks the `workflow` OAuth
+# scope. Edits to it must go the same way.
+name: Docs site
+
+on:
+  push:
+    paths:
+      - 'docs/site/**'
+      - 'docs/hooks/**'
+      - 'docs/mkdocs.yml'
+      - 'versions.env'
+      - '.github/workflows/docs-site.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Feature-branch builds supersede each other; a main publish is never
+# cancelled mid-deploy.
+concurrency:
+  group: docs-site-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  build:
+    name: mkdocs build --strict
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pinned mkdocs toolchain (versions.env)
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC1091
+          . versions.env
+          python3 -m pip install \
+            "mkdocs==${MKDOCS_VERSION}" \
+            "mkdocs-material==${MKDOCS_MATERIAL_VERSION}"
+          mkdocs --version
+
+      - name: Build (strict)
+        # Config lives under docs/ (root is frozen —
+        # tests/unit/test_root_file_allowlist.sh); site_dir resolves
+        # back to ./site at the repo root.
+        run: mkdocs build --strict --config-file docs/mkdocs.yml
+
+      - name: Upload Pages artifact
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  publish:
+    name: Publish to GitHub Pages
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write # deploy to Pages
+      id-token: write # OIDC token deploy-pages verifies
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      # First run enables Pages (build_type=workflow) on the repo if it
+      # isn't enabled yet; needs the pages:write grant above. If this
+      # step 403s, enable Pages once in repo Settings -> Pages ->
+      # Source: GitHub Actions, then re-run.
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
