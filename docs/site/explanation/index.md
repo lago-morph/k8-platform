@@ -10,9 +10,10 @@ platform's companion blog series carries the deep dives — and it never
 substitutes for [Reference](../reference/index.md) when you need exact
 fields and guarantees.
 
-## Planned
+## Pages
 
-- **Platform topology** — the hub-and-spoke cluster model and the
-  GitOps flow that drives every change, at concept level
+- [Platform topology](platform-topology.md) — the hub-and-spoke
+  cluster model and the GitOps flow that drives every change, at
+  concept level
 
-Anything not yet linked here is not yet written.
+Anything not linked here is not yet written.
