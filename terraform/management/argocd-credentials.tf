@@ -19,15 +19,19 @@ resource "random_password" "argocd_admin" {
 # actually changes (e.g. a fresh account). The $2y->$2a rewrite is required:
 # Go's bcrypt (ArgoCD) accepts $2a/$2b but not htpasswd's $2y prefix.
 resource "terraform_data" "argocd_admin_password" {
-  triggers_replace = [random_password.argocd_admin.result]
+  triggers_replace = [
+    random_password.argocd_admin.result,
+    # 2026-07-05: per-resource kubeconfig path (concurrent update-kubeconfig truncate race, build-#4 runs 28747505753/28749110239).
+    "per-resource-kubeconfig-2026-07-05",
+  ]
 
   provisioner "local-exec" {
     command = <<-EOT
       aws eks update-kubeconfig \
         --name ${module.eks.cluster_name} \
         --region ${var.aws_region} \
-        --kubeconfig /tmp/k8-platform-kubeconfig
-      export KUBECONFIG=/tmp/k8-platform-kubeconfig
+        --kubeconfig /tmp/k8-platform-kubeconfig-argocd_admin_password
+      export KUBECONFIG=/tmp/k8-platform-kubeconfig-argocd_admin_password
       kubectl wait --for=condition=Available --timeout=300s -n argocd deploy/argocd-server
       if ! command -v htpasswd >/dev/null 2>&1; then
         sudo apt-get update -qq && sudo apt-get install -y -qq apache2-utils
