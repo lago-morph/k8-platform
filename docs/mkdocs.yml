@@ -3,7 +3,13 @@
 # Source: docs/site/ (diataxis layout: tutorials / how-to / reference /
 # explanation). Published to GitHub Pages by
 # .github/workflows/docs-site.yml on merge to main; the same workflow
-# runs `mkdocs build --strict` as the light PR gate for docs changes.
+# runs the light PR gate for docs changes:
+#
+#   mkdocs build --strict -f docs/mkdocs.yml
+#
+# (This config lives under docs/, not at the repo root where mkdocs
+# would find it by default, because the root is frozen —
+# tests/unit/test_root_file_allowlist.sh, ai/LESSONS.md L25.)
 # Tool versions are pinned in versions.env (MKDOCS_VERSION,
 # MKDOCS_MATERIAL_VERSION) — one source of truth for CI and local
 # builds.
@@ -25,8 +31,9 @@ site_url: https://lago-morph.github.io/k8s-platform/
 repo_url: https://github.com/lago-morph/k8s-platform
 edit_uri: edit/main/docs/site/
 
-docs_dir: docs/site
-site_dir: site
+# Paths below are relative to this file's directory (docs/).
+docs_dir: site
+site_dir: ../site
 
 theme:
   name: material
@@ -64,7 +71,7 @@ markdown_extensions:
           format: !!python/name:pymdownx.superfences.fence_code_format
 
 hooks:
-  - docs/hooks/status_banner.py
+  - hooks/status_banner.py
 
 # Broken internal links are defects, not noise: the --strict CI gate
 # turns each of these warnings into a build failure.
