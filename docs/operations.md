@@ -338,15 +338,23 @@ learning platform, but Keycloak's own state is then only as durable as the
 cluster). Until the DB brief resolves this, `keycloak-db` must be created out
 of band before the Keycloak Application can become Healthy.
 
-### Keycloak realm — live wiring (DEFERRED)
+### Keycloak realm — live wiring (COMMITTED 2026-07-05, phase-5 identity)
 
-`platform-services/keycloak/realm-platform-configmap.yaml` imports the
-`platform` realm with Cognito as an OIDC IdP, the `cognito:groups → groups`
-attribute mapper, and the public PKCE `kubernetes` client. The Cognito
-issuer/auth/token/jwks URLs and the confidential client id/secret are
-**TODO placeholders** (account-ephemeral, AGENTS §8.1). At live-coupling time,
-source them from `terraform/base` outputs (`cognito_issuer_url`,
-`cognito_client_id`, `cognito_client_secret`) and deliver the client secret via
-the `keycloak-oidc-clients` XPlatformSecret — never commit it. The EKS
-`aws_eks_identity_provider_config` (issuer = the Keycloak realm) is part of the
-cluster bring-up and likewise wired live once Keycloak is Healthy.
+`platform-services/keycloak/spoke/realm-platform-configmap.yaml` imports the
+`platform` realm with Cognito as an OIDC IdP (`identityProviders` alias
+`cognito`), the `cognito:groups → groups` attribute mapper, the
+`${CLAIM.email}` username template mapper, and the public PKCE `kubernetes`
+client. Account-ephemeral values are `${KC_COGNITO_*}` env placeholders that
+Keycloak substitutes during `--import-realm` (verified on the pinned 24.0.5).
+The delivery chain: `terraform/base` writes ASM `k8-platform/base/cognito`
+(endpoints + confidential client — the client secret is COGNITO-generated, so
+the generate-once XPlatformSecret chain cannot carry it; the earlier plan to
+route it via `keycloak-oidc-clients` predates ADR-0012 and is superseded) →
+spoke ExternalSecret `keycloak-cognito-idp` → non-optional secretKeyRef env in
+the keycloak ApplicationSet. Contract pinned by
+`tests/unit/test_keycloak_cognito_idp_contract.sh`. Realm imports apply only
+on a fresh Keycloak database (startup import is IGNORE_EXISTING): a merged
+realm edit reaches a LIVE cluster's realm only at the next clean build. The
+EKS `IdentityProviderConfig` (issuer = the Keycloak realm) is composed into
+the platform-cluster Composition; on a fresh build its association retries
+until Keycloak's discovery endpoint is publicly served, then converges.
