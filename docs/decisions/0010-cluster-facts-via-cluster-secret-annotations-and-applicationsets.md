@@ -246,7 +246,7 @@ everything below: **pending clean-build verification** (SUBSTRATE row 5).
    `spoke-cluster-secret` Object under the pinned `provider-kubernetes` SA
    (DeploymentRuntimeConfig), RBAC-granted argocd-namespace Secret writes +
    platform-namespace XPlatformCluster reads
-   (`crossplane/rbac/02-provider-kubernetes-spoke-cluster-secret.yaml`); the
+   (`clusters/platform/01-provider-kubernetes-rbac.yaml`, moved 2026-07-05 for bootstrap ordering); the
    REST/kubectl registration path is retired from runbooks. **Honest
    framing: a convergence/process control, not a security boundary** —
    ArgoCD's controllers inherently write argocd-ns Secrets, ESO is

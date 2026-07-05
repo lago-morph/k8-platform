@@ -40,7 +40,11 @@ spec:
       # manifests: 00-namespace.yaml (the `platform` namespace this
       # Application's destination references) and platform-cluster-
       # claim.yaml (the v2 namespaced XPlatformCluster XR).
-      include: '{00-namespace.yaml,platform-cluster-claim.yaml}'
+      # 2026-07-05 (build #4): 01-provider-kubernetes-rbac.yaml rides here
+      # because its platform-namespace grants need the namespace THIS sync
+      # creates (bootstrap-ordering defect when it lived in crossplane/rbac/;
+      # see the file's header).
+      include: '{00-namespace.yaml,01-provider-kubernetes-rbac.yaml,platform-cluster-claim.yaml}'
   destination:
     server: https://kubernetes.default.svc
     # v2 migration (SEG-1 step 1a) — XPlatformCluster is a namespaced

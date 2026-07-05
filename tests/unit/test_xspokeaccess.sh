@@ -180,7 +180,7 @@ assert_eq "comp_secret_config_vars" "spec.clusterName
 status.clusterCaData" "$CONFIG_VARS"
 
 # ---- 2g. RBAC + SA pinning for the producer ------------------------------
-RBAC=crossplane/rbac/02-provider-kubernetes-spoke-cluster-secret.yaml
+RBAC=clusters/platform/01-provider-kubernetes-rbac.yaml
 if [ -f "$RBAC" ]; then
   _pass "rbac_file_exists"
   # bindings target the SA name the DeploymentRuntimeConfig pins
@@ -196,7 +196,7 @@ if [ -f "$RBAC" ]; then
     && _pass "terraform_hub_clusterproviderconfig_m_group" \
     || _fail "terraform_hub_clusterproviderconfig_m_group" "the hub config must be kubernetes.m.crossplane.io ClusterProviderConfig (the namespaced Object cannot reference the legacy group)"
   # the k8-platform AppProject must permit namespaced Role/RoleBinding or
-  # the crossplane-resources app fails to sync (the #160 failure class)
+  # the platform-cluster-claim app fails to sync (the #160 failure class)
   for k in Role RoleBinding; do
     yq -r '.spec.namespaceResourceWhitelist[].kind' argocd/projects/k8-platform.yaml | grep -qx "$k" \
       && _pass "appproject_whitelists_namespaced:$k" \
