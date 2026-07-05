@@ -271,6 +271,10 @@ resource "aws_iam_policy" "crossplane_aws" {
           "secretsmanager:PutSecretValue", "secretsmanager:GetSecretValue",
           "secretsmanager:DescribeSecret", "secretsmanager:TagResource",
           "secretsmanager:UntagResource",
+          # upjet's Secret READ path calls GetResourcePolicy on every observe;
+          # without it the MR creates fine then sits Synced=False forever
+          # (clean build #4, fourth live defect - AccessDenied on observe).
+          "secretsmanager:GetResourcePolicy",
           # SecretVersion MR lifecycle (the platform-secret material chain):
           # deleting/retiring a version moves its staging labels.
           "secretsmanager:UpdateSecretVersionStage",
