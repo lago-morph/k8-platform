@@ -52,11 +52,21 @@ last, the current state, and the next concrete steps. Keep it factual
 > published via Pages; phase-5 pages written as `contract` BEFORE the
 > implementation). Scenario seed backlog: scenario-brainstorm.md.
 > Neither track blocks the build/identity work in this session.
-> **Build-#4 note:** the management apply hit a REAL committed defect —
-> 11 local-exec provisioners shared one truncate-rewritten kubeconfig
-> (parallelism race; builds #1–#3 won the timing). Fixed red-first in
-> #245 (`test_tf_provisioner_kubeconfig_isolation.sh`); management
-> attempt #3 dispatched from `7acddab`.
+> **Build-#4 note:** TWO real committed defects surfaced (both fixed
+> red-first, code-not-hands): (1) 11 local-exec provisioners shared one
+> truncate-rewritten kubeconfig (parallelism race; builds #1–#3 won the
+> timing) — #245, `test_tf_provisioner_kubeconfig_isolation.sh`;
+> management attempt #3 (run 28750304494) GREEN with the fix. (2) The
+> ADR-0010 producer RBAC lived in crossplane/rbac/ but targets ns
+> `platform`, created only by the MANUAL claim gate ~15 min after
+> bootstrap — crossplane-resources' auto-sync failed "namespaces
+> \"platform\" not found", exhausted retries, spoke never registered
+> (masked on builds #1–#3 by mid-build merges retriggering the sync).
+> Moved to clusters/platform/01-provider-kubernetes-rbac.yaml (rides
+> the claim app include list with 00-namespace.yaml);
+> `test_crossplane_resources_namespace_bootstrap_safe.sh` pins the
+> class. Re-pull BOTH gates after merging (claim app then spoke-access
+> — the claim sync now also applies the RBAC).
 > **Sandbox note:** this remote sandbox's egress policy 403s
 > github.com release downloads (helm charts, yq, kubeconform binaries)
 > — `test_helm_render.sh` fails HERE on unmodified main; CI is fine.

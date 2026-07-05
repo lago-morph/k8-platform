@@ -1,5 +1,18 @@
 # RBAC for the ADR-0010 PR-2 producer (OI-2026-06-07-1).
 #
+# LOCATION IS LOAD-BEARING (moved from crossplane/rbac/ 2026-07-05, clean
+# build #4): the `platform`-namespace grants below can only apply after
+# the `platform` namespace exists, and that namespace is created by THIS
+# Application (platform-cluster-claim, include-listed with
+# 00-namespace.yaml — ArgoCD applies Namespaces before namespaced kinds
+# within one sync). When this file lived in crossplane/rbac/, the
+# auto-synced crossplane-resources app raced the manual claim gate at
+# bootstrap, failed "namespaces \"platform\" not found", exhausted its
+# retries, and the ADR-0010 producer had no RBAC until an unrelated
+# commit retriggered the sync (masked on builds #1-#3 by mid-build
+# merges). Enforced by
+# tests/unit/test_crossplane_resources_namespace_bootstrap_safe.sh.
+#
 # The xspokeaccess-aws Composition renders two provider-kubernetes Objects
 # (kubernetes.m.crossplane.io/v1alpha1):
 #

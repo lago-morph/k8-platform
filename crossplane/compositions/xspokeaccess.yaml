@@ -607,7 +607,7 @@ spec:
           # contract (OI-2026-06-07-1): the cluster Secret is ArgoCD's
           # connection credential AND the platform's fact bus. Writer of
           # record = THIS Object (provider-kubernetes pod SA, RBAC in
-          # crossplane/rbac/02-provider-kubernetes-spoke-cluster-secret.yaml);
+          # clusters/platform/01-provider-kubernetes-rbac.yaml);
           # the REST/kubectl registration path is retired.
           #
           # COMPLETE-OR-ABSENT: every patch into the manifest carries
