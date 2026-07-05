@@ -1,0 +1,87 @@
+# MkDocs configuration for the k8s-platform documentation site.
+#
+# Source: docs/site/ (diataxis layout: tutorials / how-to / reference /
+# explanation). Published to GitHub Pages by
+# .github/workflows/docs-site.yml on merge to main; the same workflow
+# runs `mkdocs build --strict` as the light PR gate for docs changes.
+# Tool versions are pinned in versions.env (MKDOCS_VERSION,
+# MKDOCS_MATERIAL_VERSION) — one source of truth for CI and local
+# builds.
+#
+# Every page MUST carry `status: stable|contract|draft` front matter.
+# docs/hooks/status_banner.py renders the marker as a visible banner
+# and logs a warning when it is missing or invalid; --strict promotes
+# that warning to a build failure, so the convention is enforced
+# mechanically, not memorized. The convention itself is documented at
+# docs/site/about.md.
+
+site_name: k8s-platform
+site_description: >-
+  User-facing documentation for the k8s-platform demonstration
+  platform: GitOps application delivery, self-service infrastructure
+  via Crossplane composite resources, and the operational surfaces
+  tenants and operators use.
+site_url: https://lago-morph.github.io/k8s-platform/
+repo_url: https://github.com/lago-morph/k8s-platform
+edit_uri: edit/main/docs/site/
+
+docs_dir: docs/site
+site_dir: site
+
+theme:
+  name: material
+  palette:
+    # Light/dark toggle; follows system preference on first visit.
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.indexes
+    - navigation.footer
+    - content.code.copy
+    - search.suggest
+
+markdown_extensions:
+  - admonition        # stability banners and callouts
+  - attr_list
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+hooks:
+  - docs/hooks/status_banner.py
+
+# Broken internal links are defects, not noise: the --strict CI gate
+# turns each of these warnings into a build failure.
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+nav:
+  - Home: index.md
+  - About these docs: about.md
+  - Tutorials:
+      - tutorials/index.md
+  - How-to guides:
+      - how-to/index.md
+  - Reference:
+      - reference/index.md
+  - Explanation:
+      - explanation/index.md

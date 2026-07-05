@@ -12,3 +12,6 @@ __pycache__/
 *.tfstate.backup
 .terraform/
 .terraform.lock.hcl
+
+# mkdocs build output (docs-site.yml builds and publishes; never commit)
+/site/
