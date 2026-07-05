@@ -6,32 +6,47 @@
 # to Cognito and shapes tokens; NO users or groups are created or maintained in
 # Keycloak itself (REQ-AUTH-03/08).
 #
-# This realm currently encodes ONE contract:
+# This realm encodes TWO contracts:
 #
-#   The public PKCE `kubernetes` client (REQ-AUTH-07): publicClient=true, NO
-#   secret, PKCE (S256) enforced, used by the oidc-login kubectl plugin
-#   (REQ-AUTH-10, docs/operations.md). A `groups` protocol mapper puts the
-#   user's `groups` attribute into the ID token so the EKS API server's
-#   groups claim resolves to `kc:k8s-admins` / `kc:k8s-viewers` (prefix set
-#   by the EKS IdP config, REQ-AUTH-07; bound to roles by
-#   clusters/platform/rbac/kc-*.yaml). The `username` mapper sets
-#   preferred_username (REQ-AUTH-07).
+#   1. The public PKCE `kubernetes` client (REQ-AUTH-07): publicClient=true, NO
+#      secret, PKCE (S256) enforced, used by the oidc-login kubectl plugin
+#      (REQ-AUTH-10, docs/site/how-to/kubectl-access-via-directory-group.md).
+#      A `groups` protocol mapper puts the user's `groups` attribute into the
+#      ID token so the EKS API server's groups claim resolves to
+#      `kc:k8s-admins` / `kc:k8s-viewers` (prefix set by the EKS IdP config,
+#      REQ-AUTH-07; bound to roles by clusters/platform/rbac/kc-*.yaml). The
+#      `username` mapper sets preferred_username (REQ-AUTH-07).
 #
-# DEFERRED — the Cognito broker block (REQ-AUTH-02/03/08; tracked in
-# docs/operations.md "Keycloak realm — live wiring"): the `identityProviders`
-# (alias `cognito`) + `identityProviderMappers` (cognito:groups → `groups`
-# attribute) blocks are intentionally ABSENT, not placeholdered. Clean build
-# #3 (2026-06-12) proved Keycloak VALIDATES IdP URLs at import time and
-# fails closed on placeholders ('The url [authorization_url] is malformed —
-# no protocol: TODO_COGNITO_AUTH_URL') → CrashLoop. Deferred wiring means
-# the block is absent (pinned by tests/unit/test_keycloak_realm_json.sh: no
-# TODO_ values). At live-coupling time, source the issuer/auth/token/jwks/
-# userInfo URLs from terraform/base outputs (cognito_issuer_url, the
-# hosted-UI domain) and the client id/secret via the keycloak-oidc-clients
-# XPlatformSecret (cognito_client_id / cognito_client_secret outputs), NOT
-# git; also set <domain> in the kubernetes client redirect URIs. Until that
-# lands, no group claims flow — the kc:* RBAC bindings are inert, which is
-# the documented deferred state.
+#   2. The Cognito broker (REQ-AUTH-02/03/08): `identityProviders` alias
+#      `cognito` + `identityProviderMappers`. Every account-ephemeral value is
+#      a `${KC_COGNITO_*}` placeholder that Keycloak SUBSTITUTES FROM
+#      CONTAINER ENV during `--import-realm` (verified empirically on the
+#      pinned Keycloak 24.0.5: substitution happens before the import-time
+#      URL validation; an UNSET placeholder passes through as a literal and
+#      then fails that validation — the #233 CrashLoop class). The env vars
+#      ride NON-OPTIONAL secretKeyRefs in the keycloak ApplicationSet
+#      (argocd/apps/spoke/keycloak.yaml) against the keycloak-cognito-idp
+#      Secret (ExternalSecret ← ASM k8-platform/base/cognito ← WRITTEN BY
+#      terraform/base — the Cognito client secret is Cognito-generated, so
+#      the ADR-0012 generate-once XPlatformSecret chain cannot carry it):
+#      the pod cannot start until the Secret and every key exist, so the
+#      import can never observe an unresolved placeholder. ABSENT-or-real,
+#      fail-closed. The `${CLAIM.email}` in the username-template mapper is
+#      Keycloak MAPPER syntax, not an env placeholder — unset env
+#      placeholders survive import verbatim (same empirical probe), which is
+#      exactly what lets the two mechanisms coexist.
+#      trustEmail=true: Cognito auto-verifies email and the realm has no
+#      SMTP, so brokered logins must not queue an email-verification step.
+#      syncMode FORCE on the provider + groups mapper: group membership
+#      re-copies from Cognito on EVERY brokered login (the revocation bound
+#      in docs/site/reference/identity-mapping.md).
+#
+# REALM CHANGES APPLY ONLY ON A FRESH KEYCLOAK DATABASE: startup import runs
+# strategy IGNORE_EXISTING (probe log), so a realm that already exists in
+# the RDS database is left untouched by later edits to this ConfigMap. On
+# this intentionally-ephemeral platform the realm config converges at the
+# next account rotation / clean build; do not expect a merged realm edit to
+# reconfigure a live Keycloak.
 #
 # NOTE: documentation lives HERE, never as `"comment"` fields inside the
 # JSON — Keycloak's strict parser rejects unknown fields on every
@@ -55,6 +70,55 @@ data:
     {
       "realm": "platform",
       "enabled": true,
+      "identityProviders": [
+        {
+          "alias": "cognito",
+          "displayName": "Directory login",
+          "providerId": "oidc",
+          "enabled": true,
+          "trustEmail": true,
+          "storeToken": false,
+          "addReadTokenRoleOnCreate": false,
+          "firstBrokerLoginFlowAlias": "first broker login",
+          "config": {
+            "clientId": "${KC_COGNITO_CLIENT_ID}",
+            "clientSecret": "${KC_COGNITO_CLIENT_SECRET}",
+            "clientAuthMethod": "client_secret_post",
+            "issuer": "${KC_COGNITO_ISSUER_URL}",
+            "authorizationUrl": "${KC_COGNITO_AUTH_URL}",
+            "tokenUrl": "${KC_COGNITO_TOKEN_URL}",
+            "userInfoUrl": "${KC_COGNITO_USERINFO_URL}",
+            "logoutUrl": "${KC_COGNITO_LOGOUT_URL}",
+            "jwksUrl": "${KC_COGNITO_JWKS_URL}",
+            "validateSignature": "true",
+            "useJwksUrl": "true",
+            "defaultScope": "openid email profile",
+            "syncMode": "FORCE"
+          }
+        }
+      ],
+      "identityProviderMappers": [
+        {
+          "name": "cognito-username",
+          "identityProviderAlias": "cognito",
+          "identityProviderMapper": "oidc-username-idp-mapper",
+          "config": {
+            "template": "${CLAIM.email}",
+            "target": "LOCAL",
+            "syncMode": "IMPORT"
+          }
+        },
+        {
+          "name": "cognito-groups",
+          "identityProviderAlias": "cognito",
+          "identityProviderMapper": "oidc-user-attribute-idp-mapper",
+          "config": {
+            "claim": "cognito:groups",
+            "user.attribute": "groups",
+            "syncMode": "FORCE"
+          }
+        }
+      ],
       "clients": [
         {
           "clientId": "kubernetes",

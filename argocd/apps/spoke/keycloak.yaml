@@ -69,12 +69,64 @@ spec:
               # → an http:// issuer that poisons every OIDC consumer
               # (clean build #3, 2026-06-12). Templated from the SAME
               # cluster facts as ingress.hostname; the committed values.yaml
-              # sets no extraEnvVars, so this list replaces nothing.
+              # sets no extraEnvVars, so this list replaces nothing — and
+              # any future extraEnvVars entry must be added HERE (helm
+              # valuesObject lists REPLACE valueFiles lists, never merge).
+              #
+              # KC_COGNITO_*: the realm import's ${KC_COGNITO_*} inputs
+              # (platform-services/keycloak/spoke/realm-platform-configmap
+              # .yaml), sourced from the keycloak-cognito-idp Secret the
+              # spoke ExternalSecret materializes from ASM
+              # k8-platform/base/cognito (producer: terraform/base). The
+              # secretKeyRefs are deliberately NON-optional: the pod waits
+              # for the Secret, so the realm import can never run with an
+              # unresolved placeholder (Keycloak's import-time URL
+              # validation fails closed on literals — the #233 class).
               extraEnvVars:
                 - name: KC_HOSTNAME
                   value: 'auth.{{index .metadata.annotations "k8-platform.io/subdomain"}}.{{index .metadata.annotations "k8-platform.io/domain"}}'
                 - name: KC_HOSTNAME_STRICT_HTTPS
                   value: "true"
+                - name: KC_COGNITO_CLIENT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: keycloak-cognito-idp
+                      key: client_id
+                - name: KC_COGNITO_CLIENT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: keycloak-cognito-idp
+                      key: client_secret
+                - name: KC_COGNITO_ISSUER_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: keycloak-cognito-idp
+                      key: issuer_url
+                - name: KC_COGNITO_AUTH_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: keycloak-cognito-idp
+                      key: authorization_url
+                - name: KC_COGNITO_TOKEN_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: keycloak-cognito-idp
+                      key: token_url
+                - name: KC_COGNITO_USERINFO_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: keycloak-cognito-idp
+                      key: user_info_url
+                - name: KC_COGNITO_LOGOUT_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: keycloak-cognito-idp
+                      key: logout_url
+                - name: KC_COGNITO_JWKS_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: keycloak-cognito-idp
+                      key: jwks_url
         - repoURL: https://github.com/lago-morph/k8-platform.git
           targetRevision: main
           ref: values
