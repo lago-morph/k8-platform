@@ -23,6 +23,8 @@ In the order a new tenant tends to need them:
 - [Check an application's health and find its URL](check-health-and-find-url.md)
 - [Update and roll back an application](update-and-roll-back.md)
 - [Add or upgrade a platform component](add-or-upgrade-a-component.md) — operator task
+- [Get kubectl access via your directory group](kubectl-access-via-directory-group.md)
+- [Log into platform UIs with SSO](log-into-platform-uis-with-sso.md)
 
 Each guide carries its own stability marker. Anything not linked here
 is not yet written.

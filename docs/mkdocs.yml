@@ -97,6 +97,8 @@ nav:
       - Check health and find the URL: how-to/check-health-and-find-url.md
       - Update and roll back: how-to/update-and-roll-back.md
       - Add or upgrade a component: how-to/add-or-upgrade-a-component.md
+      - kubectl via directory group: how-to/kubectl-access-via-directory-group.md
+      - Log into UIs with SSO: how-to/log-into-platform-uis-with-sso.md
   - Reference:
       - reference/index.md
       - Platform secret (XPlatformSecret): reference/xplatformsecret.md
@@ -104,6 +106,7 @@ nav:
       - Tenant boundaries: reference/tenant-boundaries.md
       - Hostnames, DNS, and TLS: reference/hostnames-dns-tls.md
       - Health and status surfaces: reference/health-surfaces.md
+      - Identity mapping: reference/identity-mapping.md
   - Explanation:
       - explanation/index.md
       - Platform topology: explanation/platform-topology.md
