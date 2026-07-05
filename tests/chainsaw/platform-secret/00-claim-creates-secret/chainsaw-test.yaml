@@ -1,10 +1,12 @@
 # Happy-path: applying a PlatformSecret claim provisions an ASM secret
-# AND an ExternalSecret in the claim's namespace.
+# with IN-PLATFORM generated material (AWSCURRENT version) AND an
+# ExternalSecret in the claim's namespace.
 #
-# Per adversarial-reviewer B.B.3: claim name carries CHAINSAW_RUN_ID
-# suffix so parallel CI runs against the same AWS account don't
-# collide on the ASM secret name (which is derived from XR UID, but
-# the K8s claim name still collides at the kubectl-apply layer).
+# Cross-run isolation: scenario XRs use FIXED names in namespace
+# `default`, and the ASM key is deterministic k8-platform/<ns>/<name> —
+# run.sh's pre-run sweep clears leftovers from died runs; chainsaw.yml's
+# per-ref concurrency serializes same-branch runs (the supported
+# envelope — see run.sh's sweep header).
 apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
 metadata:
@@ -87,38 +89,43 @@ spec:
         - assert:
             file: expected/external-secret.yaml
 
-    - name: assert ASM secret exists (out-of-band aws CLI check, bounded poll)
+    - name: assert ASM secret holds AWSCURRENT material (out-of-band aws CLI check, bounded poll)
       try:
         - script:
             content: |
               # chainsaw runs scripts under /bin/sh; pipefail is bash-only.
               set -u
-              # The Composition derives the ASM name from XR UID.
-              # In Crossplane v2 the XR is namespaced and its name
-              # equals the user-created resource name (no separate
-              # claim → XR promotion), so we look it up directly.
+              # The Composition derives the ASM name deterministically:
+              # k8-platform/<namespace>/<name> (2026-06-11 — replaced the
+              # uid form so committed cross-cluster consumers can
+              # reference the key).
               xr="${CLAIM_NAME}"
-              uid=$(kubectl get xplatformsecret -n default "$xr" -o jsonpath='{.metadata.uid}')
-              key="k8-platform/${uid}"
-              echo "Looking up ASM secret (bounded poll): $key"
+              key="k8-platform/default/${xr}"
+              echo "Looking up ASM secret value (bounded poll): $key"
               # ASM create is eventually consistent (read-after-write lag), so a
-              # one-shot describe right after the XR goes Ready can transiently
-              # 404. Poll until the secret is observable; only FAIL after the
-              # window. Same antipattern as the deletion check (OI-2026-05-28-1).
+              # one-shot read right after the XR goes Ready can transiently
+              # 404. Poll until the AWSCURRENT value is observable; only FAIL
+              # after the window. Same antipattern as the deletion check
+              # (OI-2026-05-28-1). get-secret-value proves the whole chain in
+              # one call: container exists, the SecretVersion wrote a version,
+              # AWSCURRENT is staged, and the payload is the {"value":…} JSON
+              # document the consumer ExternalSecret's dataFrom extract needs.
               i=1
               while [ "$i" -le 30 ]; do
-                if aws secretsmanager describe-secret \
+                if aws secretsmanager get-secret-value \
                       --secret-id "$key" \
+                      --version-stage AWSCURRENT \
                       --region "${AWS_REGION:-us-east-1}" \
-                      --output text 2>/dev/null | grep -q "$key"; then
-                  echo "OK: ASM secret $key exists"
+                      --query SecretString \
+                      --output text 2>/dev/null | grep -q '"value"'; then
+                  echo "OK: ASM secret $key has AWSCURRENT material with the value key"
                   exit 0
                 fi
-                echo "  not observable yet (attempt $i/30); waiting 5s..."
+                echo "  AWSCURRENT material not observable yet (attempt $i/30); waiting 5s..."
                 i=$((i + 1))
                 sleep 5
               done
-              echo "FAIL: ASM secret $key not observable after claim Ready"
+              echo "FAIL: ASM secret $key has no observable AWSCURRENT material after claim Ready"
               exit 1
             env:
               - name: CLAIM_NAME

@@ -108,9 +108,5 @@ spec:
       kind: "*"
     - group: "external-secrets.io"
       kind: "*"
-    # ESO generators (Password for the keycloak-admin bootstrap secret —
-    # platform-services/keycloak/spoke/; ADR-0005 generatorRef default).
-    - group: "generators.external-secrets.io"
-      kind: "*"
     - group: "monitoring.coreos.com"
       kind: "*"

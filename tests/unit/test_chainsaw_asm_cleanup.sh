@@ -37,11 +37,12 @@ _pass "lib_present"
 # ---------------------------------------------------------------------------
 
 # A1 (cheap fast-fail): the Composition still derives the ASM secret name with
-# the `k8-platform/` prefix. Catches an accidental prefix change at the source.
-if grep -qE 'fmt:\s*"k8-platform/%s"' "$COMP"; then
+# the `k8-platform/` prefix (deterministic ns/name combine since 2026-06-11).
+# Catches an accidental prefix change at the source.
+if grep -qE 'fmt:\s*"k8-platform/%s/%s"' "$COMP"; then
   _pass "composition_asm_name_prefix_fmt"
 else
-  _fail "composition_asm_name_prefix_fmt" "expected fmt: \"k8-platform/%s\" in $COMP"
+  _fail "composition_asm_name_prefix_fmt" "expected fmt: \"k8-platform/%s/%s\" in $COMP"
 fi
 
 # A2 (golden, the real guard for sub-questions a/f): in the committed render
