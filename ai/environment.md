@@ -54,6 +54,17 @@ design — discover it live, never hardcode it (enforced:
 - Blocked API surfaces are bridged by skills: GitHub Actions REST →
   `ext-github`; generic APIs → `external-api-bridge`; kube-API → CI workflows
   (`kube-diagnose.yml`) or the SSM relay (`sandbox-kubectl-access`).
+- **`github.com/*/releases/download` is org-policy 403-blocked** (verified
+  2026-07-05; the proxy status endpoint says report, don't route around).
+  api.github.com via the MCP tools, git push, codeload, and most vendor
+  hosts are fine. Consequences: `test_helm_render.sh` fails IN THE SANDBOX
+  on unmodified main (CI is unaffected), the argocd CLI cannot be
+  installed (use the kubectl-patch sync form), and the SessionStart tool
+  installer dies on its first yq download. Working install routes:
+  `go install` via proxy.golang.org (yq, kubeconform), get.helm.sh (helm),
+  releases.crossplane.io (crank), releases.hashicorp.com (terraform),
+  awscli.amazonaws.com / dl.k8s.io / s3.amazonaws.com (aws, kubectl,
+  session-manager-plugin).
 
 ## 4. Kubernetes & platform access
 
@@ -107,6 +118,17 @@ design — discover it live, never hardcode it (enforced:
   resume-from-suspension, first re-query every in-flight dispatch.
 - `mergeable_state: unstable` = non-blocking checks pending/failing, not
   blocked — check before deferring a merge.
+- **ArgoCD propagation has two legs a gate pull can race** (bit twice,
+  2026-07-05): (1) a sync operation naming a BRANCH resolves against the
+  repo-server's ~3-minute cache — sync deliberate gates by explicit SHA;
+  (2) a merged edit to `argocd/apps/*` reaches the live Application spec
+  only after BOOTSTRAP syncs it — verify the live spec (`kubectl -n argocd
+  get application <x> -o jsonpath=...`) before pulling the gate.
+- upjet's ASM `Secret` READ path calls `secretsmanager:GetResourcePolicy`
+  on every observe — an IRSA policy without it lets creates succeed and
+  then wedges the MR Synced=False (2026-07-05; chainsaw cannot surface
+  IAM classes: the runner uses the admin CI creds, only live IRSA
+  exercises the narrowed policy).
 - A `workflow_dispatch` by branch ref resolves `head_sha` at **run
   creation**, not job start — always dispatch *after* the push it must
   test, or the run verifies the wrong SHA. And `chainsaw.yml` runs
