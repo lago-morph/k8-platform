@@ -42,6 +42,9 @@ run_suite tests/unit/test_tf_provisioner_kubeconfig_isolation.sh
 # Build-#4 (2026-07-05): bootstrap-ordering — crossplane-resources manifests
 # must not target namespaces created by later manual-sync gates.
 run_suite tests/unit/test_crossplane_resources_namespace_bootstrap_safe.sh
+# Build-#4 (2026-07-05): AWS tag-value charset on every tag-bound committed
+# value (the parentheses-in-description CreateSecret rejection class).
+run_suite tests/unit/test_aws_tag_value_charset.sh
 # OI-2026-06-07-4: durable hub→spoke EKS-API 443 rule in the Composition
 run_suite tests/unit/test_hub_spoke_api_ingress.sh
 # OI-2026-06-07-3: shared-ELB subnet tags for every hosted cluster
