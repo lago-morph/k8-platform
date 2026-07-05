@@ -12,20 +12,17 @@ verify the result.
 
 ## Guides
 
+In the order a new tenant tends to need them:
+
+- [Onboard a tenant](onboard-a-tenant.md) — documented as-is,
+  including the operator hand-work
+- [Deploy an application via GitOps](deploy-an-application.md)
+- [Expose an application with a public hostname and TLS](expose-an-application.md)
 - [Provision a platform secret and consume it](provision-a-platform-secret.md)
+- [Provision a database and connect an application to it](provision-a-database.md)
+- [Check an application's health and find its URL](check-health-and-find-url.md)
+- [Update and roll back an application](update-and-roll-back.md)
+- [Add or upgrade a platform component](add-or-upgrade-a-component.md) — operator task
 
-## Planned
-
-The rest of the working set for the first documentation wave, in the
-order a new tenant tends to need them:
-
-- Onboard a tenant
-- Deploy an application via GitOps
-- Expose an application on a public hostname with TLS
-- Provision a database and connect an application to it
-- Check an application's health and find its URL
-- Update and roll back an application
-- Add or upgrade a platform component (operator task)
-
-Each guide is published as it is written, carrying its own stability
-marker. Anything not yet linked here is not yet written.
+Each guide carries its own stability marker. Anything not linked here
+is not yet written.

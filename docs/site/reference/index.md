@@ -10,18 +10,18 @@ automation assert against. Reference pages describe; they do not
 instruct (that is what the [How-to guides](../how-to/index.md) are
 for).
 
-## Planned
+## Pages
 
-- **Platform secret (XPlatformSecret)** — spec fields and defaults,
-  the deterministic secret-naming contract, and the shape of generated
-  secret material
-- **Database (XDatabase)** — spec fields and the connection-secret
-  keys an application consumes
-- **Tenant boundaries** — what a tenant may and may not create, and
-  what the platform's guardrails deny
-- **Hostnames, DNS, and TLS** — the naming conventions for platform
-  and application endpoints
-- **Health and status surfaces** — what a tenant may read to answer
-  "is my application healthy?"
+- [Platform secret (XPlatformSecret)](xplatformsecret.md) — spec
+  fields and defaults, the deterministic secret-naming contract, and
+  the shape of generated secret material
+- [Database (XDatabase)](xdatabase.md) — spec fields and the
+  connection-secret keys an application consumes
+- [Tenant boundaries](tenant-boundaries.md) — what a tenant may and
+  may not deploy, and what a denial looks like
+- [Hostnames, DNS, and TLS](hostnames-dns-tls.md) — the naming and
+  certificate conventions for platform and application endpoints
+- [Health and status surfaces](health-surfaces.md) — what a tenant may
+  read to answer "is my application healthy?"
 
-Anything not yet linked here is not yet written.
+Anything not linked here is not yet written.

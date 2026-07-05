@@ -86,10 +86,24 @@ nav:
   - About these docs: about.md
   - Tutorials:
       - tutorials/index.md
+      - Your first application: tutorials/your-first-application.md
   - How-to guides:
       - how-to/index.md
+      - Onboard a tenant: how-to/onboard-a-tenant.md
+      - Deploy an application: how-to/deploy-an-application.md
+      - Expose an application: how-to/expose-an-application.md
       - Provision a platform secret: how-to/provision-a-platform-secret.md
+      - Provision a database: how-to/provision-a-database.md
+      - Check health and find the URL: how-to/check-health-and-find-url.md
+      - Update and roll back: how-to/update-and-roll-back.md
+      - Add or upgrade a component: how-to/add-or-upgrade-a-component.md
   - Reference:
       - reference/index.md
+      - Platform secret (XPlatformSecret): reference/xplatformsecret.md
+      - Database (XDatabase): reference/xdatabase.md
+      - Tenant boundaries: reference/tenant-boundaries.md
+      - Hostnames, DNS, and TLS: reference/hostnames-dns-tls.md
+      - Health and status surfaces: reference/health-surfaces.md
   - Explanation:
       - explanation/index.md
+      - Platform topology: explanation/platform-topology.md

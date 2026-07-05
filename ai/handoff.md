@@ -8,6 +8,32 @@ last, the current state, and the next concrete steps. Keep it factual
 
 ## NEW SESSION QUICKSTART (read this first)
 
+> ## ▶ 2026-07-05 NIGHT (docs track) — 🟢 DOCS SITE LIVE WITH THE FULL "NOW" WAVE; scenario corpus is unblocked
+> **Parallel documentation session (`planning/scenario-corpus/documentation-plan.md`).
+> The site is LIVE and publishes on every merge to main:
+> <https://lago-morph.github.io/k8s-platform/>.**
+> **Merged: #247** (skeleton: `docs/site/` diataxis layout, `docs/mkdocs.yml`
+> — NOT at root, `test_root_file_allowlist` — `docs/hooks/status_banner.py`
+> enforcing `status: stable|contract|draft` front matter via
+> `mkdocs build --strict -f docs/mkdocs.yml`, mkdocs pins in `versions.env`,
+> `.github/workflows/docs-site.yml` strict-gate + Pages publish; that file
+> is writable ONLY via the jentic bridge, ext-github §8) · **#249**
+> (exemplar how-to, owner-approved template; + `.claude/settings.json` MCP
+> permission allowlist, owner-directed) · **the now-wave PR** (this block
+> rides it): 7 more how-tos, 5 reference pages, the first-application
+> tutorial, the topology explanation — 16 pages total, all `stable`,
+> authored from committed sources (XRDs, Compositions, AppProjects,
+> ApplicationSets, chainsaw scenarios, ADR-0003/0010/0012) with v2
+> vocabulary (XR, never "claim").
+> **Owner focus: scenario authoring starts NOW against the published
+> site** (docs-blindness per `planning/scenario-corpus/charter.md`; the
+> blocked-on-docs count is the docs quality metric).
+> **Docs still owed (later waves, not blockers):** phase-5 identity pages
+> written as `contract` in their own owner-reviewed PR (they double as the
+> phase-5 spec); observability pages once the storage gap closes; docs
+> upkeep = new pages ride the PRs that change public surfaces. Docs
+> sessions need NO cluster/AWS access; the strict build is the only gate.
+
 > ## ▶ 2026-07-05 EVE (latest) — 🟢 MATERIAL CHAIN LIVE ON BUILD #4; FOUR live defects fixed in code; oracles + live-verify still OWED
 > **Session end state (sandbox expired mid-build; all work merged, all
 > gates that ran are green).** Seven PRs merged to `main` (HEAD
