@@ -88,6 +88,7 @@ nav:
       - tutorials/index.md
   - How-to guides:
       - how-to/index.md
+      - Provision a platform secret: how-to/provision-a-platform-secret.md
   - Reference:
       - reference/index.md
   - Explanation:
