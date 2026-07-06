@@ -43,7 +43,9 @@ with `CreateNamespace=true`. The namespace comes into existence on
 first sync — there is no separate namespace-request step.
 
 **4. Verify (tenant).** After merge:
-[check health and find the URL](check-health-and-find-url.md).
+[check health and find the URL](check-health-and-find-url.md) — but
+read the first named gap below before assuming you can run those
+steps.
 
 ## What a tenant can and cannot do afterwards
 
@@ -56,6 +58,16 @@ cluster, cluster-scoped kinds only from the enumerated whitelist.
 ## Named gaps (the honest part)
 
 !!! info "Where onboarding is owner hand-work today"
+    - **No access-acquisition path — a registered DEFECT, not a
+      procedure**: the guides and tutorial require kubectl read access
+      to two clusters plus the platform facts (`<domain>`, cluster
+      short names), and **no documented way to obtain any of them
+      exists**. In practice an operator improvises access by hand;
+      that improvisation is the defect (OI-2026-07-06-5), and these
+      docs deliberately do not dress it up as a supported step.
+      Scenario authors: count every step that needs this access as
+      **blocked on documentation** until the identity phase publishes
+      the real path.
     - **No tenant self-service**: every onboarding step above requires
       a platform-operator action (repo access, allowlist changes,
       merges). There is no request flow, no tenant portal, no

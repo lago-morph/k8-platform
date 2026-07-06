@@ -63,12 +63,21 @@ construction.
 - **Generated exactly once** at provision time. The platform never
   rotates it; rotation is out of scope of the current design.
 - If the AWS-side value is changed out of band, consumers re-sync
-  within their `refreshInterval` (verified behavior).
+  within their `refreshInterval` (verified behavior) — but an
+  out-of-band edit is **not a sanctioned rotation path**; the
+  propagation is a sync property, not a rotation feature.
+- **Delete-and-recreate generates new material**: recreating an
+  `XPlatformSecret` with the same name provisions a fresh generator,
+  so the (same-named) AWS entry receives a **new value**. Deletion +
+  recreation is therefore a destructive rotation: every consumer must
+  tolerate the change, and the value is unrecoverable.
 
 ## What gets created
 
-Applying one `XPlatformSecret` named `example` in namespace `apps`
-produces, visible through public surfaces:
+**This table is the canonical enumeration** (demo scripts and
+scenarios should assert against it). Applying one `XPlatformSecret`
+named `example` in namespace `apps` produces **six objects** — five in
+your namespace plus the AWS entry — visible through public surfaces:
 
 | Object | Where | Purpose |
 |---|---|---|

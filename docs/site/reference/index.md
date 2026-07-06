@@ -26,5 +26,7 @@ for).
 - [Identity mapping](identity-mapping.md) — how a directory account
   becomes a Kubernetes identity: claims, the `kc:` prefix, the
   group → access matrix, and revocation bounds
+- [What a finished platform contains](finished-platform.md) — the
+  expected-state inventory that makes "everything is green" meaningful
 
 Anything not linked here is not yet written.

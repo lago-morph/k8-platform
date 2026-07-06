@@ -58,6 +58,16 @@ database): point your chart's `existingSecret` at the Secret name, read
 `username`/`password` from it, and take host/port from the XR's
 `status.endpoint` / `status.port`.
 
+!!! warning "Known limit: no cross-cluster consumption contract"
+    The connection Secret exists **only in the XR's namespace on the
+    management cluster** — and tenant workloads run on spoke clusters.
+    Unlike the platform secret's deterministic-name contract, XDatabase
+    publishes no mechanism for a spoke workload to consume its
+    connection Secret; the platform's own consumer bridges the gap with
+    operator-built plumbing the abstraction does not provide. This is a
+    registered platform gap. Until it closes, consuming a database from
+    a spoke workload requires the platform operator.
+
 ## Timing
 
 Expect the first `Ready: True` **5–10 minutes** after apply — managed

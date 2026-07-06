@@ -21,8 +21,14 @@ whole exercise to be mostly waiting on two pull requests.
   is the honest description of that step).
 - `kubectl` read access to the management cluster, and to the platform
   services cluster if you want to poke at runtime state.
-- The platform's domain, `<domain>` below — ask your operator, or read
-  it off any existing platform URL.
+  **There is no documented way to obtain this access** — a registered
+  platform defect (see the first named gap in
+  [Onboard a tenant](../how-to/onboard-a-tenant.md)); until the
+  identity phase publishes the real path, this prerequisite is blocked
+  on documentation, and anything an operator improvises for you is the
+  defect, not the path.
+- The platform's domain, `<domain>` below — same gap; reading it off
+  any existing platform URL is the only self-service option.
 
 ## Step 1 — a chart for a tiny app
 

@@ -67,6 +67,10 @@ kubectl -n myapp get deploy myapp \
   `OutOfSync` → `Synced` with `Healthy` at the end; there is no
   platform-provided "deployment finished" event beyond that.
 - Reconciliation is continuous with retry/backoff (up to ~5 minutes
-  between attempts on a failing sync) — bound waits accordingly.
+  between attempts on a failing sync). There is no tighter published
+  latency contract for merge → `Synced/Healthy` than "within minutes";
+  as a planning bound, allow **10 minutes** end-to-end before treating
+  a healthy-looking change as stuck — that headroom covers the
+  reconcile interval plus one full retry backoff.
 - A revert produces a **new** commit; the platform has no concept of
   "previous version" outside Git history.

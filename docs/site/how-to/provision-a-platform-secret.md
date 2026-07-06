@@ -85,12 +85,14 @@ kubectl get xplatformsecret my-app-credentials -n <your-namespace> \
   -o jsonpath='{.status.asmSecretArn}'
 ```
 
-You will also see two helper objects the platform created alongside —
-`my-app-credentials-material` (an ExternalSecret) and
-`my-app-credentials-gen` (a Password generator) — plus the
-`my-app-credentials` ExternalSecret that feeds your Secret. They are
-platform machinery: leave them alone, and never edit the delivered
-Secret by hand (the platform owns and re-syncs it).
+You will also see the platform machinery created alongside — the
+`my-app-credentials` ExternalSecret that feeds your Secret, plus the
+helpers `my-app-credentials-material` (an ExternalSecret and its
+Secret) and `my-app-credentials-gen` (a Password generator). The
+[reference page's table](../reference/xplatformsecret.md#what-gets-created)
+is the canonical enumeration of everything one XR creates. Leave the
+machinery alone, and never edit the delivered Secret by hand (the
+platform owns and re-syncs it).
 
 ## 4. Mount it in your workload
 
@@ -145,6 +147,11 @@ If the consuming application expects a differently named key, add a
 where a chart dictates key names). For a consumer that must survive
 the source disappearing — a bootstrap credential a running workload
 still depends on — set `spec.target.deletionPolicy: Retain`.
+
+Where does this manifest live? In the consuming application's own
+chart, delivered by its Application like any other template — that is
+the GitOps path and the platform's own pattern. `kubectl apply` on the
+consuming cluster works for experimentation only.
 
 ## What you can rely on
 
