@@ -128,6 +128,9 @@ run_suite tests/unit/test_keycloak_realm_json.sh
 # Phase-5: the Cognito-broker delivery contract (terraform → ASM → ES →
 # env → realm placeholder substitution; every leg fail-closed).
 run_suite tests/unit/test_keycloak_cognito_idp_contract.sh
+# ArgoCD-synced ExternalSecrets pin the ESO-CRD-defaulted enums (L40:
+# an omitted array default is a permanent OutOfSync masking real drift).
+run_suite tests/unit/test_externalsecret_antidrift_enums.sh
 # Live-check logic against real aws-CLI output shapes (build #3).
 run_suite tests/unit/test_rds_live_check_vpc_logic.sh
 # Phase-5: the federation oracle's mode gate + claim-decode pipeline.
