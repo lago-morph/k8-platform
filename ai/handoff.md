@@ -57,12 +57,19 @@ last, the current state, and the next concrete steps. Keep it factual
 > **KNOWN PROPERTIES (not defects):** a live realm never re-imports
 > (IGNORE_EXISTING — realm changes converge at the next fresh-DB build);
 > the IdP association on a fresh build fail-retries until Keycloak's
-> issuer serves (extends XR Ready by the app-stack time); post-merge the
-> LIVE build-#5 cluster will exercise the association (watch for the
-> upjet failed-association-residue wedge risk).
-> **NEXT SESSION: (1)** if the account is alive and the PR merged: watch
-> the IdP association converge live (`eks-identity-provider-config-live`),
-> then rows 10/11 evidence needs **clean build #6** (same recipe; then
+> issuer serves (extends XR Ready by the app-stack time).
+> **POST-MERGE ASSOCIATION VERIFIED LIVE (2026-07-06 02:04Z, not via the
+> timer — checked in-session):** after #255 merged, the live build-#5
+> platform XR gained the 16th resource by GitOps auto-sync and the EKS
+> association reached **ACTIVE** — `eks-identity-provider-config-live`
+> PASS (issuer `auth.platform.<domain>/realms/platform`, claim contract correct);
+> the composite XR is Synced=True **Ready=True** (NO upjet wedge). This
+> proves the EKS-side half (REQ-AUTH-07) live; it does NOT flip rows
+> 10/11 — the realm broker (REQ-AUTH-02/08) is only real on a fresh-DB
+> build, so full sign-in→kubectl federation still awaits build #6.
+> **NEXT SESSION: (1)** rows 10/11 evidence needs **clean build #6** on a
+> ROTATED account (a live realm never re-imports; build #5's association
+> is already confirmed ACTIVE above) — same recipe (then
 > the federation oracle in mutating mode + all oracles + live-verify —
 > note the promoted expect-full kinds now enforce). **(2)** Retro for THIS
 > session (self-retrospective; the 2026-07-05-252 retro covered through
