@@ -62,7 +62,7 @@ last, the current state, and the next concrete steps. Keep it factual
 > timer — checked in-session):** after #255 merged, the live build-#5
 > platform XR gained the 16th resource by GitOps auto-sync and the EKS
 > association reached **ACTIVE** — `eks-identity-provider-config-live`
-> PASS (issuer `…975050361443…/realms/platform`, claim contract correct);
+> PASS (issuer `auth.platform.<domain>/realms/platform`, claim contract correct);
 > the composite XR is Synced=True **Ready=True** (NO upjet wedge). This
 > proves the EKS-side half (REQ-AUTH-07) live; it does NOT flip rows
 > 10/11 — the realm broker (REQ-AUTH-02/08) is only real on a fresh-DB
