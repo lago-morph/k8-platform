@@ -1,10 +1,15 @@
-# ADR: Terraform writes externally-generated federation material to ASM under the platform prefix
+# 0013 — Terraform writes externally-generated federation material to ASM under the platform prefix
 
 - **ID**: ADR-9766770001
-- **Status**: Draft (not yet adopted to docs/adr/)
-- **Date**: 2026-07-06
-- **Source retrospective**: ../2026-07-06-255.md
+- **Status**: Accepted (owner-directed adoption 2026-07-06)
+- **Date**: 2026-07-06 (drafted and adopted with the phase-5 identity land, PR #255)
+- **Source retrospective**: [`../../retrospective/2026-07-06-255.md`](../../retrospective/2026-07-06-255.md)
 - **PRs covered**: #255
+- **Mechanical enforcement**: `tests/unit/test_keycloak_cognito_idp_contract.sh`
+  (the four-file broker delivery contract — pins that the terraform-written ASM
+  document key set matches the spoke ExternalSecret's `dataFrom` extract and the
+  ApplicationSet's non-optional secretKeyRef env, so a drift in the terraform
+  writer breaks the unit gate before it breaks a live boot)
 
 ## Context
 
@@ -64,7 +69,7 @@ XPlatformSecret chain carries ONLY platform-generated material.
   A future name collision between a terraform-owned scope ("base") and a
   Kubernetes namespace of the same name is possible; the convention
   reserves `k8-platform/base/*` for terraform.
-- The realm's fail-closed env delivery (ADR-739c51a2ad) depends on this
+- The realm's fail-closed env delivery (ADR-0014) depends on this
   document existing before the keycloak pods can start — a fresh-build
   ordering satisfied trivially (base applies first) but a POST-MERGE
   rollout onto an already-live cluster requires a base re-apply before
@@ -73,7 +78,7 @@ XPlatformSecret chain carries ONLY platform-generated material.
 
 ## References
 
-- [`../2026-07-06-255.md`](../2026-07-06-255.md) — the source retrospective (Phase 3).
-- [`./ADR-739c51a2ad-realm-config-via-import-time-env-substitution.md`](./ADR-739c51a2ad-realm-config-via-import-time-env-substitution.md) — the consuming mechanism.
-- `docs/decisions/0012-secretversion-writes-mr-owned-asm-values.md` — the generate-once boundary this ADR complements.
+- [`../../retrospective/2026-07-06-255.md`](../../retrospective/2026-07-06-255.md) — the source retrospective (Phase 3).
+- [`./0014-realm-config-via-import-time-env-substitution.md`](./0014-realm-config-via-import-time-env-substitution.md) — the consuming mechanism.
+- [`./0012-secretversion-writes-mr-owned-asm-values.md`](./0012-secretversion-writes-mr-owned-asm-values.md) — the generate-once boundary this ADR complements.
 - `terraform/base/cognito.tf`, `platform-services/keycloak/spoke/keycloak-cognito-idp-externalsecret.yaml`, `tests/unit/test_keycloak_cognito_idp_contract.sh` — the implementation + its contract pin (PR #255).

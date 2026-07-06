@@ -1,10 +1,15 @@
-# ADR: Account-ephemeral realm identity config via import-time env substitution
+# 0014 — Account-ephemeral realm identity config via import-time env substitution
 
 - **ID**: ADR-739c51a2ad
-- **Status**: Draft (not yet adopted to docs/adr/)
-- **Date**: 2026-07-06
-- **Source retrospective**: ../2026-07-06-255.md
+- **Status**: Accepted (owner-directed adoption 2026-07-06)
+- **Date**: 2026-07-06 (drafted and adopted with the phase-5 identity land, PR #255)
+- **Source retrospective**: [`../../retrospective/2026-07-06-255.md`](../../retrospective/2026-07-06-255.md)
 - **PRs covered**: #255
+- **Mechanical enforcement**: `tests/unit/test_keycloak_cognito_idp_contract.sh`
+  (every `${KC_COGNITO_*}` placeholder in the realm has a matching non-optional
+  secretKeyRef env entry; the ExternalSecret extracts the exact terraform-written
+  document) + `tests/unit/test_keycloak_realm_json.sh` (no `TODO_` placeholder
+  values survive into the committed realm — the #233 fail-closed invariant)
 
 ## Context
 
@@ -73,7 +78,7 @@ until the Secret and every referenced key exist.
 
 ## References
 
-- [`../2026-07-06-255.md`](../2026-07-06-255.md) — the source retrospective (Phase 3; the three docker probes).
-- [`./ADR-9766770001-terraform-writes-external-federation-material-to-asm.md`](./ADR-9766770001-terraform-writes-external-federation-material-to-asm.md) — where the substituted values come from.
+- [`../../retrospective/2026-07-06-255.md`](../../retrospective/2026-07-06-255.md) — the source retrospective (Phase 3; the three docker probes).
+- [`./0013-terraform-writes-external-federation-material-to-asm.md`](./0013-terraform-writes-external-federation-material-to-asm.md) — where the substituted values come from.
 - `platform-services/keycloak/spoke/realm-platform-configmap.yaml` — the mechanism's in-tree documentation (header) + the broker block itself (PR #255).
 - `tests/unit/test_keycloak_cognito_idp_contract.sh`, `tests/unit/test_keycloak_realm_json.sh` — the mechanical pins.
