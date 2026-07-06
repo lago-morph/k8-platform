@@ -39,7 +39,9 @@ namespace on a spoke: core (`""`), `apps`, `networking.k8s.io`,
 `Namespace`, `CustomResourceDefinition`, `ClusterRole`,
 `ClusterRoleBinding`, `ValidatingWebhookConfiguration`,
 `MutatingWebhookConfiguration`, `PriorityClass`, `IngressClass`,
-`ClusterSecretStore`. Anything else cluster-scoped is denied.
+`ClusterSecretStore`. Anything else cluster-scoped is denied — for
+example a `StorageClass` (cluster-scoped, not on the list) is refused
+at admission.
 
 ## What a denial looks like
 
@@ -52,13 +54,21 @@ resource <group>:<Kind> is not permitted in project platform-spoke
 
 The Application shows `SyncFailed`/degraded status; nothing partial is
 applied for the offending resource. Denials are therefore observable
-from the Application status alone.
+from the Application status alone. A disallowed **source repository**
+is refused the same way — a project-permission error in the
+Application status naming the offending repo (the exact message string
+is not yet pinned here; the first adversary scenario run should
+capture and contribute it).
 
 ## Backstops behind the project boundary
 
-- A policy engine on each spoke audits against `cluster-admin`
-  ClusterRoleBindings (defense in depth behind the RBAC kind
-  whitelist).
+- A policy engine on each spoke watches for `cluster-admin`
+  ClusterRoleBindings — **in audit mode**: it reports violations, it
+  does not block them. Since `ClusterRoleBinding` itself is an
+  admitted kind (charts legitimately ship them), a privilege-escalating
+  binding is admitted first and only visible in audit reports after
+  the fact. Treat this vector as review-guarded, not
+  machine-enforced.
 - The management cluster is unreachable as a destination for
   spoke-project applications by construction, so a tenant manifest can
   never address the control plane.
@@ -71,6 +81,12 @@ Stated plainly, because scenario authors will probe them:
   the project model does not fence tenant A's namespace from tenant B's
   manifests within the same project. Per-tenant projects are the
   natural hardening step and would be a platform change.
+- **Secrets are not tenant-scoped either.** Platform secret names are
+  deterministic (`k8-platform/<namespace>/<name>`) and the secret
+  store is cluster-wide, so one tenant can commit an ExternalSecret
+  that names another tenant's secret; nothing denies it today. This is
+  a registered platform gap, and probing it is expected to *succeed* —
+  file the finding accordingly.
 - Kubernetes RBAC for humans (`kubectl` as a tenant) is not part of
   this boundary — human access lands with the platform's identity
   phase (see the identity pages when they publish as `contract`).

@@ -71,6 +71,15 @@ jobs:
           PROFILE="$(printf '%s\n' "$CHANGED" | .github/scripts/required-profile-for-changes.sh -)"
           echo "required profile: $PROFILE"
 
+          # `none`: the change set touches no live-config surface. Push path
+          # filters fire on the ref-update diff, which over-fires on rebase
+          # force-pushes (main's recent history rides through the update) —
+          # so the CHANGE SET, not the trigger, decides applicability.
+          if [ "$PROFILE" = "none" ]; then
+            echo "✅ profile=none — no live-config surface in this change set; gate not applicable."
+            exit 0
+          fi
+
           # The management (hub) cluster name — a stable variable default, NOT an
           # account-derived value (AGENTS §8.1). The producer emits the same name.
           CLUSTER="k8-platform-mgmt"

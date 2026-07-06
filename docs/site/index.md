@@ -8,9 +8,12 @@ A production-*like* Kubernetes platform on AWS, built in the open as a
 learning reference and the companion to a blog series. It demonstrates
 the layer that application tutorials skip: everything that has to exist
 *before* an application can run the way enterprises actually run them —
-automatic DNS and TLS, single sign-on, secrets that never live in Git,
-cross-cluster observability, and a management plane that survives a bad
-rollout.
+automatic DNS and TLS, secrets that never live in Git, and a management
+plane that survives a bad rollout. Two more pillars — single sign-on
+and tenant-facing cross-cluster observability — are deployed as
+components but not yet usable surfaces; their pages will arrive marked
+`contract` and `stable` as they land, per the
+[stability convention](about.md#stability-markers).
 
 ## Who these docs are for
 

@@ -9,6 +9,14 @@ where is it?" — the exact observables scenario oracles should assert
 against. The task-oriented walkthrough is in the
 [health how-to](../how-to/check-health-and-find-url.md).
 
+Reading these surfaces requires kubeconfigs for the management and
+spoke clusters, and **no documented way to obtain them exists** — a
+registered platform defect (see the first named gap in
+[Onboard a tenant](../how-to/onboard-a-tenant.md)), fixed for real by
+the identity phase. For what the *whole platform* should look like
+when healthy, see
+[What a finished platform contains](finished-platform.md).
+
 ## 1. The Argo CD Application (delivery health)
 
 Every deployed workload is an Argo CD `Application` object on the

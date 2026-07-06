@@ -107,7 +107,11 @@ spec:
 
 What the boundaries allow here is defined by the `platform-spoke`
 project — see [Tenant boundaries](../reference/tenant-boundaries.md).
-Your namespace is created for you (`CreateNamespace=true`).
+Your namespace is created for you (`CreateNamespace=true`). The
+`repoURL` may be any repository on the project's exact allowlist —
+deploying from your own repo instead of this one works once the
+operator has allowlisted it (see
+[Onboard a tenant](onboard-a-tenant.md)).
 
 ## 3. Commit and merge
 

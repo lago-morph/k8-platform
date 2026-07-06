@@ -14,6 +14,9 @@ verify the result.
 
 In the order a new tenant tends to need them:
 
+- [Build the platform from nothing](build-the-platform-from-nothing.md)
+  — the owner's guide: fresh account + this repository → running
+  platform (`contract` until a human-executed run proves it)
 - [Onboard a tenant](onboard-a-tenant.md) — documented as-is,
   including the operator hand-work
 - [Deploy an application via GitOps](deploy-an-application.md)

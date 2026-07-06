@@ -17,6 +17,11 @@ is the sequence number for that date.
 
 | ID | One-line | Note |
 |----|----------|------|
+| OI-2026-07-06-1 | **NEW** — XDatabase has no cross-cluster consumption contract (connection Secret lands on the hub; workloads live on spokes) | from the L1 readiness review; limitation now stated on both database docs pages |
+| OI-2026-07-06-2 | **NEW** — cross-tenant secret readability: deterministic ASM names + cluster-wide ClusterSecretStore, no per-tenant scoping | security-relevant; stated in tenant-boundaries Known limits |
+| OI-2026-07-06-3 | **NEW** — ClusterRoleBinding escalation vector: kind allow-listed, Kyverno backstop is audit-only | docs wording corrected; enforcement decision owed |
+| OI-2026-07-06-4 | **NEW** — no human-executable bring-up verified: rebuild-from-nothing exists only as CI/agent tooling | owner ruling 2026-07-06: bring-up is a product surface; closes by a human-path clean build, which flips the new docs page to `stable` |
+| OI-2026-07-06-5 | **NEW** — no access-acquisition path: docs require kubectl + platform facts nobody can documentedly obtain; operator hand-grants are the defect, not the path | owner ruling 2026-07-06: do not paper over with hand-grant prose; docs report it as blocked-on-documentation; real fix = identity phase |
 | OI-2026-06-07-2 | placeholder overlays fought by bootstrap selfHeal | **RESOLVED — 1× clean-build evidence 2026-06-10** (ADR-0010 consumer+producer; SUBSTRATE row 4): all 7 ApplicationSets generated from the registration Secret's contract on clean build #1, no overlay surface remains |
 | OI-2026-06-07-1 | spoke ArgoCD cluster Secret has no GitOps form | **RESOLVED — 1× clean-build evidence 2026-06-10** (SUBSTRATE row 5): Composition-produced Secret, full contract, `spoke-cluster-secret-live.sh` PASS on clean build #1 |
 | OI-2026-06-07-3 | shared-VPC ELB subnet tags | **RESOLVED — 1× clean-build evidence 2026-06-10** (SUBSTRATE row 3): spoke NLB placed with zero create-tags on clean build #1 |
@@ -111,6 +116,116 @@ provider + Roles + RolePolicy + AccessEntries + AccessPolicyAssociations all
   code bug; the RDS Instance itself is `Ready`).
 
 ---
+
+## OI-2026-07-06-1 — XDatabase has no cross-cluster consumption contract
+
+**Status:** open (product gap, found by the docs-blindness L1 review —
+`planning/scenario-corpus/l1-readiness-review.md`).
+**Surfaced:** 2026-07-06, docs-blind review of scenario 6.
+
+**Observation:** XDatabase XRs are reconciled on the management cluster
+and the provider writes the connection Secret into the XR's namespace
+*there*; tenant workloads run only on spoke clusters
+(`platform-spoke` project cannot target the hub). Unlike
+XPlatformSecret — whose deterministic `k8-platform/<ns>/<name>` ASM
+name is an explicit cross-cluster contract — XDatabase publishes no
+mechanism for a spoke workload to consume its connection Secret. The
+platform's own consumer (keycloak) bridges hub→spoke with bespoke
+plumbing (a hand-written PushSecret to ASM key `k8-platform/keycloak-db`
+plus a spoke ExternalSecret), which the abstraction does not provide.
+
+**Consequence:** "provision a database and connect an application"
+(scenario 6) is unwritable for the documented tenant topology; every
+tenant database needs operator-built plumbing.
+
+**Next step:** design decision — extend the XDatabase Composition to
+push connection material to a deterministic ASM name (mirroring the
+XPlatformSecret contract) so committed spoke consumers can reference
+it. Docs limitation note already published on both database pages;
+flip it to the contract once composed and chainsaw-proven.
+
+## OI-2026-07-06-2 — cross-tenant secret readability via deterministic names + cluster-wide store
+
+**Status:** open (product gap, security-relevant; L1 review, scenario 16).
+**Surfaced:** 2026-07-06.
+
+**Observation:** the ClusterSecretStore `aws-secrets-manager` is
+cluster-scoped on every cluster, ASM names are deterministic
+(`k8-platform/<ns>/<name>`), and `external-secrets.io` namespaced kinds
+are admitted for all tenants by `platform-spoke`. Nothing documented —
+and per source review nothing implemented (the store's IRSA grant
+covers `k8-platform/*`) — prevents tenant A committing an
+ExternalSecret whose `remoteRef.key` names tenant B's secret.
+
+**Consequence:** scenario 16's objective ("isolation boundaries hold")
+cannot hold today; the review proposes re-casting it as an
+expected-finding scenario until per-tenant scoping exists.
+
+**Next step:** requirements conversation — per-tenant secret-path
+scoping (per-namespace SecretStores with scoped IRSA roles, or
+namespace-prefixed key policies). Pairs with the per-tenant-project
+hardening the tenant-boundaries page already names.
+
+## OI-2026-07-06-3 — ClusterRoleBinding escalation vector: allow-listed kind, audit-only backstop
+
+**Status:** open (product decision owed; L1 review, scenario 18).
+**Surfaced:** 2026-07-06.
+
+**Observation:** `ClusterRoleBinding` is on the `platform-spoke`
+cluster-resource whitelist (charts legitimately ship them), and the
+spoke Kyverno guard (`policies/audit/10-spoke-no-cluster-admin-binding.yaml`)
+runs in AUDIT mode — it reports, it does not deny. A tenant chart
+binding cluster-admin is admitted and only later visible in audit
+reports.
+
+**Next step:** decide enforce-vs-audit for the cluster-admin-binding
+policy (fail-closed webhook risk on spokes must be weighed — see
+OI-2026-06-11-2's history), or narrow the whitelist. Docs no longer
+claim the whitelist is airtight.
+
+## OI-2026-07-06-4 — no human-executable bring-up path verified
+
+**Status:** open (product gap by owner ruling 2026-07-06: the owner is
+a user; bring-up is a product surface, not development scaffolding).
+**Surfaced:** L1 review, scenario 1 (NOT WRITABLE at review time).
+
+**Observation:** rebuild-from-nothing has only ever been executed
+through the CI/agent apparatus (workflow dispatches with auto-computed
+backend/credentials). The committed terraform roots carry
+`terraform.tfvars.example` files with local-run notes, and the
+deliberate-sync gates are ordinary `argocd app sync` commands — so a
+human path is *plausible from committed sources* but has never been
+executed and verified end-to-end by a person following the docs.
+
+**Next step:** execute `docs/site/how-to/build-the-platform-from-nothing.md`
+as written on a fresh account (human or scenario session, no agent
+shortcuts); fix divergences; that run is the clean-build evidence that
+flips the page `contract → stable` and closes this entry.
+
+## OI-2026-07-06-5 — no access-acquisition path (docs require access nobody can documentedly obtain)
+
+**Status:** open (product + docs defect; owner ruling 2026-07-06: an
+operator hand-grant is the defect, never a documented path).
+**Surfaced:** L1 review — two independent docs-blind agents found the
+tutorial/health pages requiring tenant kubectl that the onboarding
+page says cannot be obtained; no page documents kubeconfig issuance or
+platform-fact discovery (`<domain>`, cluster short names).
+
+**Observation:** every verification step in the tenant docs assumes
+kubectl read access to the management and spoke clusters plus the
+platform facts; there is no documented, reproducible way to acquire
+either. In practice the operator improvises access by hand.
+
+**Owner-directed handling:** the docs now state this as a registered
+defect and mark affected steps blocked-on-documentation (onboarding
+named-gaps, tutorial prerequisites, health-surfaces preamble) — they
+must NOT present the hand-grant as a procedure, or the scenario
+corpus's blocked-on-docs metric goes blind to it.
+
+**Next step:** the identity phase (directory group → kubectl; SSO for
+UIs) is the real fix; its `contract` pages are the next authored docs
+wave and double as the spec. A fact-discovery surface (domain, cluster
+inventory) rides the same wave or the finished-platform reference.
 
 ## OI-2026-06-11-4 — CI-harness hardening queue (retro 2026-06-11-224 remedies R2/R3/R4)
 

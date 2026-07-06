@@ -90,6 +90,16 @@ externalDatabase:
 For a plain Deployment, mount the two keys as env vars with
 `secretKeyRef` and pass host/port/database as config.
 
+!!! warning "Known limit: your workload probably isn't where the Secret is"
+    The connection Secret materializes in the XR's namespace **on the
+    management cluster**, and tenant workloads run on spoke clusters.
+    There is no self-service bridge yet (a registered platform gap —
+    the [reference page](../reference/xdatabase.md) states it): today,
+    connecting a spoke workload to an XDatabase requires the platform
+    operator to plumb the credentials across, as the platform does for
+    its own SSO database. Step 4 above works as written only for a
+    workload colocated with the XR.
+
 ## Removing it
 
 ```bash

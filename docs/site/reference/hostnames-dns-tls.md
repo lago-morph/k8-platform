@@ -37,10 +37,19 @@ it watches the cluster's Ingress objects and creates Route53 records
 for their rule hosts. Consequences you can rely on:
 
 - Declaring an Ingress with `host: myapp.<subdomain>.<domain>` is
-  sufficient — the record appears without any annotation.
+  sufficient — the record appears without any annotation. Expect it to
+  resolve to the cluster's ingress load balancer (an AWS-assigned
+  hostname; the exact value is account-ephemeral, so assert *that it
+  resolves*, not what it resolves to).
 - A cluster can only create records under its own subdomain; clusters
   cannot collide with (or take over) each other's names. Record
   ownership is tracked per cluster.
+- **Records are created, not removed.** The DNS controller runs in
+  `upsert-only` mode: deleting an Ingress does **not** delete its
+  Route53 record. A stale record pointing at the load balancer is the
+  expected leftover of removing an exposed application today — plan
+  teardowns accordingly and treat this as a documented platform
+  limitation, not an accident.
 
 ## TLS
 

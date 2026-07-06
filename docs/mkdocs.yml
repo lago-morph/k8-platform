@@ -89,6 +89,7 @@ nav:
       - Your first application: tutorials/your-first-application.md
   - How-to guides:
       - how-to/index.md
+      - Build the platform from nothing: how-to/build-the-platform-from-nothing.md
       - Onboard a tenant: how-to/onboard-a-tenant.md
       - Deploy an application: how-to/deploy-an-application.md
       - Expose an application: how-to/expose-an-application.md
@@ -107,6 +108,7 @@ nav:
       - Hostnames, DNS, and TLS: reference/hostnames-dns-tls.md
       - Health and status surfaces: reference/health-surfaces.md
       - Identity mapping: reference/identity-mapping.md
+      - What a finished platform contains: reference/finished-platform.md
   - Explanation:
       - explanation/index.md
       - Platform topology: explanation/platform-topology.md
