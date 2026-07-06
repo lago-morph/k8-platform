@@ -1,10 +1,16 @@
-# ADR: Change-set-aware applicability for fail-closed SHA-verifier gates
+# 0016 — Change-set-aware applicability for fail-closed SHA-verifier gates
 
 - **ID**: ADR-c87dd95a8c
-- **Status**: Draft (not yet adopted to docs/adr/)
-- **Date**: 2026-07-06
-- **Source retrospective**: ../2026-07-06-256.md
+- **Status**: Accepted (owner-directed adoption 2026-07-06)
+- **Date**: 2026-07-06 (drafted in the docs-track retrospective; adopted by owner direction)
+- **Source retrospective**: [`../../retrospective/2026-07-06-256.md`](../../retrospective/2026-07-06-256.md)
 - **PRs covered**: #256
+- **Mechanical enforcement**: `.github/scripts/required-profile-for-changes.sh`
+  (the three-tier `full` / `verify-only` / `none` decision) +
+  `tests/unit/test_live_evidence_gate.sh` (pins all three tiers plus the
+  gate-machinery circularity case); the gate workflows
+  `chainsaw-verify.yml` / `live-evidence-verify.yml` compute the change
+  set against `origin/main` before asserting evidence
 
 ## Context
 
@@ -73,7 +79,7 @@ is applicable* once started.
 
 ## References
 
-- [`../2026-07-06-256.md`](../2026-07-06-256.md) — the source retrospective (Phase 5).
+- [`../../retrospective/2026-07-06-256.md`](../../retrospective/2026-07-06-256.md) — the source retrospective (Phase 5).
 - `.github/scripts/required-profile-for-changes.sh` — the three-tier decision.
 - `tests/unit/test_live_evidence_gate.sh` — pins all three tiers plus the machinery-circularity case.
 - PR #256 commits `6e50be8`, `38bb8e3`, `61e5ace`.

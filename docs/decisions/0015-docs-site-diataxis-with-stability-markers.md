@@ -1,10 +1,16 @@
-# ADR: Documentation as an in-repo diataxis site with enforced stability markers
+# 0015 — Documentation as an in-repo diataxis site with enforced stability markers
 
 - **ID**: ADR-c5d8ad7b96
-- **Status**: Draft (not yet adopted to docs/adr/)
-- **Date**: 2026-07-06
-- **Source retrospective**: ../2026-07-06-256.md
+- **Status**: Accepted (owner-directed adoption 2026-07-06)
+- **Date**: 2026-07-06 (drafted in the docs-track retrospective; adopted by owner direction)
+- **Source retrospective**: [`../../retrospective/2026-07-06-256.md`](../../retrospective/2026-07-06-256.md)
 - **PRs covered**: #247, #249, #254, #256
+- **Mechanical enforcement**: `docs/hooks/status_banner.py` (renders each
+  page's `status:` marker and logs a warning when it is missing/invalid)
+  + `mkdocs build --strict` in `.github/workflows/docs-site.yml` (promotes
+  that warning and any broken internal link to a build failure) +
+  `tests/unit/test_root_file_allowlist.sh` (keeps the mkdocs config out of
+  the frozen repo root)
 
 ## Context
 
@@ -69,7 +75,7 @@ the repo.
 
 ## References
 
-- [`../2026-07-06-256.md`](../2026-07-06-256.md) — the source retrospective (Phases 1–3).
-- [`./SKILL-SPEC-81defdbfbe-docs-blindness-l1-review.md`](./SKILL-SPEC-81defdbfbe-docs-blindness-l1-review.md) — the method that validates sufficiency of docs built this way.
+- [`../../retrospective/2026-07-06-256.md`](../../retrospective/2026-07-06-256.md) — the source retrospective (Phases 1–3).
+- [`../../retrospective/2026-07-06-256/SKILL-SPEC-81defdbfbe-docs-blindness-l1-review.md`](../../retrospective/2026-07-06-256/SKILL-SPEC-81defdbfbe-docs-blindness-l1-review.md) — the method that validates sufficiency of docs built this way.
 - `planning/scenario-corpus/documentation-plan.md` — the owner-set plan this implements.
 - PRs: #247 (skeleton + gate), #249 (exemplar), #254 (now wave), #256 (readiness fixes + new pages).
