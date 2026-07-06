@@ -30,7 +30,7 @@ last, the current state, and the next concrete steps. Keep it factual
 > Describe/ListIdentityProviderConfigs, check-honesty hardening red-first,
 > + `test_verifier_policy_covers_check_reads.sh` enforcing the class);
 > policy applied by branch mgmt run **28759438992** → branch live-verify
-> RUNID-LIVE-VERIFY-BRANCH GREEN with secretsmanager/Secret + iam
+> 28760138628 GREEN with secretsmanager/Secret + iam
 > OIDC/RolePolicy PROMOTED to expect-full → **OI-2026-06-12-1 CLOSED**;
 > the fail-closed live-evidence PR gate has its first producer. SUBSTRATE:
 > rows 1–5+8 = 4×, 6/7 = 3×, 9 = 2×.

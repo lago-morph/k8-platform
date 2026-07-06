@@ -31,7 +31,7 @@ is the sequence number for that date.
 
 | ID | One-line | Note |
 |----|----------|------|
-| OI-2026-06-12-1 | XPlatformSecret material chain REVERTED from PR #227; live-verify's secretsmanager-Secret kind stays SKIP until reworked | **CLOSED 2026-07-06 (build #5)** — chain merged (#243 + build-#4 defect fixes), `secretsmanager-secret-live` PASS as a recorded oracle (AWSCURRENT staged; sandbox pass + CI pass under the scoped role on run 28759141867), and live-verify GREEN with the kind in expect-full (run RUNID-LIVE-VERIFY-BRANCH); see entry |
+| OI-2026-06-12-1 | XPlatformSecret material chain REVERTED from PR #227; live-verify's secretsmanager-Secret kind stays SKIP until reworked | **CLOSED 2026-07-06 (build #5)** — chain merged (#243 + build-#4 defect fixes), `secretsmanager-secret-live` PASS as a recorded oracle (AWSCURRENT staged; sandbox pass + CI pass under the scoped role on run 28759141867), and live-verify GREEN with the kind in expect-full (run 28760138628); see entry |
 | OI-2026-06-11-4 | **NEW** — CI-harness hardening queue (retro 2026-06-11-224 R2/R3/R4) | deferred deliberately: a concurrent session is live against these workflows; see entry. (Renumbered from the retro branch's -1 at merge: the concurrent build session took OI-2026-06-11-1..-3.) |
 | OI-2026-06-11-3 | **NEW** — spoke clusters ship NO CSI driver / StorageClass → every PVC-bearing add-on Pending forever (kube-prometheus-stack Degraded, loki Progressing on builds #1 AND #2 — now DIAGNOSED) | open; durable fix = EBS CSI + default StorageClass (+ CSI IRSA) in the platform-cluster Composition — feature-sized, next session |
 | OI-2026-06-11-2 | **NEW** — kyverno admission controller OOM-CrashLoop + ALL report-cleanup jobs ImagePullBackOff (bitnami/kubectl pullback) → fail-closed webhook blocks hub applies in down-windows | durable helm-values fix (bitnamilegacy images + 768Mi) authored in PR #227, applied via branch CI runs 27384384429+27384541609 (the first hit the webhook's own bootstrap deadlock; manifests landed, re-run recorded the release) — see entry |
@@ -361,7 +361,7 @@ cross-cluster keycloak-admin pull (spoke-keycloak Synced+Healthy).
 live-verify run 28759141867 ("AWSCURRENT version staged" on
 `k8-platform/keycloak/keycloak-oidc-clients`). (4) live-verify.yml GREEN
 with the kind promoted into the producer's expect-full list: run
-RUNID-LIVE-VERIFY-BRANCH (branch `claude/clean-build-5-evidence-ykmchk` =
+28760138628 (branch `claude/clean-build-5-evidence-ykmchk` =
 `main` + the verifier-policy read-verb fix that run 28759141867 surfaced —
 the policy applied by management run 28759438992; the SUBSTRATE gate's
 evidence definition explicitly admits committed-branch runs). The

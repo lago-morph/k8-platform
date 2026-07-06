@@ -83,7 +83,7 @@ PASS under the scoped role, including `secretsmanager-secret-live`.
 Fixed same-session code-not-hands (policy verbs + check-honesty hardening
 + `test_verifier_policy_covers_check_reads.sh` enforcing the whole class),
 applied by management run **28759438992** (branch, green) → live-verify
-run **RUNID-LIVE-VERIFY-BRANCH** (branch = `main` + that fix set) **GREEN
+run **28760138628** (branch = `main` + that fix set) **GREEN
 with `secretsmanager.aws.m.upbound.io/Secret` + `iam OpenIDConnectProvider`
 + `iam RolePolicy` promoted into the producer's expect-full list** — the
 fail-closed live-evidence PR gate has its first producer, and
