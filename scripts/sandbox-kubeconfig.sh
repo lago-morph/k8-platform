@@ -78,6 +78,34 @@ if [ -z "${LOCAL_PORT}" ]; then
   LOCAL_PORT=$(( 8443 + ( $(echo -n "${CLUSTER}" | cksum | cut -d' ' -f1) % 1000 ) ))
 fi
 
+# Reuse a live tunnel when one is already serving this cluster's port.
+# Tunnels are setsid'd and outlive the shell that started them; a second
+# start-session on a held port never binds, FATALs, and its cleanup used to
+# overwrite the pidfile — orphaning the WORKING tunnel while every retry
+# flapped. Probe the port: answering + kubeconfig present ⇒ reuse (and
+# re-track the holder so --stop works); answering with no kubeconfig ⇒ kill
+# the orphan holder and fall through to a clean start.
+if (exec 3<>"/dev/tcp/127.0.0.1/${LOCAL_PORT}") 2>/dev/null; then
+  holder=$(pgrep -f "localPortNumber\": \[\"${LOCAL_PORT}\"" | head -1 || true)
+  if [ -f "${SD}/kubeconfig" ] && [ -n "${holder}" ]; then
+    ps -o pgid= -p "${holder}" | tr -d ' ' > "${SD}/pid"
+    if [ "${#EXEC_CMD[@]}" -gt 0 ]; then
+      # reused tunnel: run the command and LEAVE the tunnel up (this call
+      # did not start it; tearing it down would break the owning session).
+      KUBECONFIG="${SD}/kubeconfig" exec "${EXEC_CMD[@]}"
+    fi
+    echo "# kube-relay tunnel REUSED for ${CLUSTER} (localhost:${LOCAL_PORT})" >&2
+    echo "# stop it with: scripts/sandbox-kubeconfig.sh -c ${CLUSTER} --stop" >&2
+    echo "export KUBECONFIG=${SD}/kubeconfig"
+    exit 0
+  fi
+  if [ -n "${holder}" ]; then
+    hpg=$(ps -o pgid= -p "${holder}" | tr -d ' ')
+    [ -n "${hpg}" ] && kill -TERM -- "-${hpg}" 2>/dev/null || true
+    sleep 1
+  fi
+fi
+
 # 1. Discover the shared relay instance (one per account, tagged Role=kube-relay).
 RELAY_ID=$(aws ec2 describe-instances --region "${REGION}" \
   --filters "Name=tag:Role,Values=kube-relay" \

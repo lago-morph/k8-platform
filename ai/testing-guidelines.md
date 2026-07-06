@@ -303,6 +303,28 @@ If the phase reached `verified` for the first time, also bump the
 
 Commit with `chore(handoff): phase N → <new-state>`.
 
+### 7.1 Recording run IDs under exact-HEAD gates (the sequencing dance)
+
+A run ID can only be committed for a run that already exists, but the
+SHA-matched verifiers (live-verify's producer match, the chainsaw
+dispatch guard) validate runs against the **content** SHA they ran at.
+Those two facts force a fixed order — fighting it produces either an
+uncommittable run ID or an orphaned verifier match (L33's cousin):
+
+1. **Finalize and push every content commit first** (code, checks,
+   policy — anything the run's behavior depends on). Batch per L33.
+2. **Dispatch the producer at that exact HEAD** and wait for the verdict.
+3. **Commit the run ID afterward as a docs-only commit** (evidence
+   columns, handoff, SUBSTRATE). Docs-only commits move HEAD past the
+   run's SHA, which is fine: the verifiers match the run to the content
+   SHA it executed, not to the branch tip that later carries its ID.
+
+Corollary: never bundle an evidence-column edit into a content commit
+"to save a push" — if the dispatched run goes red, the pre-recorded ID
+is a fabrication that has to be reverted. PR #255 ran this dance
+cleanly twice (28760138628 recorded by `585ff5e`, then the main confirm
+after merge); the pattern is now the documented default.
+
 ---
 
 ## 8. Testing the Harness (`phase = test`)

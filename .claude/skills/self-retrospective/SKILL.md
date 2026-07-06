@@ -303,6 +303,19 @@ prior retro — not re-cover everything from session start. Without this
 narrowing, two retros from the same session redundantly analyze the
 same commits.
 
+**First, check that the retro is actually owed (2026-07-06 amendment).**
+The branch-local heuristic below is blind to another session's retro on
+`origin/main` or in an open PR — twice in two sessions a briefing listed
+a retro as "owed" that a concurrent/prior session had already delivered
+(the #243–#252 retro arrived via PR #253; the #255 retro arrived via
+PR #257 *while the addendum session was mid-flight*). Before authoring:
+`git fetch origin main` and check `git log origin/main --oneline --
+retrospective/` (and open PRs, if reachable) for a retro anchored to the
+same last-PR number. If one exists, do NOT re-cover its ground — scope
+down to a letter-suffixed addendum (`-a`) carrying only material the
+existing retro cannot contain (e.g. a successor session's tail), and
+say so in the Scope line.
+
 The heuristic is purely git-driven so it works without any session-id
 plumbing:
 

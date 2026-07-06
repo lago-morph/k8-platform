@@ -72,6 +72,20 @@ es_key="$(yq -r '.spec.dataFrom[0].extract.key' "$ES")"
   && pass "ExternalSecret rides wave -1" \
   || fail "ExternalSecret sync-wave" "must be \"-1\" (before the StatefulSet's wave)"
 
+# ESO's CRD defaults these three enum fields into the live object inside the
+# dataFrom array; ArgoCD's array diff cannot ignore live-only additions, so a
+# manifest that omits them is PERMANENTLY OutOfSync under selfHeal (observed
+# live on the first post-merge sync of this file, 2026-07-06). The sibling
+# ExternalSecrets (keycloak-admin, keycloak-db) bake them into remoteRef for
+# the same reason — this pins the pattern for the dataFrom.extract form.
+for fld in conversionStrategy=Default decodingStrategy=None metadataPolicy=None; do
+  k="${fld%%=*}"; want="${fld#*=}"
+  got="$(yq -r ".spec.dataFrom[0].extract.${k}" "$ES")"
+  [ "$got" = "$want" ] \
+    && pass "ExternalSecret extract.$k explicit ($want)" \
+    || fail "ExternalSecret extract.$k" "must be explicit '$want' — an omitted default drift-loops the app (ArgoCD array diff vs ESO CRD defaulting)"
+done
+
 es_target="$(yq -r '.spec.target.name' "$ES")"
 
 # ---- ApplicationSet env leg ---------------------------------------------
