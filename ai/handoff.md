@@ -8,6 +8,34 @@ last, the current state, and the next concrete steps. Keep it factual
 
 ## NEW SESSION QUICKSTART (read this first)
 
+> ## ▶ 2026-07-06 LATEST — 🟢 ES ANTI-DRIFT DEFECT fixed red-first (L40); tunnel-reuse + docs remedies; retro addendum. PR #260. (Post-merge association verify was ALSO done independently by #259 — see that block below; this branch adds the defect #259 missed.)
+> **Branch `claude/post-merge-propagation-verify-doeg57`, PR #260 (rebased
+> onto `main` past #256–#259).** Account `975050361443` live + converged. <!-- noqa: account-id - run provenance, account rotates -->
+> **The one thing #259 didn't catch:** the new cognito ExternalSecret sat
+> spoke-keycloak **permanently OutOfSync** — three ESO-CRD-defaulted enums
+> (`conversionStrategy`/`decodingStrategy`/`metadataPolicy`) omitted from
+> `dataFrom[].extract`; ArgoCD's array diff can't ignore live-only
+> additions, so selfHeal no-op-loops forever. Fixed red-first (contract
+> test 3 FAIL → 55/55) + repo-wide lint `test_externalsecret_antidrift_enums.sh`
+> (**L40**, enforced). Converges to Synced on merge (sources track `main`).
+> **Delivery chain also proved live** (SUBSTRATE row 10 retrofit note): ES
+> synced 12 s after terraform staged the ASM container; both KC pods
+> rolled with the fail-closed `KC_COGNITO_*` env; broker ABSENT in the
+> live realm via admin API (IGNORE_EXISTING). The EKS-side association
+> ACTIVE is #259's record (row 11) — not re-litigated here.
+> **Other remedies:** `sandbox-kubeconfig.sh` tunnel reuse (ends the
+> setsid FATAL-flap; 5 cases live-tested); `ai/testing-guidelines.md` §7.1
+> (run-ID-under-exact-HEAD sequencing); `self-retrospective` Step 0.5
+> now checks `origin/main` for an existing retro before authoring.
+> **Retro DONE:** `retrospective/2026-07-06-255-a.md` (addendum — the #255
+> session merged its own retro as #257 mid-flight; #256 the L38/L39 rows +
+> ADR-0013/0014). ADR-577f9c104d contract-docs-first draft proposed.
+> **NEXT (supersedes the #259 "retro owed" note below — retro is done):**
+> nothing on THIS account (build #5 fully exercised: evidence pass green,
+> association ACTIVE, delivery chain proven, ES drift fixed). Rows 10/11
+> need **clean build #6 on a ROTATED account**; stretch OI-2026-06-11-3/-4.
+
+
 > ## ▶ 2026-07-06 (latest) — 🟢🟢🟢 CLEAN BUILD #5 + THE EVIDENCE PASS COMPLETE: all six oracles recorded, live-verify's first honest GREEN, OI-2026-06-12-1 CLOSED; phase-5 identity BUILT (pending build #6)
 > **Everything on branch `claude/clean-build-5-evidence-ykmchk` (PR open —
 > merge is the next owner action).** Account `975050361443`. <!-- noqa: account-id - run provenance, account rotates -->
