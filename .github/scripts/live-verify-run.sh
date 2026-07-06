@@ -53,9 +53,12 @@ echo "live suite identity: $(aws sts get-caller-identity --query Arn --output te
 # no kubectl/relay). Kinds deliberately LEFT OUT and why:
 #   - ec2 SecurityGroupRule, external-secrets ExternalSecret: need kubectl + the
 #     SSM relay, which the CI runner does not have -> they SKIP in CI (correct).
-#   - iam OpenIDConnectProvider, iam RolePolicy, secretsmanager Secret: not yet
-#     provisioned-healthy in this account (only a value-less chainsaw leftover for
-#     the secret; the spoke OIDC/inline-policy path is not yet realized) -> SKIP.
+#   - iam OpenIDConnectProvider, iam RolePolicy: joined 2026-07-05 (build #5)
+#     — both PASSED under the scoped role on run 28759141867 (the spoke IRSA
+#     OIDC provider + the eso inline policy are real now).
+#   - secretsmanager Secret: joined 2026-07-05 — the ADR-0012 material chain
+#     writes AWSCURRENT into the MR-owned container (PASSED on 28759141867);
+#     the "value-less chainsaw leftover" era is over.
 # These join expect-full the moment they are genuinely provisioned/CI-runnable.
 #
 # REQUIRES: the scoped role's read-verb allowlist must already grant
@@ -65,6 +68,9 @@ echo "live suite identity: $(aws sts get-caller-identity --query Arn --output te
 # route53 checks SKIP under the scoped role and this producer goes RED. Sequence:
 # merge -> terraform apply (mgmt) -> dispatch live-verify -> GREEN.
 export LIVE_EXPECT_FULL="rds.aws.m.upbound.io/Instance
+secretsmanager.aws.m.upbound.io/Secret
+iam.aws.m.upbound.io/OpenIDConnectProvider
+iam.aws.m.upbound.io/RolePolicy
 acm.aws.m.upbound.io/Certificate
 acm.aws.m.upbound.io/CertificateValidation
 eks.aws.m.upbound.io/Cluster

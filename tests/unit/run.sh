@@ -132,6 +132,9 @@ run_suite tests/unit/test_keycloak_cognito_idp_contract.sh
 run_suite tests/unit/test_rds_live_check_vpc_logic.sh
 # Phase-5: the federation oracle's mode gate + claim-decode pipeline.
 run_suite tests/unit/test_federation_oracle_logic.sh
+# Every after-tier check read must be granted by the scoped verifier
+# policy (the live-verify 28759141867 denied-read class).
+run_suite tests/unit/test_verifier_policy_covers_check_reads.sh
 # auto-008 phase-3 spoke GitOps access (XSpokeAccess XRD + Composition + XR)
 run_suite tests/unit/test_xspokeaccess.sh
 # auto-013 test-overhaul P1: derived coverage manifest (FINAL-PLAN §4.5)

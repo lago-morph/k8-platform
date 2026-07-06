@@ -35,9 +35,15 @@ aws sts get-caller-identity >/dev/null 2>&1 || skip "no usable AWS credentials i
 # The shared relay must exist. If it doesn't, the kube-relay path is unprovisioned;
 # return SKIP and let the orchestrator promote to FAIL iff git declares the kind
 # (expect-full) for this cluster.
-RELAY_ID=$(aws ec2 describe-instances --region "$REGION" \
+# Distinguish "the describe call failed" (permissions — e.g. a scoped role
+# without ec2:DescribeInstances, live-verify run 28759141867) from a real
+# empty result: a denied read must never be reported as "not provisioned".
+if ! DESCRIBE_OUT=$(aws ec2 describe-instances --region "$REGION" \
   --filters "Name=tag:Role,Values=kube-relay" "Name=instance-state-name,Values=running" \
-  --query 'Reservations[].Instances[0].InstanceId' --output text 2>/dev/null | tr -d '[:space:]')
+  --query 'Reservations[].Instances[0].InstanceId' --output text 2>&1); then
+  skip "ec2:DescribeInstances failed for the relay lookup (${DESCRIBE_OUT%%$'\n'*}) — cannot tell whether the relay exists; fix the caller's permissions"
+fi
+RELAY_ID=$(printf '%s' "$DESCRIBE_OUT" | tr -d '[:space:]')
 { [ -n "$RELAY_ID" ] && [ "$RELAY_ID" != "None" ]; } \
   || skip "no running kube-relay instance (relay not provisioned)"
 
