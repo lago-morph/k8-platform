@@ -8,6 +8,68 @@ last, the current state, and the next concrete steps. Keep it factual
 
 ## NEW SESSION QUICKSTART (read this first)
 
+> ## ▶ 2026-07-06 (latest) — 🟢🟢🟢 CLEAN BUILD #5 + THE EVIDENCE PASS COMPLETE: all six oracles recorded, live-verify's first honest GREEN, OI-2026-06-12-1 CLOSED; phase-5 identity BUILT (pending build #6)
+> **Everything on branch `claude/clean-build-5-evidence-ykmchk` (PR open —
+> merge is the next owner action).** Account `975050361443`. <!-- noqa: account-id - run provenance, account rotates -->
+> **Build #5 (zero manual steps, from `main` b85d7f2/0739c5e):** probe
+> **28757370347** → base **28757434684** → management **28757800712**
+> (first-attempt green — #245's first clean pass) → claim gate synced by
+> explicit SHA (XR Ready 21 min) → spoke-access → registration Secret on
+> its own → full stack Synced+Healthy incl. keycloak (observability pair
+> = OI-2026-06-11-3; workload1 by design). ADR-0012 chain converged from
+> committed source; Keycloak booted on the cross-cluster pull.
+> **THE EVIDENCE PASS (the point):** all six oracles PASS recorded
+> (RUN_ID build5-2347): hello-e2e (200/21 s) · spoke-cluster-secret (full
+> contract) · sandbox-kubectl-relay (2 Ready) · rds-instance (base VPC) ·
+> keycloak-e2e (discovery 200 https, 1 s) · secretsmanager-secret
+> (**AWSCURRENT — the chain's first oracle-recorded evidence**).
+> live-verify main dispatch **28759141867** RED — REAL: the scoped
+> verifier role lacked 3 read verbs; two checks reported denied reads as
+> world state (false OI-2026-06-11-1 FAIL + false "not provisioned").
+> Fixed code-not-hands same-session (policy verbs incl. the phase-5
+> Describe/ListIdentityProviderConfigs, check-honesty hardening red-first,
+> + `test_verifier_policy_covers_check_reads.sh` enforcing the class);
+> policy applied by branch mgmt run **28759438992** → branch live-verify
+> RUNID-LIVE-VERIFY-BRANCH GREEN with secretsmanager/Secret + iam
+> OIDC/RolePolicy PROMOTED to expect-full → **OI-2026-06-12-1 CLOSED**;
+> the fail-closed live-evidence PR gate has its first producer. SUBSTRATE:
+> rows 1–5+8 = 4×, 6/7 = 3×, 9 = 2×.
+> **PHASE-5 IDENTITY BUILT (same branch; rows 10/11 pending build #6):**
+> contract docs FIRST per the documentation plan (kubectl-via-group + UI
+> SSO how-tos, identity-mapping reference — they ARE the spec); (a) the
+> Cognito broker + cognito:groups→groups + username-template mappers in
+> the realm via `${KC_COGNITO_*}` env substitution (VERIFIED empirically
+> on pinned KC 24.0.5 in docker: substitution precedes import validation;
+> unset placeholders survive verbatim so `${CLAIM.email}` coexists);
+> delivery = terraform/base → ASM `k8-platform/base/cognito` → spoke ES →
+> NON-optional secretKeyRef env (pod can't start with the Secret missing
+> — fail-closed by construction; the Cognito client secret is
+> Cognito-generated so the ADR-0012 generate-once chain CANNOT carry it —
+> ops doc updated, the pre-ADR-0012 keycloak-oidc-clients routing note was
+> stale); (b) EKS IdentityProviderConfig composed (resource 16, issuer
+> combined from the same env pair as the cert/KC_HOSTNAME, external-name
+> `keycloak`, kc: prefixes matching the inert kc-* bindings) + coverage
+> oracle/registry/live check/render golden/CRD schema; (c) the REQ-AUTH-10
+> federation oracle `cognito-federation-live.sh` (instantiate tier,
+> mutating-mode-only, self-reaped directory fixture user — the hosted-UI
+> form leg live-verified standalone against the real pool on build #5).
+> k8s-admins/k8s-viewers groups now terraform-managed.
+> **KNOWN PROPERTIES (not defects):** a live realm never re-imports
+> (IGNORE_EXISTING — realm changes converge at the next fresh-DB build);
+> the IdP association on a fresh build fail-retries until Keycloak's
+> issuer serves (extends XR Ready by the app-stack time); post-merge the
+> LIVE build-#5 cluster will exercise the association (watch for the
+> upjet failed-association-residue wedge risk).
+> **NEXT SESSION: (1)** if the account is alive and the PR merged: watch
+> the IdP association converge live (`eks-identity-provider-config-live`),
+> then rows 10/11 evidence needs **clean build #6** (same recipe; then
+> the federation oracle in mutating mode + all oracles + live-verify —
+> note the promoted expect-full kinds now enforce). **(2)** Retro for THIS
+> session (self-retrospective; the 2026-07-05-252 retro covered through
+> #252). **(3)** Stretch: OI-2026-06-11-4 (CI-harness queue),
+> OI-2026-06-11-3 (spoke EBS CSI + default StorageClass — the
+> observability pair). Parallel tracks stay in `planning/scenario-corpus/`.
+
 > ## ▶ 2026-07-05 NIGHT (docs track) — 🟢 DOCS SITE LIVE WITH THE FULL "NOW" WAVE; scenario corpus is unblocked
 > **Parallel documentation session (`planning/scenario-corpus/documentation-plan.md`).
 > The site is LIVE and publishes on every merge to main:
@@ -34,7 +96,7 @@ last, the current state, and the next concrete steps. Keep it factual
 > upkeep = new pages ride the PRs that change public surfaces. Docs
 > sessions need NO cluster/AWS access; the strict build is the only gate.
 
-> ## ▶ 2026-07-05 EVE (latest) — 🟢 MATERIAL CHAIN LIVE ON BUILD #4; FOUR live defects fixed in code; oracles + live-verify still OWED
+> ## ▶ 2026-07-05 EVE (superseded by 2026-07-06 above) — 🟢 MATERIAL CHAIN LIVE ON BUILD #4; FOUR live defects fixed in code; oracles + live-verify still OWED
 > **Session end state (sandbox expired mid-build; all work merged, all
 > gates that ran are green).** Seven PRs merged to `main` (HEAD
 > `145ea6e`), each with its honest gates:

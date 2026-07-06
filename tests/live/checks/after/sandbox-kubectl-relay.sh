@@ -48,11 +48,23 @@ RELAY_ID=$(printf '%s' "$DESCRIBE_OUT" | tr -d '[:space:]')
   || skip "no running kube-relay instance (relay not provisioned)"
 
 log "driving kubectl get nodes for '$CLUSTER' through relay $RELAY_ID"
-OUT="$("$HELPER" -c "$CLUSTER" -r "$REGION" --exec kubectl get nodes --no-headers 2>/dev/null)" || {
+ERR_FILE="$(mktemp)"
+OUT="$("$HELPER" -c "$CLUSTER" -r "$REGION" --exec kubectl get nodes --no-headers 2>"$ERR_FILE")" || {
+  # Classify BEFORE blaming the platform: a caller that cannot start SSM
+  # sessions (the scoped CI verifier role — live-verify run 28759518234:
+  # "AccessDeniedException … not authorized to perform: ssm:StartSession")
+  # never had the relay path; that is the sandbox-scoped-by-design
+  # capability (ADR-0008), not a broken SG ingress / access entry.
+  if grep -q "ssm:StartSession" "$ERR_FILE"; then
+    rm -f "$ERR_FILE"
+    skip "caller cannot ssm:StartSession on the relay (scoped CI role) — the relay path is sandbox-scoped by design (ADR-0008)"
+  fi
   ng "kubectl through the SSM relay FAILED for $CLUSTER (SG ingress / access entry not effective)"
+  tail -5 "$ERR_FILE"; rm -f "$ERR_FILE"
   echo "$OUT" | tail -5
   exit 1
 }
+rm -f "$ERR_FILE"
 READY=$(printf '%s\n' "$OUT" | grep -c ' Ready ' || true)
 [ "$READY" -ge 1 ] || { ng "kubectl reached $CLUSTER but found 0 Ready nodes"; exit 1; }
 

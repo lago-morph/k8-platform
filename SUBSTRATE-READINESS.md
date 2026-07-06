@@ -48,6 +48,63 @@ A live hand-fix is **NOT** evidence. It validates the *mechanism*, never the *ar
 
 ## The readiness checklist
 
+**Clean build #5 — 2026-07-05/06, fresh account `975050361443`** <!-- noqa: account-id - run provenance, account rotates -->
+**(fifth consecutive from-scratch build; the EVIDENCE build — every oracle
+recorded, live-verify's first honest green, the OI-2026-06-12-1 close).**
+Source: merged `main` (`b85d7f2` for the terraform phases; the deliberate
+gates pulled at `0739c5e` = `b85d7f2` + the docs-only #254 — identical
+platform manifests). Build chain: creds probe **28757370347** (expected
+shape: fresh account + un-bootstrapped state backend) → base
+**28757434684** → management **28757800712** (both `apply-and-verify`
+green **on the first attempt** — the #245 kubeconfig-race fix's first
+clean pass; ~17 min) → `platform-cluster-claim` synced by explicit SHA
+via the SSM relay (XR Synced+Ready in **21 min**) → `spoke-access` synced,
+registration Secret complete on its own → full spoke stack Synced+Healthy
+(eso / external-dns / hello / ingress-nginx / **keycloak**; observability
+pair = the known OI-2026-06-11-3; workload1 OutOfSync by design). The
+ADR-0012 material chain converged from committed source: both
+XPlatformSecret XRs up, SecretVersion staged AWSCURRENT, Keycloak booted
+on the cross-cluster keycloak-admin pull. **Zero manual steps.**
+Oracles on this build (sandbox, RUN_ID `build5-2347`): `hello-e2e-live`
+PASS (HTTP 200 + marker in 21 s; hub `spoke-hello` Synced+Healthy) ·
+`spoke-cluster-secret-live` PASS (full ADR-0010 contract) ·
+`sandbox-kubectl-relay` PASS (spoke, 2 Ready nodes) · `rds-instance-live`
+PASS (instance `available` in the base VPC) · `keycloak-e2e-live` PASS
+(OIDC discovery 200, https issuer, first poll; hub `spoke-keycloak`
+Synced+Healthy) · `secretsmanager-secret-live` PASS — **the material
+chain's FIRST oracle-recorded evidence** (AWSCURRENT staged on
+`k8-platform/keycloak/keycloak-oidc-clients`).
+**live-verify.yml (the recorded CI producer):** the first dispatch on
+`main` (run **28759141867**) went RED and the red was REAL — under the
+scoped verifier role three read verbs were missing and two checks
+reported the denied reads as world state (a false OI-2026-06-11-1
+placement-bug FAIL + false "not provisioned" skips). Same run: 10 checks
+PASS under the scoped role, including `secretsmanager-secret-live`.
+Fixed same-session code-not-hands (policy verbs + check-honesty hardening
++ `test_verifier_policy_covers_check_reads.sh` enforcing the whole class),
+applied by management run **28759438992** (branch, green) → live-verify
+run **RUNID-LIVE-VERIFY-BRANCH** (branch = `main` + that fix set) **GREEN
+with `secretsmanager.aws.m.upbound.io/Secret` + `iam OpenIDConnectProvider`
++ `iam RolePolicy` promoted into the producer's expect-full list** — the
+fail-closed live-evidence PR gate has its first producer, and
+OI-2026-06-12-1 is CLOSED.
+
+**Clean build #4 — 2026-07-05, fresh account `211125323087`** <!-- noqa: account-id - run provenance, account rotates -->
+**(the material-chain bring-up; account expired before the oracles ran —
+its oracle evidence rides build #5 above).** Source: merged `main`
+(`b2880a9` → `145ea6e` via the four first-live-exercise defect fixes
+merged mid-build by GitOps propagation: #245 kubeconfig truncate race,
+#248 producer-RBAC bootstrap ordering, #250 tag charset, #251
+`secretsmanager:GetResourcePolicy`). Build chain: probe **28744551280** →
+base **28746752536** → management **28750304494** (+ final policy apply
+**28755969208**) → both deliberate gates pulled → spoke registered, app
+stack converged, **both XPlatformSecret XRs Synced+Ready observed live
+21:57Z**: the platform generated material, AWSCURRENT written into the
+deterministic containers, the spoke pulled the cross-cluster key, Keycloak
+BOOTED on it (ADR-0012 end-to-end live, first time). Per this file's own
+rule the row entries below cite builds #1–#3 and #5 — build #4's
+convergence was observed but not oracle-recorded before the account died.
+
 **Clean build #3 — 2026-06-12, fresh account `798802785871`** <!-- noqa: account-id - run provenance, account rotates -->
 **(third consecutive from-scratch build; first with the full keycloak stack).**
 Source: merged `main` (`0dd6114` = post-PR-#227). Build chain: base = CI run
@@ -107,17 +164,17 @@ the committed oracles passing on this build: `hello-e2e-live.sh` PASS,
 
 | # | Item / known gap | Durable fix | Clean-build evidence | Status |
 |---|---|---|---|---|
-| 1 | EKS service-linked-role `iam:GetRole` (zero-node spoke) | PR #213 (committed `irsa.tf`) | Builds #1–#3: the spoke nodegroup created from scratch under the committed narrowed policy on three consecutive fresh accounts — 2 Ready nodes each (`sandbox-kubectl-relay.sh` PASS all three). (The earlier auto-016 "VALIDATED" stays retracted — see `retrospective/2026-06-09-214-a.md`.) | **DONE (3× clean build)** |
-| 2 | Hub→spoke EKS-API SG 443 (OI-2026-06-07-4) | `hub-eks-api-ingress` classic SecurityGroupRule (PR #221) | Builds #1–#3: hub ArgoCD synced every spoke-* Application on the spoke's private endpoint with zero SG hand-fixes on all three accounts; `hello-e2e-live.sh` asserts `spoke-hello` Synced+Healthy from the hub (PASS all three). | **DONE (3× clean build)** |
-| 3 | Shared ELB subnet tags (OI-2026-06-07-3) | terraform/base `hosted_cluster_names` tags (PR #222) | Builds #1–#3: the spoke ingress NLB provisioned in the shared subnets with zero `create-tags` hand-fixes on all three accounts (hello 200 terminates on that NLB with the spoke's ACM cert). | **DONE (3× clean build)** |
-| 4 | Placeholder overlays vs bootstrap selfHeal (OI-2026-06-07-2, **ADR-0010**) | ApplicationSets consumer half (PR #218) + row-5 producer | Builds #1–#3: all seven ApplicationSets generated from the registration Secret's contract annotations on all three accounts; spoke-hello/-ingress-nginx/-external-dns Synced+Healthy with **no hand overlay anywhere**. | **DONE (3× clean build)** |
-| 5 | Spoke ArgoCD cluster-Secret durable form (OI-2026-06-07-1) | ADR-0010 PR-2 producer (PR #220; retires the spec.oidcIssuer overlay) | Builds #1–#3: `platform-spoke` Secret produced by the Composition (Observe→writer Objects), full contract real on all three accounts; `spoke-cluster-secret-live.sh` PASS all three; ArgoCD connection Successful (apps synced through it). | **DONE (3× clean build)** |
-| 6 | RDS narrowing safe on the CREATE path (#211) | PR #211 (committed) | Clean build #2: `keycloak-db` auto-synced from `main` and provisioned RDS from scratch under the narrowed policy (XR Synced+Ready=True ~10 min, `rds-instance-live.sh` PASS, instance `available`). Caveat (build #2): the instance landed in the DEFAULT VPC (OI-2026-06-11-1). Build #3: fresh CREATE landed directly in the BASE VPC under the merged #226/#227 fix (`rds-instance-live.sh` PASS after the #235 oracle bool fix) and Keycloak CONNECTS through it (`keycloak-e2e-live.sh` PASS — the OI-2026-06-07-5 close). | **DONE (2× clean build)** |
-| 7 | EC2 narrowing safe on the CREATE path (#212) | PR #212 (committed) | Clean build #2: management run 27380296208 applied the EC2VpcScoped/EC2Unconditioned Sids; the spoke's kube-relay-ingress + hub-eks-api-ingress SecurityGroupRule MRs created under them (relay oracle PASS = the rules function; hub→spoke sync = the API rule functions). Build #3 (run 27430525986): same CREATE path green again, plus the XDatabase SecurityGroup + 5432 rule created from scratch (the rds:5432 path keycloak now traverses). | **DONE (2× clean build)** |
-| 8 | Hello hub→spoke e2e (OI-2026-06-08-2) | PR #210 (check authored) | Builds #1–#3: PASS on all three accounts (HTTP 200 + body marker + hub-side `spoke-hello` Synced+Healthy; 1s to first 200 on builds #2+#3). | **DONE (3× clean build)** |
-| 9 | Keycloak **boots** against RDS through the spoke ingress (OI-2026-06-07-5) | cross-cluster DB path (hub PushSecret → ASM → spoke ExternalSecret + extraEnvVarsSecret host/port) | Clean build #3: `keycloak-e2e-live.sh` PASS — realm imports, https OIDC discovery 200. Four first-boot defects fixed in code mid-build (#231–#234). | **DONE (1× clean build)** |
-| 10 | Keycloak **federation live-wired** to Cognito (REQ-AUTH-02/08) | NOT YET BUILT — the `identityProviders` + `identityProviderMappers` blocks are deliberately ABSENT (removed in #233; placeholders fail Keycloak's import-time URL validation). Needs the issuer/auth/token/jwks/userInfo URLs sourced from terraform/base Cognito outputs and the confidential client secret delivered via the keycloak-oidc-clients secret chain — none committed. | none | **pending clean-build verification** (blocker — phase-5 identity half) |
-| 11 | EKS clusters federate kubectl auth to Keycloak (REQ-AUTH-07/09/10) | NOT YET BUILT — no `aws_eks_identity_provider_config` (or its Crossplane equivalent) is composed for any cluster; the `kc:*` ClusterRoleBindings exist + are unit-tested but bind nothing until the IdP config lands. No federation oracle exists (the Cognito→Keycloak→kubectl path is untested end to end). | none | **pending clean-build verification** (blocker — phase-5 identity half) |
+| 1 | EKS service-linked-role `iam:GetRole` (zero-node spoke) | PR #213 (committed `irsa.tf`) | Builds #1–#3: the spoke nodegroup created from scratch under the committed narrowed policy on three consecutive fresh accounts — 2 Ready nodes each (`sandbox-kubectl-relay.sh` PASS all three). (The earlier auto-016 "VALIDATED" stays retracted — see `retrospective/2026-06-09-214-a.md`.) Build #5: 2 Ready nodes again (relay oracle PASS, RUN_ID build5-2347). | **DONE (4× clean build)** |
+| 2 | Hub→spoke EKS-API SG 443 (OI-2026-06-07-4) | `hub-eks-api-ingress` classic SecurityGroupRule (PR #221) | Builds #1–#3: hub ArgoCD synced every spoke-* Application on the spoke's private endpoint with zero SG hand-fixes on all three accounts; `hello-e2e-live.sh` asserts `spoke-hello` Synced+Healthy from the hub (PASS all three). Build #5: PASS again (200 in 21 s). | **DONE (4× clean build)** |
+| 3 | Shared ELB subnet tags (OI-2026-06-07-3) | terraform/base `hosted_cluster_names` tags (PR #222) | Builds #1–#3: the spoke ingress NLB provisioned in the shared subnets with zero `create-tags` hand-fixes on all three accounts (hello 200 terminates on that NLB with the spoke's ACM cert). Build #5: same, zero hand-fixes. | **DONE (4× clean build)** |
+| 4 | Placeholder overlays vs bootstrap selfHeal (OI-2026-06-07-2, **ADR-0010**) | ApplicationSets consumer half (PR #218) + row-5 producer | Builds #1–#3: all seven ApplicationSets generated from the registration Secret's contract annotations on all three accounts; spoke-hello/-ingress-nginx/-external-dns Synced+Healthy with **no hand overlay anywhere**. Build #5: all seven again, incl. keycloak. | **DONE (4× clean build)** |
+| 5 | Spoke ArgoCD cluster-Secret durable form (OI-2026-06-07-1) | ADR-0010 PR-2 producer (PR #220; retires the spec.oidcIssuer overlay) | Builds #1–#3: `platform-spoke` Secret produced by the Composition (Observe→writer Objects), full contract real on all three accounts; `spoke-cluster-secret-live.sh` PASS all three; ArgoCD connection Successful (apps synced through it). Build #5: PASS again (full contract). | **DONE (4× clean build)** |
+| 6 | RDS narrowing safe on the CREATE path (#211) | PR #211 (committed) | Clean build #2: `keycloak-db` auto-synced from `main` and provisioned RDS from scratch under the narrowed policy (XR Synced+Ready=True ~10 min, `rds-instance-live.sh` PASS, instance `available`). Caveat (build #2): the instance landed in the DEFAULT VPC (OI-2026-06-11-1). Build #3: fresh CREATE landed directly in the BASE VPC under the merged #226/#227 fix (`rds-instance-live.sh` PASS after the #235 oracle bool fix) and Keycloak CONNECTS through it (`keycloak-e2e-live.sh` PASS — the OI-2026-06-07-5 close). Build #5: fresh CREATE in the base VPC again, `rds-instance-live.sh` PASS. | **DONE (3× clean build)** |
+| 7 | EC2 narrowing safe on the CREATE path (#212) | PR #212 (committed) | Clean build #2: management run 27380296208 applied the EC2VpcScoped/EC2Unconditioned Sids; the spoke's kube-relay-ingress + hub-eks-api-ingress SecurityGroupRule MRs created under them (relay oracle PASS = the rules function; hub→spoke sync = the API rule functions). Build #3 (run 27430525986): same CREATE path green again, plus the XDatabase SecurityGroup + 5432 rule created from scratch (the rds:5432 path keycloak now traverses). Build #5: same CREATE path green again (mgmt run 28757800712). | **DONE (3× clean build)** |
+| 8 | Hello hub→spoke e2e (OI-2026-06-08-2) | PR #210 (check authored) | Builds #1–#3: PASS on all three accounts (HTTP 200 + body marker + hub-side `spoke-hello` Synced+Healthy; 1s to first 200 on builds #2+#3). Build #5: PASS (21 s). | **DONE (4× clean build)** |
+| 9 | Keycloak **boots** against RDS through the spoke ingress (OI-2026-06-07-5) | cross-cluster DB path (hub PushSecret → ASM → spoke ExternalSecret + extraEnvVarsSecret host/port) | Clean build #3: `keycloak-e2e-live.sh` PASS — realm imports, https OIDC discovery 200. Four first-boot defects fixed in code mid-build (#231–#234). Build #5: `keycloak-e2e-live.sh` PASS again — and the DB path now rides the ADR-0012 material chain end-to-end (its first oracle-recorded build). | **DONE (2× clean build)** |
+| 10 | Keycloak **federation live-wired** to Cognito (REQ-AUTH-02/08) | BUILT 2026-07-06 (this branch): the broker + mappers are back in the realm as `${KC_COGNITO_*}` env placeholders substituted at `--import-realm` (mechanism verified empirically on the pinned Keycloak 24.0.5); delivery = terraform/base → ASM `k8-platform/base/cognito` → spoke ES → NON-optional secretKeyRef env (fail-closed, the #233 class prevented by construction). Contract pinned by `test_keycloak_cognito_idp_contract.sh`; committed realm boot-verified in docker. NOTE: a live realm never re-imports (IGNORE_EXISTING) — first live exercise is the next from-scratch build. | Realm import runs only on a fresh Keycloak DB ⇒ evidence must come from a clean build with this merged; the federation oracle (`cognito-federation-live.sh`) records it. Hosted-UI leg live-verified standalone on build #5. | **pending clean-build verification** (build #6) |
+| 11 | EKS clusters federate kubectl auth to Keycloak (REQ-AUTH-07/09/10) | BUILT 2026-07-06 (this branch): `IdentityProviderConfig` composed into the platform-cluster Composition (resource 16 — clientId `kubernetes`, `preferred_username`/`groups`, both prefixed `kc:`, issuer combined from the same env pair as the ACM cert + KC_HOSTNAME; external-name `keycloak`). Ships with its coverage-oracle entry, live check, claim-contract unit test, regenerated render golden, and CRD schema. The REQ-AUTH-10 federation oracle (`cognito-federation-live.sh`) drives the whole path headlessly with a self-reaped directory fixture user. | Post-merge the live XR gains the association (retry-until-issuer-serves); the composed-from-scratch evidence + `eks-identity-provider-config-live` + the federation oracle record on the next clean build. | **pending clean-build verification** (build #6) |
 
 Clean build #1 also caught and durably fixed a NEW defect mid-build —
 **OI-2026-06-10-1** (ACM provider v2.5.0 leaves the Certificate external-name
@@ -144,14 +201,17 @@ run ID.
    keycloak DB path.~~ **DONE** — clean build #3 (2026-06-12, account
    798802785871): RDS in the base VPC, Keycloak boots against it, row 9 <!-- noqa: account-id - run provenance, account rotates -->
    earned. Rows 6/7 now 2×.
-5. **Phase-5 identity half (rows 10/11) — the remaining unbuilt feature.**
-   The Cognito broker block and the EKS `IdentityProviderConfig` do not
-   exist yet; until they do, "phase 5" means "Keycloak runs", not "humans
-   get kubectl access from their directory group". This is the headline
-   next feature.
-6. Then resume the test-overhaul work (SKIP-kind flips, the live-evidence
-   producer green so the PR gate flips, Track B) — unblocked by the
-   in-platform material chain (the live-verify producer).
+5. ~~Phase-5 identity half (rows 10/11) — build the feature.~~ **BUILT**
+   (2026-07-06, the clean-build-5-evidence branch): broker + mappers +
+   EKS IdP config + the federation oracle, contract-docs-first per the
+   documentation plan. Rows 10/11 flip on the next clean build's recorded
+   evidence — a live realm never re-imports, so build #6 is the earliest
+   honest flip.
+6. ~~The live-evidence producer green so the PR gate flips.~~ **DONE**
+   (build #5): live-verify green with secretsmanager/Secret + iam
+   OIDC/RolePolicy in expect-full; the fail-closed PR gate has its first
+   producer. Remaining test-overhaul work (SKIP-kind flips, Track B)
+   proceeds from here.
 
 A fix that cannot be validated this way stays `pending clean-build
 verification` and is carried as a **blocker**, not silently deferred into the
