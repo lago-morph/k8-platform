@@ -1,10 +1,16 @@
-# ADR: Platform bring-up is a user-facing product surface
+# 0017 — Platform bring-up is a user-facing product surface
 
 - **ID**: ADR-e45d9382dc
-- **Status**: Draft (not yet adopted to docs/adr/)
-- **Date**: 2026-07-06
-- **Source retrospective**: ../2026-07-06-256.md
+- **Status**: Accepted (owner-directed adoption 2026-07-06)
+- **Date**: 2026-07-06 (drafted in the docs-track retrospective; adopted by owner direction)
+- **Source retrospective**: [`../../retrospective/2026-07-06-256.md`](../../retrospective/2026-07-06-256.md)
 - **PRs covered**: #256
+- **Mechanical enforcement**: the `contract` stability marker on
+  `docs/site/how-to/build-the-platform-from-nothing.md` (it flips
+  `stable` only on a human-executed clean build, enforced by
+  `docs/hooks/status_banner.py` + `mkdocs build --strict`) +
+  `docs/open-issues.md` OI-2026-07-06-4 (the "no human-executable
+  bring-up verified" gap and its close condition)
 
 ## Context
 
@@ -79,7 +85,7 @@ is done" is verifiable against an expected state rather than a vacuous
 
 ## References
 
-- [`../2026-07-06-256.md`](../2026-07-06-256.md) — the source retrospective (Phases 4–5).
+- [`../../retrospective/2026-07-06-256.md`](../../retrospective/2026-07-06-256.md) — the source retrospective (Phases 4–5).
 - `docs/site/how-to/build-the-platform-from-nothing.md` — the page this ADR justifies.
 - `docs/site/reference/finished-platform.md` — the companion inventory.
 - `docs/open-issues.md` → OI-2026-07-06-4 — the "no human-executable bring-up verified" gap and its close condition.
