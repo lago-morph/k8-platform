@@ -49,12 +49,38 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
+      - name: Checkout (for the merge-base change-set guard)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Look for a green Chainsaw run on this SHA
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HEAD_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+
+          # Push path filters fire on the ref-update diff, which over-fires on
+          # rebase force-pushes (main's recent history rides through the
+          # update). The CHANGE SET (merge-base vs main) decides whether
+          # chainsaw-gated content is actually in this branch's diff.
+          # chainsaw-verify.yml itself is deliberately NOT gated content:
+          # demanding a chainsaw run to edit the verifier is circular; review
+          # owns verifier correctness (and the git credential cannot push
+          # workflow files anyway).
+          git fetch --quiet origin main || true
+          if git rev-parse origin/main >/dev/null 2>&1; then
+            CHANGED="$(git diff --name-only origin/main...HEAD)"
+          else
+            CHANGED="$(git diff --name-only HEAD~1 HEAD || true)"
+          fi
+          echo "── changed files (merge-base vs main) ──"; printf '%s\n' "$CHANGED"
+          if ! printf '%s\n' "$CHANGED" | grep -Eq '^(crossplane/|tests/chainsaw/|tests/unit/test_chainsaw_kind_config\.sh$|\.github/workflows/chainsaw\.yml$)'; then
+            echo "✅ change set touches no chainsaw-gated content — verifier not applicable."
+            exit 0
+          fi
+
           echo "Looking for a successful Chainsaw run for head_sha=$HEAD_SHA"
 
           # The chainsaw workflow's name in the Actions UI.
