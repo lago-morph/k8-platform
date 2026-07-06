@@ -68,3 +68,13 @@ output "cognito_jwks_uri" {
   description = "JWKS endpoint — used to verify Cognito-issued tokens"
   value       = "https://cognito-idp.${var.aws_region}.amazonaws.com/${aws_cognito_user_pool.main.id}/.well-known/jwks.json"
 }
+
+output "cognito_hosted_ui_domain" {
+  description = "Cognito hosted-UI domain prefix (full host: <prefix>.auth.<region>.amazoncognito.com)"
+  value       = aws_cognito_user_pool_domain.main.domain
+}
+
+output "cognito_idp_secret_name" {
+  description = "ASM name of the Keycloak-broker federation inputs (endpoints + confidential client)"
+  value       = aws_secretsmanager_secret.cognito_idp.name
+}

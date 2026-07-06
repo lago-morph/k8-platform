@@ -64,4 +64,25 @@ else
   fail "default VPC (CLI text 'True') still exits FAIL" "rc=$rc2"
 fi
 
+# INDETERMINATE case (live-verify run 28759141867, 2026-07-05): under the
+# scoped verifier role ec2:DescribeVpcs was NOT granted — the query printed
+# NOTHING (empty, rc≠0) and the check misattributed "cannot determine" to
+# the OI-2026-06-11-1 default-VPC bug. Empty is not "true": the check must
+# fail with an it's-the-caller's-permissions diagnosis, never the
+# placement-bug one.
+sed -i 's/echo "True"/exit 254/' "$STUB_DIR/aws"
+out3="$(PATH="$STUB_DIR:$PATH" bash "$CHECK" 2>&1)"
+rc3=$?
+if [ "$rc3" -ne 0 ] && [ "$rc3" -ne 2 ]; then
+  pass "indeterminate IsDefault (DescribeVpcs denied) still exits FAIL"
+else
+  fail "indeterminate IsDefault exits FAIL" "rc=$rc3"
+fi
+printf '%s' "$out3" | grep -qi "cannot determine" \
+  && pass "indeterminate case says 'cannot determine', names the permission" \
+  || fail "indeterminate case diagnosis" "must say the VPC default-ness could not be determined (missing ec2:DescribeVpcs?), got: $(printf '%s' "$out3" | tail -2 | tr '\n' ' ')"
+printf '%s' "$out3" | grep -q "OI-2026-06-11-1" \
+  && fail "indeterminate case must NOT claim the placement bug" "misattribution: $(printf '%s' "$out3" | tail -2 | tr '\n' ' ')" \
+  || pass "indeterminate case does not claim the placement bug"
+
 summary

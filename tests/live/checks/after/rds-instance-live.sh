@@ -82,10 +82,21 @@ inst_vpc="$(aws rds describe-db-instances --db-instance-identifier "$found_id"  
 # normalize before comparing (build #3: the un-normalized compare flagged
 # a correctly placed instance as the default-VPC bug).
 vpc_is_default="$(aws ec2 describe-vpcs --vpc-ids "$inst_vpc"   --region "$REGION" --query 'Vpcs[0].IsDefault' --output text 2>/dev/null | tr '[:upper:]' '[:lower:]')"
-if [ "$vpc_is_default" != "false" ]; then
-  ng "XDatabase RDS instance '$found_id' is in VPC '$inst_vpc' (IsDefault=$vpc_is_default) — the default-VPC placement bug (OI-2026-06-11-1); composed SubnetGroup/SecurityGroup not in effect"
-  exit 1
-fi
+case "$vpc_is_default" in
+  false) ;;
+  true)
+    ng "XDatabase RDS instance '$found_id' is in VPC '$inst_vpc' (IsDefault=true) — the default-VPC placement bug (OI-2026-06-11-1); composed SubnetGroup/SecurityGroup not in effect"
+    exit 1
+    ;;
+  *)
+    # Empty/garbage means the DescribeVpcs call itself failed — under the
+    # scoped verifier role this was a missing ec2:DescribeVpcs grant
+    # (live-verify run 28759141867). An indeterminate read must NEVER be
+    # reported as the placement bug: fail on the caller's permissions.
+    ng "cannot determine whether VPC '$inst_vpc' is the default VPC (describe-vpcs returned '$vpc_is_default') — likely the calling role lacks ec2:DescribeVpcs; fix the verifier policy — this is NOT the placement bug"
+    exit 1
+    ;;
+esac
 log "instance '$found_id' is in non-default VPC $inst_vpc (composed SubnetGroup placement in effect)"
 
 ok "XDatabase-provisioned RDS instance '$found_id' is available"

@@ -23,5 +23,8 @@ for).
   certificate conventions for platform and application endpoints
 - [Health and status surfaces](health-surfaces.md) — what a tenant may
   read to answer "is my application healthy?"
+- [Identity mapping](identity-mapping.md) — how a directory account
+  becomes a Kubernetes identity: claims, the `kc:` prefix, the
+  group → access matrix, and revocation bounds
 
 Anything not linked here is not yet written.

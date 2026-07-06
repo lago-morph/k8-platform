@@ -70,3 +70,66 @@ resource "aws_cognito_user" "test" {
   temporary_password = var.cognito_test_user_password
   message_action     = "SUPPRESS"
 }
+
+# The Kubernetes access groups (REQ-AUTH-08/09). Group membership HERE is
+# what grants cluster access: Keycloak copies `cognito:groups` into the
+# `groups` token claim on every brokered login, and the EKS identity
+# provider config prefixes them `kc:` for the kc-* ClusterRoleBindings
+# (clusters/platform/rbac/). No group state exists in Keycloak (REQ-AUTH-08).
+resource "aws_cognito_user_group" "k8s_admins" {
+  name         = "k8s-admins"
+  user_pool_id = aws_cognito_user_pool.main.id
+  description  = "Members get cluster-admin on the platform services cluster via the kc-prefixed group binding"
+}
+
+resource "aws_cognito_user_group" "k8s_viewers" {
+  name         = "k8s-viewers"
+  user_pool_id = aws_cognito_user_pool.main.id
+  description  = "Members get read-only view on the platform services cluster via the kc-prefixed group binding"
+}
+
+# The Keycloak broker's federation inputs, delivered through ASM under the
+# platform's deterministic naming so a COMMITTED spoke ExternalSecret can
+# pull them (the same live-proven transport the keycloak-admin secret uses).
+# The confidential client secret is COGNITO-generated — it cannot ride the
+# XPlatformSecret chain, whose ADR-0012 material chain generates its own
+# random value; Terraform is this value's source of truth, so Terraform
+# writes the container. Tags deliberately do NOT carry
+# PlatformAbstraction=PlatformSecret: the live-verify secretsmanager check
+# selects on that tag pair and must keep seeing only Composition-owned
+# containers.
+#
+# recovery_window_in_days = 0: the account is ephemeral and CI rebuilds
+# from scratch; a deletion recovery window would block re-creates under
+# the same deterministic name (same reasoning as the PlatformSecret
+# Composition).
+resource "aws_secretsmanager_secret" "cognito_idp" {
+  name                    = "k8-platform/base/cognito"
+  description             = "Cognito federation endpoints and confidential client for the Keycloak broker - REQ-AUTH-02/08"
+  recovery_window_in_days = 0
+
+  tags = {
+    Name      = "${local.name_prefix}-cognito-idp"
+    ManagedBy = "terraform"
+  }
+}
+
+# One JSON document carrying every value the realm import substitutes
+# (platform-services/keycloak/spoke/realm-platform-configmap.yaml reads
+# them as ${KC_COGNITO_*} container env; the spoke ExternalSecret
+# keycloak-cognito-idp materializes this document key-for-key). The
+# authorize/token/userInfo/logout endpoints live on the hosted-UI domain;
+# issuer + jwks live on the cognito-idp API host.
+resource "aws_secretsmanager_secret_version" "cognito_idp" {
+  secret_id = aws_secretsmanager_secret.cognito_idp.id
+  secret_string = jsonencode({
+    client_id         = aws_cognito_user_pool_client.keycloak.id
+    client_secret     = aws_cognito_user_pool_client.keycloak.client_secret
+    issuer_url        = "https://cognito-idp.${var.aws_region}.amazonaws.com/${aws_cognito_user_pool.main.id}"
+    authorization_url = "https://${aws_cognito_user_pool_domain.main.domain}.auth.${var.aws_region}.amazoncognito.com/oauth2/authorize"
+    token_url         = "https://${aws_cognito_user_pool_domain.main.domain}.auth.${var.aws_region}.amazoncognito.com/oauth2/token"
+    user_info_url     = "https://${aws_cognito_user_pool_domain.main.domain}.auth.${var.aws_region}.amazoncognito.com/oauth2/userInfo"
+    logout_url        = "https://${aws_cognito_user_pool_domain.main.domain}.auth.${var.aws_region}.amazoncognito.com/logout"
+    jwks_url          = "https://cognito-idp.${var.aws_region}.amazonaws.com/${aws_cognito_user_pool.main.id}/.well-known/jwks.json"
+  })
+}

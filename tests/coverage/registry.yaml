@@ -66,6 +66,10 @@ kinds:
     lane: aws
     cost: singleton-coupled
     defended_by: tests/live/checks/after/eks-access-policy-association-live.sh
+  eks.aws.m.upbound.io/IdentityProviderConfig:
+    lane: aws
+    cost: singleton-coupled   # coupled to the spoke cluster + its Keycloak issuer (REQ-AUTH-07)
+    defended_by: tests/live/checks/after/eks-identity-provider-config-live.sh
   iam.aws.m.upbound.io/Role:
     lane: aws
     cost: hermetic

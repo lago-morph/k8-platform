@@ -35,18 +35,36 @@ aws sts get-caller-identity >/dev/null 2>&1 || skip "no usable AWS credentials i
 # The shared relay must exist. If it doesn't, the kube-relay path is unprovisioned;
 # return SKIP and let the orchestrator promote to FAIL iff git declares the kind
 # (expect-full) for this cluster.
-RELAY_ID=$(aws ec2 describe-instances --region "$REGION" \
+# Distinguish "the describe call failed" (permissions — e.g. a scoped role
+# without ec2:DescribeInstances, live-verify run 28759141867) from a real
+# empty result: a denied read must never be reported as "not provisioned".
+if ! DESCRIBE_OUT=$(aws ec2 describe-instances --region "$REGION" \
   --filters "Name=tag:Role,Values=kube-relay" "Name=instance-state-name,Values=running" \
-  --query 'Reservations[].Instances[0].InstanceId' --output text 2>/dev/null | tr -d '[:space:]')
+  --query 'Reservations[].Instances[0].InstanceId' --output text 2>&1); then
+  skip "ec2:DescribeInstances failed for the relay lookup (${DESCRIBE_OUT%%$'\n'*}) — cannot tell whether the relay exists; fix the caller's permissions"
+fi
+RELAY_ID=$(printf '%s' "$DESCRIBE_OUT" | tr -d '[:space:]')
 { [ -n "$RELAY_ID" ] && [ "$RELAY_ID" != "None" ]; } \
   || skip "no running kube-relay instance (relay not provisioned)"
 
 log "driving kubectl get nodes for '$CLUSTER' through relay $RELAY_ID"
-OUT="$("$HELPER" -c "$CLUSTER" -r "$REGION" --exec kubectl get nodes --no-headers 2>/dev/null)" || {
+ERR_FILE="$(mktemp)"
+OUT="$("$HELPER" -c "$CLUSTER" -r "$REGION" --exec kubectl get nodes --no-headers 2>"$ERR_FILE")" || {
+  # Classify BEFORE blaming the platform: a caller that cannot start SSM
+  # sessions (the scoped CI verifier role — live-verify run 28759518234:
+  # "AccessDeniedException … not authorized to perform: ssm:StartSession")
+  # never had the relay path; that is the sandbox-scoped-by-design
+  # capability (ADR-0008), not a broken SG ingress / access entry.
+  if grep -q "ssm:StartSession" "$ERR_FILE"; then
+    rm -f "$ERR_FILE"
+    skip "caller cannot ssm:StartSession on the relay (scoped CI role) — the relay path is sandbox-scoped by design (ADR-0008)"
+  fi
   ng "kubectl through the SSM relay FAILED for $CLUSTER (SG ingress / access entry not effective)"
+  tail -5 "$ERR_FILE"; rm -f "$ERR_FILE"
   echo "$OUT" | tail -5
   exit 1
 }
+rm -f "$ERR_FILE"
 READY=$(printf '%s\n' "$OUT" | grep -c ' Ready ' || true)
 [ "$READY" -ge 1 ] || { ng "kubectl reached $CLUSTER but found 0 Ready nodes"; exit 1; }
 
